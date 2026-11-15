@@ -95,6 +95,12 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
       engine.sendTestSubtitle()
       result(nil)
     case "logs": result(engine.logLines())
+    case "checkGemini":
+      let key = call.arguments as? String ?? ""
+      background.async {
+        let (ok, detail) = GeminiTranslator.check(key: key)
+        DispatchQueue.main.async { result(["ok": ok, "detail": detail]) }
+      }
     case "openUrl":
       // Yalnız https adresleri (ör. Gemini anahtar sayfası) Safari'de açılır.
       guard let text = call.arguments as? String, let url = URL(string: text), url.scheme == "https" else { return result(false) }

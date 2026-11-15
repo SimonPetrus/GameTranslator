@@ -86,6 +86,53 @@ final class GeminiTranslator: TextTranslator {
     return translated
   }
 
+  /// Ayarlardaki "Kaydet ve dene": anahtarı tek bir deneme çevirisiyle sınar. (başarılı mı, kullanıcıya gösterilecek metin)
+  static func check(key: String) -> (Bool, String) {
+    let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    if key.isEmpty { return (false, "Önce anahtarı yapıştır.") }
+    guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(defaultModel):generateContent") else {
+      return (false, "Gemini adresi kurulamadı.")
+    }
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+    request.httpMethod = "POST"
+    request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    let body: [String: Any] = [
+      "systemInstruction": ["parts": [["text": systemPrompt]]],
+      "contents": [["role": "user", "parts": [["text": userMessage(["Let's get out of here before they find us."], context: [])]]]],
+      "generationConfig": ["maxOutputTokens": 1024],
+    ]
+    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    let semaphore = DispatchSemaphore(value: 0)
+    var status = 0
+    var data: Data?
+    let task = URLSession.shared.dataTask(with: request) { d, response, _ in
+      status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      data = d
+      semaphore.signal()
+    }
+    task.resume()
+    if semaphore.wait(timeout: .now() + 12) == .timedOut {
+      task.cancel()
+      return (false, "Gemini yanıt vermedi. İnternet bağlantını kontrol et.")
+    }
+    switch status {
+    case 200:
+      if let data, let reply = replyText(data), let text = translations(reply, count: 1)?.first, !text.isEmpty {
+        return (true, "Anahtar çalışıyor. Deneme çevirisi: \(text)")
+      }
+      return (false, "Gemini yanıt verdi ama çeviri okunamadı. Yeniden dene.")
+    case 400, 401, 403:
+      return (false, "Anahtar kabul edilmedi. Anahtarı eksiksiz kopyaladığından emin ol.")
+    case 429:
+      return (true, "Anahtar doğru, ama şu an sınır dolu. Bir dakika sonra çeviride kullanılır.")
+    case 0:
+      return (false, "Gemini'ye ulaşılamadı. İnternet bağlantını kontrol et.")
+    default:
+      return (false, "Gemini hata verdi (HTTP \(status)). Biraz sonra yeniden dene.")
+    }
+  }
+
   // MARK: - Sınır ve bağlam
 
   /// İstek hakkı varsa bağlamı döner; dakikalık sınıra gelindiyse nil (yedek motora geçilir).

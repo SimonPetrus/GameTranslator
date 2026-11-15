@@ -168,6 +168,16 @@ class Bridge {
   static Future<void> testSubtitle() => _channel.invokeMethod('testSubtitle');
   static Future<Uint8List?> snapshot({int width = 960}) => _channel.invokeMethod<Uint8List>('snapshot', width);
 
+  /// Gemini anahtarını bir deneme çevirisiyle sınar (yalnız iOS). (başarılı mı, gösterilecek metin)
+  static Future<(bool, String)> checkGemini(String key) async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('checkGemini', key) ?? {};
+      return (map['ok'] as bool? ?? false, map['detail'] as String? ?? '');
+    } on MissingPluginException {
+      return (false, 'Bu telefonda desteklenmiyor.');
+    }
+  }
+
   /// Adresi tarayıcıda açar (yalnız iOS'ta; Android'de false döner).
   static Future<bool> openUrl(String url) async {
     try {

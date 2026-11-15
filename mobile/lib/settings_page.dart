@@ -68,6 +68,27 @@ class _SettingsTabState extends State<SettingsTab> {
   AppSettings? settings;
   final deepLController = TextEditingController();
   final geminiController = TextEditingController();
+  bool checkingGemini = false;
+  (bool, String)? geminiResult;
+
+  /// Anahtarı hemen kaydeder ve bir deneme çevirisiyle sınar.
+  Future<void> checkGemini() async {
+    final current = settings;
+    if (current == null) return;
+    current.json['geminiKey'] = geminiController.text.trim();
+    saveTimer?.cancel();
+    setState(() {
+      checkingGemini = true;
+      geminiResult = null;
+    });
+    await Bridge.saveSettings(current);
+    final result = await Bridge.checkGemini(geminiController.text.trim());
+    if (!mounted) return;
+    setState(() {
+      checkingGemini = false;
+      geminiResult = result;
+    });
+  }
   Uint8List? preview;
   Timer? saveTimer;
   Timer? previewTimer;
@@ -328,6 +349,19 @@ class _SettingsTabState extends State<SettingsTab> {
                       decoration: const InputDecoration(hintText: 'Gemini API anahtarı'),
                       onChanged: (value) => change((s) => s.json['geminiKey'] = value.trim()),
                     ),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: checkingGemini ? null : checkGemini,
+                      child: Text(checkingGemini ? 'Deneniyor…' : 'Kaydet ve dene'),
+                    ),
+                    if (geminiResult != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          geminiResult!.$2,
+                          style: Txt.subhead.copyWith(color: geminiResult!.$1 ? Tokens.success : Tokens.danger),
+                        ),
+                      ),
                     TextButton(
                       style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 36)),
                       onPressed: () => Bridge.openUrl('https://aistudio.google.com/apikey'),
