@@ -24,7 +24,7 @@ protocol SubtitleSink {
 }
 
 /// Oyun paketinden bulunan satır (Android'deki GamePacks.kt: `data class PackMatch(val text: String, val packId: String? = null)`).
-/// Paket sisteminin kendisi henüz iOS'a taşınmadı; hat yalnız [SubtitlePipeline.packLookup] kancasının biçimini korur.
+/// Paketler: GamePacks.swift (GamePackLibrary), arama: PackTranslation.match.
 struct PackMatch: Equatable, Sendable {
   let text: String
   let packId: String?
