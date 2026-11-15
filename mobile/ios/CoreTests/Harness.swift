@@ -57,3 +57,33 @@ func assertFalse(_ value: Bool, _ message: String = "", file: String = #fileID, 
 func assertNull<T>(_ value: T?, _ message: String = "", file: String = #fileID, line: Int = #line) {
   if let value = value { TestRun.fail("null bekleniyordu, gelen <\(value)> \(message)", file, line) }
 }
+
+func assertNotNull<T>(_ value: T?, _ message: String = "", file: String = #fileID, line: Int = #line) {
+  if value == nil { TestRun.fail("null olmamalıydı \(message)", file, line) }
+}
+
+func assertNotEquals<T: Equatable>(_ unexpected: T, _ actual: T, _ message: String = "",
+                                   file: String = #fileID, line: Int = #line) {
+  let equal: Bool
+  if let x = unexpected as? String, let y = actual as? String { equal = Array(x.utf16) == Array(y.utf16) } else { equal = unexpected == actual }
+  if equal { TestRun.fail("\(message.isEmpty ? "" : message + ": ")farklı olmalıydı <\(actual)>", file, line) }
+}
+
+func assertEquals(_ expected: Double, _ actual: Double, accuracy: Double, _ message: String = "",
+                  file: String = #fileID, line: Int = #line) {
+  if !(abs(expected - actual) <= accuracy) {
+    TestRun.fail("\(message.isEmpty ? "" : message + ": ")beklenen <\(expected)>, gelen <\(actual)>", file, line)
+  }
+}
+
+/// JUnit assertThrows: [body] [E] türünde hata fırlatmalı.
+func assertThrows<E: Error, T>(_ type: E.Type, _ message: String = "", file: String = #fileID, line: Int = #line,
+                               _ body: () throws -> T) {
+  do {
+    _ = try body()
+    TestRun.fail("\(E.self) bekleniyordu \(message)", file, line)
+  } catch is E {
+  } catch {
+    TestRun.fail("\(E.self) bekleniyordu, gelen \(error) \(message)", file, line)
+  }
+}

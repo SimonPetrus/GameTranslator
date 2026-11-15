@@ -140,12 +140,14 @@ final class Engine: Native.Listener {
       self.packHits = 0
       self.packGame = ""
       self.setPhase("starting")
-      // Ekran kilitlenirse iOS uygulamayı askıya alır ve akış kopar; çeviri açıkken ekran kararmaz.
-      DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = true }
+      // Ekran kilitliyken de sürsün diye uygulama sessiz bir ses akışıyla arka planda canlı tutulur.
+      BackgroundKeeper.shared.log = { [weak self] level, text in self?.log(level, text) }
+      BackgroundKeeper.shared.start()
       self.server.start()
       self.log(2, "altyazı sunucusu: \(Network.localAddress() ?? "?"):\(SubtitleServer.defaultPort)")
       self.server.sendStyle(self.settings.style)
       if self.reader == nil { self.reader = VisionReader(engine: self) }
+      if self.settings.packsEnabled { Packs.shared.refresh { [weak self] level, text in self?.log(level, text) } }
       self.reader?.rebuild(settings: self.settings)
       self.connect()
     }
@@ -165,7 +167,7 @@ final class Engine: Native.Listener {
       self.server.clear()
       self.server.stop()
       self.frameLock.lock(); self.frame = nil; self.frameLock.unlock()
-      DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = false }
+      BackgroundKeeper.shared.stop()
       self.setPhase("idle")
     }
   }

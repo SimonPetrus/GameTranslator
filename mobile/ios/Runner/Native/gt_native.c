@@ -413,9 +413,27 @@ typedef struct {
 	size_t avcc_capacity;
 	bool want_frame;        /* bu örneğin görüntüsü geri çağrıya verilecek mi (kare sınırlayıcı) */
 	bool decode_failed;
+	OSStatus last_status;   /* günlüğe yalnız değişince yazılır */
+	cs_log_target *log;
 	cs_frame_cb frame;
 	void *user;
 } cs_decoder;
+
+/* Çözücü hatası (ör. arka planda iOS donanım çözücüsünü kapatınca -12903) günlüğe bir kez yazılır. */
+static void cs_decoder_note(cs_decoder *decoder, OSStatus status, const char *what)
+{
+	if(status == decoder->last_status)
+		return;
+	decoder->last_status = status;
+	if(!decoder->log || !decoder->log->cb)
+		return;
+	char line[128];
+	if(status == noErr)
+		snprintf(line, sizeof(line), "VideoToolbox: çözücü yeniden çalışıyor");
+	else
+		snprintf(line, sizeof(line), "VideoToolbox: %s başarısız (%d)", what, (int)status);
+	decoder->log->cb(1, line, decoder->log->user);
+}
 
 static void cs_decoder_output(void *decompression_ref, void *frame_ref, OSStatus status, VTDecodeInfoFlags flags,
 		CVImageBufferRef image, CMTime pts, CMTime duration)
@@ -457,11 +475,12 @@ static void cs_decoder_close_session(cs_decoder *decoder)
 	}
 }
 
-static void cs_decoder_init(cs_decoder *decoder, cs_frame_cb frame, void *user)
+static void cs_decoder_init(cs_decoder *decoder, cs_frame_cb frame, void *user, cs_log_target *log)
 {
 	memset(decoder, 0, sizeof(*decoder));
 	decoder->frame = frame;
 	decoder->user = user;
+	decoder->log = log;
 }
 
 static void cs_decoder_fini(cs_decoder *decoder)
@@ -500,6 +519,7 @@ static bool cs_decoder_open(cs_decoder *decoder)
 	CFRelease(attributes);
 	if(status != noErr)
 	{
+		cs_decoder_note(decoder, status, "oturum kurulumu");
 		decoder->session = NULL;
 		cs_decoder_close_session(decoder);
 		return false;
@@ -604,6 +624,10 @@ static bool cs_decoder_feed(cs_decoder *decoder, const uint8_t *data, size_t siz
 	VTDecodeInfoFlags info = 0;
 	status = VTDecompressionSessionDecodeFrame(decoder->session, sample, 0, NULL, &info);
 	CFRelease(sample);
+	if(status != noErr || decoder->decode_failed)
+		cs_decoder_note(decoder, status != noErr ? status : -1, "kare çözme");
+	else
+		cs_decoder_note(decoder, noErr, NULL);
 	if(status == kVTInvalidSessionErr)
 	{
 		/* Uygulama arka plana gidince iOS çözücüyü kapatır: yeniden kurulup anahtar kare istenir. */
@@ -701,7 +725,7 @@ CS_API cs_session *cs_session_start(const char *host, const uint8_t regist_key[0
 	session->log_target.user = user;
 	chiaki_log_init(&session->log, CS_LOG_MASK, cs_log_forward, &session->log_target);
 	cs_throttle_init(&session->throttle, max_fps);
-	cs_decoder_init(&session->decoder, frame, user);
+	cs_decoder_init(&session->decoder, frame, user, &session->log_target);
 
 	ChiakiConnectInfo info;
 	memset(&info, 0, sizeof(info));

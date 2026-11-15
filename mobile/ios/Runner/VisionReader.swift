@@ -67,6 +67,22 @@ final class VisionReader: FrameReader {
       built.onTranslateFailed = { source in
         engine.log(1, "çevrilemedi: \"\(source.replacingOccurrences(of: "\n", with: " "))\"")
       }
+      // Oyun paketi: satır paketteyse motora gidilmez. Bulanık arama yalnız son tam eşleşmenin paketinde (oynanan oyun).
+      if s.packsEnabled && PackTranslation.applies(s.sourceLanguage, s.targetLanguage) {
+        let library = Packs.shared.library
+        // Paketler çeviri kuyruğunda ilk istekten önce açılır (~1 sn; okuma beklemez).
+        self.translating.async {
+          let started = DispatchTime.now().uptimeNanoseconds
+          let infos = library.infos
+          engine.log(2, "oyun paketleri: \(infos.count) paket, \(infos.reduce(0) { $0 + $1.entries }) satır (\((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000) ms)")
+        }
+        built.packLookup = { text in PackTranslation.match(library, text) }
+        built.onPackHit = { source, match in
+          engine.packHits += 1
+          engine.packGame = library.scopeTitle ?? match.packId ?? ""
+          engine.log(2, "paket (\(match.packId ?? "?")): \"\(source.replacingOccurrences(of: "\n", with: " "))\"")
+        }
+      }
       built.onReadText = { text in
         if text != engine.lastRead {
           engine.lastRead = text
