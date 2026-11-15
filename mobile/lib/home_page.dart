@@ -172,12 +172,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   SettingsTab(setup: widget.setup, onSetupChanged: widget.onSetupChanged, active: tab == 2),
                 ],
               ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: bottom + 12,
-                child: Center(child: GlassTabBar(items: tabs, index: tab, onTap: selectTab)),
-              ),
+              // Klavye açıkken sekme çubuğu gizlenir: yazılan kutunun (ör. API anahtarı) üstünü örtüyordu.
+              if (MediaQuery.viewInsetsOf(context).bottom == 0)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottom + 12,
+                  child: Center(child: GlassTabBar(items: tabs, index: tab, onTap: selectTab)),
+                ),
             ],
           ),
         ),
