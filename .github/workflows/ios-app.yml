@@ -12,6 +12,7 @@ on:
       - 'mobile/**'
       - '!mobile/android/**'
       - 'windows/src/GameTranslator.Core/Resources/packs/**'
+      - 'patches/**'
       - 'core/Sources/GameTranslatorCore/Resources/obs-overlay.html'
       - '.github/workflows/ios-app.yml'
   workflow_dispatch:
@@ -63,7 +64,7 @@ jobs:
 
       - name: IPA
         run: |
-          VERSION="$(grep '^version:' mobile/pubspec.yaml | sed 's/version: *//; s/+.*//')"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' mobile/build/ios/iphoneos/Runner.app/Info.plist)"
           mkdir -p out/Payload
           cp -R mobile/build/ios/iphoneos/Runner.app out/Payload/
           rm -rf out/Payload/Runner.app/_CodeSignature out/Payload/Runner.app/embedded.mobileprovision

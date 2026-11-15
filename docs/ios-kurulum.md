@@ -38,7 +38,7 @@ kurar (Feather, Sideloadly, AltStore gibi araçlarla).
   - **Google Gemini:** Yapay zekâ, ücretsiz anahtarla; anahtarı ayarlardaki bağlantıdan al ve "Kaydet ve dene"ye bas.
   - **Cihazda (Apple Çeviri, internetsiz):** iPhone Ayarlar › Uygulamalar › Çeviri › İndirilen Diller'den İngilizce
     ve Türkçe'yi indir.
-- **Oyun paketleri:** GTA V, RDR2, Elden Ring, Mafia: The Old Country ve başkalarının hazır Türkçesi; açık kalması
+- **Oyun paketleri:** GTA V, RDR2, Elden Ring, Mafia: The Old Country, Final Fantasy VII Remake ve Rebirth, Watch Dogs ve başkalarının (12 oyun) hazır Türkçesi; açık kalması
   önerilir. Uygulama hangi oyunu oynadığını kendisi anlar.
 - **Tuş yazılarını gizle:** "SKIP", "RESUME" gibi düğme yazıları çevrilmez; bir sorun çıkarırsa kapat.
 - **Altyazı bölgesi:** Oyunun altyazısının arandığı yer. İki satırlık altyazılar yarım geliyorsa üst kenarı biraz yukarı

@@ -258,7 +258,11 @@ final class GamePack: @unchecked Sendable {
 
   static func decode(_ data: [UInt8], _ name: String) throws -> GamePack { try decode(Data(data), name) }
 
-  private static func decode(json: UnsafeBufferPointer<UInt8>, _ name: String) throws -> GamePack {
+  private static func decode(json raw: UnsafeBufferPointer<UInt8>, _ name: String) throws -> GamePack {
+    // Windows'ta kaydedilen yamaların başında UTF-8 BOM (EF BB BF) olabiliyor (ör. final-fantasy-vii-rebirth.json);
+    // bilgisayar sürümü bunu yok sayıyor. Yalnız iOS'ta: Kotlin'deki karşılığı BOM'lu dosyayı reddeder.
+    let hasBom = raw.count >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF
+    let json = hasBom ? UnsafeBufferPointer(rebasing: raw[3...]) : raw
     let entries = TableBuilder()
     let segments = TableBuilder()
     // İmzaların sırası: dosyadaki bütün geçerli anahtarlar (Türkçesi boş kalanlar da); imzalar yoksa atılır.
@@ -274,8 +278,25 @@ final class GamePack: @unchecked Sendable {
     }
     let parsed = try PackJson.parse(json, { add(entries, $0, $1) }, { add(segments, $0, $1) })
     if !parsed.wrapped {
-      for (key, value) in parsed.rootStrings { add(entries, key, value) }
-      return try build(name, name, entries, TableBuilder())
+      // Düz biçim: anahtarlar paket anahtarı (onaltılık) ya da doğrudan İngilizce satırdır (topluluk yamaları,
+      // ör. patches/final-fantasy-vii-rebirth.json: {"Press any button to continue": "Devam etmek için..."}).
+      // İngilizce anahtar burada paket anahtarına çevrilir. Yalnız iOS'ta: Kotlin yalnız onaltılık anahtarı okur.
+      // İngilizce anahtarlı satırlar ancak en az 10 tane varsa alınır: rastgele bir JSON nesnesi paket sayılmasın.
+      var english: [(Int64, String)] = []
+      for (key, value) in parsed.rootStrings {
+        if PackKey.number(key) != nil {
+          add(entries, key, value)
+        } else if let number = PackKey.keyNumber(key) {
+          english.append((number, value))
+        }
+      }
+      if english.count >= 10 {
+        for (number, value) in english {
+          let text = cleaned(value)
+          if !text.isEmpty { entries.add(number, text) }
+        }
+      }
+      return try build(name, english.count >= 10 ? title(fromFileName: name) : name, entries, TableBuilder())
     }
     if let format = parsed.format, format != 1.0 && format != 2.0 { throw InvalidPackException("Desteklenmeyen paket biçimi") }
     let id = parsed.id.flatMap { $0.isEmpty ? nil : $0 } ?? name
@@ -283,6 +304,16 @@ final class GamePack: @unchecked Sendable {
     let fuzzy = parsed.fuzzy.flatMap { PackFuzzyIndex.decode($0, unsignedUnique(order)) }
     let title = parsed.title.flatMap { $0.isEmpty ? nil : $0 } ?? id
     return GamePack(id, title, entries.build(), segments.build(), fuzzy)
+  }
+
+  /// Dosya adından okunur başlık: "final-fantasy-vii-rebirth" → "Final Fantasy VII Rebirth".
+  static func title(fromFileName name: String) -> String {
+    let roman: Set<String> = ["ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii", "xiii", "xiv", "xv", "xvi"]
+    return name.split(whereSeparator: { $0 == "-" || $0 == "_" }).map { word -> String in
+      let w = String(word)
+      if roman.contains(w.lowercased()) { return w.uppercased() }
+      return w.prefix(1).uppercased() + w.dropFirst()
+    }.joined(separator: " ")
   }
 
   private static func build(_ id: String, _ title: String, _ entries: TableBuilder, _ segments: TableBuilder) throws -> GamePack {

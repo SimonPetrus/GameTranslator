@@ -264,6 +264,7 @@
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
+				1C5EC87BC766560C4ABFD8B8 /* Topluluk yamaları */,
 			);
 			buildRules = (
 			);
@@ -343,6 +344,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		1C5EC87BC766560C4ABFD8B8 /* Topluluk yamaları */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Topluluk yamaları";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Depodaki patches/ klasöründeki topluluk yamaları (bilgisayar sürümüyle aynı biçim, düz JSON) uygulamanın\n# \"packs\" klasörüne sıkıştırılarak eklenir. Uygulamayla zaten gelen pakette olanlar (aynı ad) atlanır.\nset -e\nSRC=\"$SRCROOT/../../patches\"\nPACKS=\"$SRCROOT/../../windows/src/GameTranslator.Core/Resources/packs\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/packs\"\n[ -d \"$SRC\" ] || exit 0\nmkdir -p \"$DEST\"\nfor f in \"$SRC\"/*.json; do\n  [ -f \"$f\" ] || continue\n  n=\"$(basename \"$f\")\"\n  [ -f \"$PACKS/$n.gz\" ] && continue\n  gzip -9 -n -c \"$f\" > \"$DEST/$n.gz\"\ndone\n";
+		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

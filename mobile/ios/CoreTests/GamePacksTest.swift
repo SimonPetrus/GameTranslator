@@ -119,6 +119,16 @@ enum GamePackTest {
       }
       assertThrows(InvalidPackException.self) { try GamePack.decode(data("{\"bad\":\"x\"}"), "x") }
     }
+    /// Topluluk yaması düz biçimi (yalnız iOS): {"English line": "Türkçe"}; BOM'lu da olabilir.
+    TestRun.test("GamePackTest.plainEnglishPatchesAreRead") {
+      var pairs = (1...10).map { "\"Line number \($0) here\": \"Satır \($0)\"" }
+      pairs.append("\"Press any button to continue\": \"Devam etmek için bir tuşa basın\"")
+      let json = "\u{FEFF}{" + pairs.joined(separator: ",") + "}"
+      let pack = try GamePack.decode(Data(json.utf8), "final-fantasy-vii-rebirth")
+      assertEquals("Final Fantasy VII Rebirth", pack.title)
+      let library = GamePackLibrary(bundled: { [(name: "final-fantasy-vii-rebirth.json", read: { Data(json.utf8) })] }, userDirectory: nil)
+      assertEquals("Devam etmek için bir tuşa basın", PackTranslation.match(library, "Press any button to continue")?.text)
+    }
     /// Biçim 2: tam satırlar önce, "segments" (parçalar) yalnız tam satır bulunmazsa (masaüstüyle aynı öncelik).
     TestRun.test("GamePackTest.formatTwoSegmentsAreFoundAfterWholeLines") {
       let down = PackKey.key("Get Down!")!
