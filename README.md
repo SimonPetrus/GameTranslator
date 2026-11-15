@@ -16,7 +16,7 @@
 ## ⚡ v1.5.0 Yenilikleri
 
 * 🚀 **Tam Gizli (Headless) PS5 Remote Play:** Chiaki penceresini ekranda açmaya gerek kalmadan, doğrudan arka planda ultra düşük gecikmeli (38ms) yerel akış ve otomatik eşleştirme.
-* 🧩 **0 ms Hazır Türkçe Oyun Yamaları:** GTA V, Red Dead Redemption 2, Elden Ring, Mafia: The Old Country, Assassin's Creed Shadows, Death Stranding 2 ve CoD Modern Warfare 2019 için gömülü Türkçe oyun yamaları! Oyunu açtığınızda yama kendiliğinden tanınır ve çeviriyi beklemeden anında TV'ye yansıtılır.
+* 🧩 **0 ms Hazır Türkçe Oyun Yamaları:** Final Fantasy VII Remake, Final Fantasy VII Rebirth, GTA V, Red Dead Redemption 2, Elden Ring, Mafia: The Old Country ve Assassin's Creed Shadows için hazır Türkçe oyun yamaları! Oyunu açtığınızda yama kendiliğinden tanınır ve çeviriyi beklemeden anında TV'ye yansıtılır.
 * 🎥 **Genişletilmiş Görüntü Kaynağı (Capture Card & OBS):** PS5 Remote Play'in yanı sıra Elgato / USB Capture Card ve doğrudan Masaüstü / OBS canlı akışını seçebilme.
 * 🌐 **Dinamik Ağ ve Tak-Çalıştır:** Tüm sabit IP'ler ve geliştirici yolları temizlendi; yerel ağdaki PS5 ve TV'ler otomatik taranıp saniyeler içinde bağlanır.
 * 📦 **Modern Velopack Windows Kurulum Sihirbazı:** Tek tıkla otomatik kurulum, masaüstü kısayolu ve arka plan güncelleme desteği.
@@ -184,9 +184,24 @@ PlayStation normalde Remote Play açılınca elinizdeki kumandayı televizyondan
 
 ## 🎮 Topluluk Oyun Yamaları (Community Game Patches)
 
-GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) doğrudan destekler. 
+GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladığı hazır yama dosyalarını (`.json`, `.txt`, `.srt`) ve GamePack formatlarını doğrudan destekler. Uygulama hem `yamalar/` hem de `patches/` klasörlerini otomatik olarak tarar.
 
-* 📁 Hazır oyun yamaları için GitLab depomuzdaki [`patches/`](patches/) klasörünü ziyaret edebilir ve dilediğiniz oyunu indirip tek tıkla uygulamaya yükleyebilirsiniz.
+### 📦 Depoda Hazır Bulunan Yamalar (12 Oyun - 629.000+ Replik):
+* **Grand Theft Auto V:** `yamalar/gta-v.json` (190.566 satır - TechnoGame + Claude Haiku)
+* **Red Dead Redemption 2:** `yamalar/red-dead-redemption-2.json` (195.430 satır - Tam Oyun)
+* **Call of Duty: Modern Warfare (2019):** `yamalar/call-of-duty-modern-warfare-2019.json` (51.147 satır)
+* **Assassin's Creed Shadows:** `yamalar/assassins-creed-shadows.json` (39.615 satır)
+* **Elden Ring + Shadow of the Erdtree:** `yamalar/elden-ring.json` (37.951 satır)
+* **Final Fantasy VII Rebirth:** `yamalar/final-fantasy-vii-rebirth.json` (33.238 satır)
+* **Watch Dogs:** `yamalar/watch-dogs.json` (25.768 satır)
+* **Death Stranding 2: On the Beach:** `yamalar/death-stranding-2.json` (23.132 satır)
+* **Mafia: The Old Country:** `yamalar/mafia-the-old-country.json` (18.064 satır)
+* **Final Fantasy VII Remake:** `yamalar/final-fantasy-vii-remake.json` (5.758 satır + Fuzzy İndeks)
+* **Marvel's Spider-Man 2:** `yamalar/marvels-spider-man-2.json` (2.349 satır)
+* **Death Stranding Director's Cut:** `yamalar/death-stranding-directors-cut.json` (1.334 satır)
+
+* 📁 Hazır oyun yamaları için proje ana dizinindeki [`yamalar/`](yamalar/) veya [`patches/`](patches/) klasörlerini inceleyebilirsiniz.
+* 🌐 Yamaları bağımsız olarak takip etmek veya indirmek için: **[GitLab Yamalar Deposu](https://gitlab.com/sefflex/yamalar)**
 * 🛠️ Kendi yama dökümlerinizi GameTranslator formatına dönüştürmek için [`scripts/patch_converter.py`](scripts/patch_converter.py) aracını kullanabilirsiniz.
 
 ---
@@ -195,15 +210,29 @@ GameTranslator, fan çeviri gruplarının veya topluluk üyelerinin hazırladı�
 
 ```text
 GameTranslate/
+├── yamalar/                        # 🎮 Hazır Türkçe Oyun Yamaları (12 Oyun, 629.000+ Replik - 0ms Eşleme)
+│   ├── README.md                   # Yama kataloğu ve detaylı rehber
+│   ├── gta-v.json                  # Grand Theft Auto V (190k replik)
+│   ├── red-dead-redemption-2.json  # Red Dead Redemption 2 (195k replik)
+│   ├── elden-ring.json             # Elden Ring + DLC (38k replik)
+│   ├── assassins-creed-shadows.json# Assassin's Creed Shadows (39k replik)
+│   ├── call-of-duty-modern-warfare-2019.json # CoD MW 2019 (51k replik)
+│   ├── final-fantasy-vii-rebirth.json # FF7 Rebirth (33k replik)
+│   ├── final-fantasy-vii-remake.json  # FF7 Remake (5.7k replik)
+│   ├── watch-dogs.json             # Watch Dogs (25k replik)
+│   ├── death-stranding-2.json      # Death Stranding 2 (23k replik)
+│   ├── mafia-the-old-country.json  # Mafia: The Old Country (18k replik)
+│   ├── marvels-spider-man-2.json   # Marvel's Spider-Man 2 (2.3k replik)
+│   └── death-stranding-directors-cut.json # Death Stranding Director's Cut (1.3k replik)
+│
+├── patches/                        # 🎮 Topluluk Oyun Yamaları Deposu (0ms Hazır Türkçe Altyazılar)
+│   └── README.md                   # Yama ekleme ve katkı rehberi
+│
 ├── mac/                            # 🍏 macOS Yerel Uygulaması (SwiftUI, Apple Vision OCR, NPU)
 │   ├── NativeApp.swift             # Ana masaüstü arayüzü & altyazı motoru
 │   ├── build.sh                    # Tek komutla Apple Developer imzalı derleme aracı
 │   ├── project.yml                 # XcodeGen proje dosyası
 │   └── GameTranslator/             # Varlıklar, ikonlar ve Info.plist
-│
-├── patches/                        # 🎮 Topluluk Oyun Yamaları Deposu (0ms Hazır Türkçe Altyazılar)
-│   ├── README.md                   # Yama ekleme ve katkı rehberi
-│   └── ornek_oyun_yamasi.json      # Örnek topluluk yaması
 │
 ├── windows/                        # 🪟 Windows Yerel Uygulaması (.NET 10, C#, WPF, DirectML)
 │   ├── GameTranslator.Windows.slnx # Visual Studio / Rider Çözümü

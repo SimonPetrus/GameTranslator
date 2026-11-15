@@ -208,7 +208,8 @@ public sealed record PackMatch(string Text, IReadOnlyList<SpokenLine> Spoken);
 /// </summary>
 /// <param name="bundled">Uygulamayla gelen paket dosyaları (ad, içerik); verilmezse bu derlemeye gömülü olanlar.</param>
 /// <param name="userDirectory">Denemecilerin yeni paket bıraktığı klasör.</param>
-public sealed class GamePackLibrary(Func<IEnumerable<(string Name, byte[] Data)>>? bundled, string? userDirectory)
+/// <param name="extraDirectories">Yamalar ve yamaların bulunduğu ek arama klasörleri.</param>
+public sealed class GamePackLibrary(Func<IEnumerable<(string Name, byte[] Data)>>? bundled, string? userDirectory, Func<IEnumerable<string>>? extraDirectories = null)
 {
     /// <param name="BuiltIn">Kullanıcının klasöründen geldiyse false.</param>
     public sealed record Info(string Id, string Title, int Entries, bool BuiltIn);
@@ -462,6 +463,25 @@ public sealed class GamePackLibrary(Func<IEnumerable<(string Name, byte[] Data)>
                 catch (IOException) { continue; }
                 catch (UnauthorizedAccessException) { continue; }
                 Add(Path.GetFileName(file), data, false);
+            }
+        }
+        if (extraDirectories is not null)
+        {
+            foreach (var dir in extraDirectories())
+            {
+                if (!Directory.Exists(dir)) continue;
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(dir).Where(f => IsPackFile(Path.GetFileName(f))).Order(StringComparer.Ordinal))
+                    {
+                        byte[] data;
+                        try { data = File.ReadAllBytes(file); }
+                        catch (IOException) { continue; }
+                        catch (UnauthorizedAccessException) { continue; }
+                        Add(Path.GetFileName(file), data, false);
+                    }
+                }
+                catch { }
             }
         }
         // Önce bütün paketlerin parçaları, sonra tam satırlar: bir oyunun tam satırı başka oyunun parçasına yenilmez.

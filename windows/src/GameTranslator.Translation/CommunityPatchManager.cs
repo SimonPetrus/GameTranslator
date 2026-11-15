@@ -150,7 +150,7 @@ public sealed class CommunityPatchManager
     public CommunityPatchManager()
     {
         PatchesDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GameTranslator", "patches");
-        _packLibrary = new GamePackLibrary(GamePackLibrary.EmbeddedPacks, GamePackLibrary.UserDirectory);
+        _packLibrary = new GamePackLibrary(GamePackLibrary.EmbeddedPacks, GamePackLibrary.UserDirectory, GetPatchSearchDirectories);
         try
         {
             Directory.CreateDirectory(PatchesDirectory);
@@ -173,6 +173,15 @@ public sealed class CommunityPatchManager
             catch { }
         });
     }
+
+    private IEnumerable<string> GetPatchSearchDirectories() =>
+    [
+        PatchesDirectory,
+        Path.Combine(AppContext.BaseDirectory, "patches"),
+        Path.Combine(Directory.GetCurrentDirectory(), "patches"),
+        Path.Combine(AppContext.BaseDirectory, "yamalar"),
+        Path.Combine(Directory.GetCurrentDirectory(), "yamalar"),
+    ];
 
     /// <summary>
     /// UI ve kullanıcı için özet metin: "✅ Desteklenen Oyunlar: GTA V, RDR 2, Elden Ring..."
@@ -246,13 +255,8 @@ public sealed class CommunityPatchManager
             _patches.Clear();
             _packLibrary.Reload();
 
-            // 1. Proje içindeki patches/ klasörü
-            var searchPaths = new List<string>
-            {
-                PatchesDirectory,
-                Path.Combine(AppContext.BaseDirectory, "patches"),
-                Path.Combine(Directory.GetCurrentDirectory(), "patches"),
-            };
+            // 1. Proje içindeki patches/ ve yamalar/ klasörleri
+            var searchPaths = GetPatchSearchDirectories().ToList();
 
             var loadedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -301,7 +305,18 @@ public sealed class CommunityPatchManager
             // Bilinen popüler topluluk yama listesi ve repo raw URL'leri
             var knownRemoteFiles = new[]
             {
-                "patches/dead_island_2.json"
+                "yamalar/assassins-creed-shadows.json",
+                "yamalar/call-of-duty-modern-warfare-2019.json",
+                "yamalar/death-stranding-2.json",
+                "yamalar/death-stranding-directors-cut.json",
+                "yamalar/elden-ring.json",
+                "yamalar/final-fantasy-vii-rebirth.json",
+                "yamalar/final-fantasy-vii-remake.json",
+                "yamalar/gta-v.json",
+                "yamalar/mafia-the-old-country.json",
+                "yamalar/marvels-spider-man-2.json",
+                "yamalar/red-dead-redemption-2.json",
+                "yamalar/watch-dogs.json"
             };
 
             var baseUrls = new[]
@@ -490,6 +505,12 @@ public sealed class CommunityPatchManager
 
             if (root.ValueKind == JsonValueKind.Object)
             {
+                if (root.TryGetProperty("format", out var fmt) && fmt.ValueKind == JsonValueKind.Number)
+                {
+                    // GamePack formatı (format 1 veya 2); _packLibrary tarafından fuzzy indeksleriyle birlikte yüklenir
+                    return null;
+                }
+
                 if (root.TryGetProperty("game", out var g) && g.ValueKind == JsonValueKind.String)
                 {
                     gameName = g.GetString() ?? gameName;
