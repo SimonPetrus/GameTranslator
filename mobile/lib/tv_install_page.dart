@@ -572,6 +572,7 @@ class _TvInstallPageState extends State<TvInstallPage> {
             TextField(
               controller: manualController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: ipAddressFormatters,
               decoration: InputDecoration(hintText: 'ör. 192.168.1.40', errorText: manualError),
               onSubmitted: (_) => useManual(),
             ),

@@ -11,6 +11,7 @@ import 'package:cupertino_ui/cupertino_ui.dart'
         CupertinoPageRoute,
         showCupertinoDialog,
         showCupertinoModalPopup;
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'main.dart';
@@ -787,4 +788,15 @@ class _RingsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RingsPainter old) => old.phase != phase || old.strength != strength;
+}
+
+/// IP adresi alanları için: Türkçe sayı klavyesinde nokta yerine virgül çıkar; yazılan virgül noktaya çevrilir.
+const ipAddressFormatters = <TextInputFormatter>[_CommaToDot()];
+
+class _CommaToDot extends TextInputFormatter {
+  const _CommaToDot();
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) =>
+      newValue.text.contains(',') ? newValue.copyWith(text: newValue.text.replaceAll(',', '.')) : newValue;
 }

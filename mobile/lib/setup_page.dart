@@ -240,6 +240,7 @@ class _SetupPageState extends State<SetupPage> {
                     TextField(
                       controller: hostController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: ipAddressFormatters,
                       onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(labelText: 'PS5 IP adresi', hintText: '192.168.1.20'),
                     )
