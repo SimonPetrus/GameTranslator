@@ -41,7 +41,7 @@ check_binary() {
 	local build
 	build="$(xcrun vtool -show-build "$f" 2>/dev/null || otool -l "$f")"
 	say "$(printf '%s\n' "$build" | grep -E '^[[:space:]]*(platform|minos|sdk) ' | head -3)"
-	printf '%s\n' "$build" | grep -Eq '^[[:space:]]*platform (2|IOS)[[:space:]]*$' || fail "$f platformu iOS değil"
+	grep -Eq '^[[:space:]]*platform (2|IOS)[[:space:]]*$' <<<"$build" || fail "$f platformu iOS değil"
 	local unresolved
 	unresolved="$(xcrun nm -u "$f" | grep -E '^_(chiaki_|curl_|Curl_|event_|evutil_|json_|upnp|UPNP_|strupnp|OPENSSL_|EVP_|SSL_|BIO_|pb_|jerasure_|galois_|gf_|reed_sol_)' || true)"
 	[[ -z "$unresolved" ]] || fail "$f içinde çözülmemiş kütüphane sembolü: $unresolved"
@@ -52,7 +52,12 @@ check_binary() {
 }
 
 check_binary "$DYLIB"
-xcrun nm -gU "$DYLIB" | grep -q ' _gt_ios_linktest_probe$' || fail "dylib gt_ios_linktest_probe dışa açmıyor"
+# (grep -q boruyu erken kapatır; pipefail altında yanlış hata vermesin diye çıktı önce alınır.)
+exports="$(xcrun nm -gU "$DYLIB")"
+grep -q ' _gt_ios_linktest_probe$' <<<"$exports" || fail "dylib gt_ios_linktest_probe dışa açmıyor"
+say "dışa açık: _gt_ios_linktest_probe"
+# CMake iOS'ta çalıştırılabilir dosyayı .app paketi olarak üretir.
+[[ -f "$EXE" ]] || EXE="$BUILD/gt_ios_linktest_exe.app/gt_ios_linktest_exe"
 check_binary "$EXE"
 
 # --- Bağlayıcı haritası ---
@@ -93,7 +98,7 @@ mkdir -p "$(dirname "$STANDALONE")"
 xcrun -sdk iphoneos clang -arch arm64 "-mios-version-min=$IOS_MIN" -dynamiclib \
 	-install_name @rpath/libgt_standalone.dylib \
 	-I"$OUT/include" "$OUT/gt_ios_linktest.c" "$OUT/lib/libgtchiaki_ios.a" \
-	${sys_flags[@]+"${sys_flags[@]}"} -Wl,-undefined,error -o "$STANDALONE"
+	${sys_flags[@]+"${sys_flags[@]}"} -o "$STANDALONE"
 say "## Bağımsız bağlama (yalnız out/include + out/lib/libgtchiaki_ios.a)"
 say '```'
 say "ek bağlayıcı bayrakları: ${sys_flags[*]:-(yok)}"

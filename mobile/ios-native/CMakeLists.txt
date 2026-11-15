@@ -160,13 +160,11 @@ FetchContent_MakeAvailable(libevent)
 add_subdirectory("${CHIAKI_DIR}/lib" chiaki-lib EXCLUDE_FROM_ALL)
 
 # --- Bağlama kanıtı ---
-# 1) dylib: -undefined error (ld64 varsayılanı) ile her sembol çözülmeli.
+# 1) dylib: bağlayıcının varsayılanı "-undefined error"; çözülemeyen tek sembol bağlamayı durdurur.
 add_library(gt_ios_linktest SHARED linktest/gt_ios_linktest.c)
 target_compile_options(gt_ios_linktest PRIVATE -Wall)
 target_link_libraries(gt_ios_linktest PRIVATE chiaki-lib)
-target_link_options(gt_ios_linktest PRIVATE
-	"LINKER:-undefined,error"
-	"LINKER:-map,${CMAKE_BINARY_DIR}/gt_ios_linktest.map")
+target_link_options(gt_ios_linktest PRIVATE "LINKER:-map,${CMAKE_BINARY_DIR}/gt_ios_linktest.map")
 # 2) çalıştırılabilir (main'li); çalıştırılmaz, yalnız bağlanır.
 add_executable(gt_ios_linktest_exe linktest/gt_ios_linktest.c)
 target_compile_definitions(gt_ios_linktest_exe PRIVATE GT_LINKTEST_MAIN)
