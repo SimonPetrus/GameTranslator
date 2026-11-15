@@ -102,9 +102,12 @@ final class SubtitleServer {
     }
   }
 
-  func sendSubtitle(_ text: String, durationMs: Int = 15000, box: TextBox? = nil, replaces: Bool = false) {
+  /// [source]: oyunun altyazısının ekrandaki yeri, [line]: satır yüksekliği (ekran yüksekliğine oranla). TV "cover"
+  /// yerleşiminde bunlarla çeviriyi oyunun altyazısının alanına, onun boyunda sığdırır ve alanı opak bantla örter.
+  func sendSubtitle(_ text: String, durationMs: Int = 15000, box: TextBox? = nil, replaces: Bool = false,
+                    source: TextBox? = nil, line: Double? = nil) {
     let at = Int64(Date().timeIntervalSince1970 * 1000)
-    broadcast(Self.subtitleFrame(text, durationMs: durationMs, box: box, replaces: replaces, at: at))
+    broadcast(Self.subtitleFrame(text, durationMs: durationMs, box: box, replaces: replaces, at: at, source: source, line: line))
   }
 
   func clear() { broadcast(Self.frame("clear", "{}")) }
@@ -150,11 +153,15 @@ final class SubtitleServer {
 
   static func frame(_ name: String, _ json: String) -> String { "event: \(name)\ndata: \(json)\n\n" }
 
-  static func subtitleFrame(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool, at: Int64) -> String {
+  /// Alanlar alfabetik sırada (Windows'taki SortedDictionary gibi); source ve line yalnız verildiyse yazılır.
+  static func subtitleFrame(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool, at: Int64,
+                            source: TextBox? = nil, line: Double? = nil) -> String {
     var json = "{\"at\":\(at)"
     if let box { json += ",\"box\":" + boxJson(box) }
     json += ",\"duration\":\(durationMs)"
+    if let line, line > 0 { json += ",\"line\":" + number(line) }
     if replaces { json += ",\"replace\":true" }
+    if let source { json += ",\"source\":" + boxJson(source) }
     json += ",\"text\":" + jsonString(text) + "}"
     return frame("subtitle", json)
   }

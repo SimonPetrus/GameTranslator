@@ -165,8 +165,90 @@ enum KotlinText {
     return a.count - b.count
   }
 
-  /// Kotlin `lowercase(Locale.ROOT)`: yerelden bağımsız (Türkçedeki noktasız ı sürprizi yok).
-  static func lowercaseRoot(_ s: String) -> String { s.lowercased() }
+  /// Kotlin `lowercase(Locale.ROOT)`: yerelden bağımsız (Türkçedeki noktasız ı sürprizi yok), tam eşleme ("İ" → "i̇").
+  /// Swift'in `lowercased()`'ı bağlama bakmaz; JVM (ve paket betiğindeki Python `str.lower()`) sözcük sonundaki "Σ"yı
+  /// "ς" yapar (Unicode Final_Sigma), o kural burada eklenir.
+  static func lowercaseRoot(_ s: String) -> String {
+    if !s.unicodeScalars.contains(where: { $0.value == 0x03A3 }) { return s.lowercased() }
+    let scalars = Array(s.unicodeScalars)
+    var out = String.UnicodeScalarView()
+    for (i, scalar) in scalars.enumerated() {
+      if scalar.value == 0x03A3 {
+        out.append(isFinalSigma(scalars, i) ? "\u{03C2}" : "\u{03C3}")
+      } else {
+        out.append(contentsOf: scalar.properties.lowercaseMapping.unicodeScalars)
+      }
+    }
+    return String(out)
+  }
+
+  /// Unicode Final_Sigma: önünde (büyük/küçük harfe duyarsızları atlayarak) harfli karakter var, ardında yok.
+  private static func isFinalSigma(_ s: [Unicode.Scalar], _ index: Int) -> Bool {
+    var i = index - 1
+    while i >= 0 && s[i].properties.isCaseIgnorable { i -= 1 }
+    if i < 0 || !s[i].properties.isCased { return false }
+    var j = index + 1
+    while j < s.count && s[j].properties.isCaseIgnorable { j += 1 }
+    return j >= s.count || !s[j].properties.isCased
+  }
+
+  /// Kotlin String eşitliği (UTF-16 birimleri birebir); Swift `==` kanonik eşdeğerliğe bakar.
+  static func same(_ a: String?, _ b: String?) -> Bool {
+    guard let a = a, let b = b else { return a == nil && b == nil }
+    return a.utf16.elementsEqual(b.utf16)
+  }
+
+  // MARK: Kod noktası (Int) sürümleri: java.lang.Character'in int alan yöntemleri.
+
+  @inline(__always) static func codePointProperties(_ cp: UInt32) -> Unicode.Scalar.Properties? {
+    Unicode.Scalar(cp)?.properties
+  }
+
+  /// Character.getType(int); vekil kod noktası Cs.
+  static func category(codePoint cp: UInt32) -> Unicode.GeneralCategory {
+    codePointProperties(cp)?.generalCategory ?? .surrogate
+  }
+
+  /// Character.isLetter(int).
+  static func isLetter(codePoint cp: UInt32) -> Bool {
+    switch category(codePoint: cp) {
+    case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: return true
+    default: return false
+    }
+  }
+
+  /// Character.isDigit(int): Nd.
+  static func isDigit(codePoint cp: UInt32) -> Bool { category(codePoint: cp) == .decimalNumber }
+
+  /// Character.isUpperCase(int).
+  static func isUpperCase(codePoint cp: UInt32) -> Bool { codePointProperties(cp)?.isUppercase ?? false }
+
+  /// Character.isLowerCase(int).
+  static func isLowerCase(codePoint cp: UInt32) -> Bool { codePointProperties(cp)?.isLowercase ?? false }
+
+  /// Character.isWhitespace(int) || Character.isSpaceChar(int).
+  static func isWhitespace(codePoint cp: UInt32) -> Bool {
+    switch cp {
+    case 0x09...0x0D, 0x1C...0x1F: return true
+    default:
+      switch category(codePoint: cp) {
+      case .spaceSeparator, .lineSeparator, .paragraphSeparator: return true
+      default: return false
+      }
+    }
+  }
+
+  /// String.codePoints(): Swift dizesinde tek başına vekil olmaz; kod noktaları Unicode skalerleridir.
+  @inline(__always) static func codePoints(_ s: String) -> [UInt32] { s.unicodeScalars.map { $0.value } }
+
+  /// `String(int[] codePoints, offset, count)`.
+  static func string(codePoints: ArraySlice<UInt32>) -> String {
+    var view = String.UnicodeScalarView()
+    for cp in codePoints { if let scalar = Unicode.Scalar(cp) { view.append(scalar) } }
+    return String(view)
+  }
+
+  static func string(codePoints: [UInt32]) -> String { string(codePoints: codePoints[...]) }
 
   static let turkish = Locale(identifier: "tr_TR")
 

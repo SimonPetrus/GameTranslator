@@ -18,8 +18,12 @@ final class VisionReader: FrameReader {
   private var lastLines: [String] = []
   private var lastBox: TextBox?
   private var ocrTimes: [Int] = []
+  private let sink: ServerSink
 
-  init(engine: Engine) { self.engine = engine }
+  init(engine: Engine) {
+    self.engine = engine
+    sink = ServerSink(server: engine.server)
+  }
 
   // MARK: - FrameReader
 
@@ -48,7 +52,7 @@ final class VisionReader: FrameReader {
       // Konuşmacı adı ("ENZO: ", "MINE GUARD: ") çevrilmez: satırdan satıra tutarsız çıkıyordu.
       let translator = TimedTranslator(PrefixTranslator(SpeakerNameTranslator(withGlossary)), engine: self.engine)
       let engine = self.engine
-      let built = SubtitlePipeline(translator: translator, sink: ServerSink(server: engine.server), translateQueue: self.translating)
+      let built = SubtitlePipeline(translator: translator, sink: self.sink, translateQueue: self.translating)
       built.onPair = { source, translation in
         engine.lastSource = source
         engine.lastTranslation = translation
@@ -135,6 +139,11 @@ final class VisionReader: FrameReader {
       return Piece(text: text, left: left, top: top, right: right, bottom: bottom)
     }
     let (lines, box) = Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight)
+    if let box, !pieces.isEmpty {
+      // Satır yüksekliği: okunan satırların ortanca yüksekliği, ekran yüksekliğine oranla.
+      let heights = pieces.map { $0.bottom - $0.top }.sorted()
+      sink.remember(box, line: Double(heights[heights.count / 2]) / Double(fullHeight))
+    }
     lastLines = lines
     lastBox = box
     pipeline.onRead(lines, box)
@@ -204,12 +213,32 @@ private final class TimedTranslator: TextTranslator {
   }
 }
 
-/// Çevirinin gittiği yer: TV sunucusu.
+/// Çevirinin gittiği yer: TV sunucusu. Okunan yazının yeri ve satır yüksekliği de gider: TV "cover" yerleşiminde
+/// çeviriyi oyunun altyazısının alanına, onun boyunda sığdırır ve alanı opak bantla örter.
 private final class ServerSink: SubtitleSink {
   private let server: SubtitleServer
+  private let lock = NSLock()
+  /// Son okumaların kutusu → satır yüksekliği (hat aynı kutuyu çeviriyle birlikte geri verir).
+  private var lines: [(TextBox, Double)] = []
+
   init(server: SubtitleServer) { self.server = server }
-  func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool) {
-    server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces)
+
+  func remember(_ box: TextBox, line: Double) {
+    lock.lock(); defer { lock.unlock() }
+    if let last = lines.last, last.0 == box { return }
+    lines.append((box, line))
+    if lines.count > 32 { lines.removeFirst(lines.count - 32) }
   }
+
+  func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool) {
+    var line: Double?
+    if let box {
+      lock.lock()
+      line = lines.last(where: { $0.0 == box })?.1
+      lock.unlock()
+    }
+    server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces, source: box, line: line)
+  }
+
   func clear() { server.clear() }
 }
