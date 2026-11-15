@@ -17,6 +17,7 @@ final class VisionReader: FrameReader {
   private var language = "en"
   private var lastLines: [String] = []
   private var lastBox: TextBox?
+  private var ocrTimes: [Int] = []
 
   init(engine: Engine) { self.engine = engine }
 
@@ -44,7 +45,7 @@ final class VisionReader: FrameReader {
       if !glossary.isEmpty { self.engine.log(2, "terim sözlüğü: \(glossary.count) terim") }
       let withGlossary: TextTranslator = glossary.isEmpty ? online : GlossaryTranslator(glossary, online)
       // Baştaki konuşmacı işareti ("- ", ">>") motorlara gönderilmez; hangi motor çevirirse çevirsin korunur.
-      let translator = PrefixTranslator(withGlossary)
+      let translator = TimedTranslator(PrefixTranslator(withGlossary), engine: self.engine)
       let engine = self.engine
       let built = SubtitlePipeline(translator: translator, sink: ServerSink(server: engine.server), translateQueue: self.translating)
       built.onPair = { source, translation in
@@ -112,7 +113,14 @@ final class VisionReader: FrameReader {
     request.usesLanguageCorrection = true
     request.recognitionLanguages = [language]
     do {
+      let started = DispatchTime.now().uptimeNanoseconds
       try VNImageRequestHandler(cgImage: crop, options: [:]).perform([request])
+      ocrTimes.append(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
+      if ocrTimes.count >= 25 {
+        let sorted = ocrTimes.sorted()
+        engine.log(2, "ölçüm: yazı tanıma \(w)x\(h) ortanca \(sorted[sorted.count / 2]) ms, en çok \(sorted.last!) ms")
+        ocrTimes.removeAll()
+      }
     } catch {
       engine.log(1, "yazı tanıma başarısız: \(error.localizedDescription)")
       return
@@ -176,6 +184,22 @@ final class VisionReader: FrameReader {
       let r = Int(pixels[i * 4]), g = Int(pixels[i * 4 + 1]), b = Int(pixels[i * 4 + 2])
       return UInt8((r * 3 + g * 6 + b) / 10)
     }
+  }
+}
+
+/// Çevirinin süresini günlüğe yazar (gecikmeyi ölçmek için).
+private final class TimedTranslator: TextTranslator {
+  private let inner: TextTranslator
+  private unowned let engine: Engine
+  init(_ inner: TextTranslator, engine: Engine) {
+    self.inner = inner
+    self.engine = engine
+  }
+  func translate(_ text: String) -> String? {
+    let started = DispatchTime.now().uptimeNanoseconds
+    let result = inner.translate(text)
+    engine.log(2, "ölçüm: çeviri \((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000) ms")
+    return result
   }
 }
 

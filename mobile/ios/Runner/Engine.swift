@@ -7,8 +7,10 @@ import UIKit
 final class Engine: Native.Listener {
   static let shared = Engine()
 
-  /// Yazı tanıma için saniyede en çok bu kadar kare çözülüp verilir.
-  static let maxFps = 5
+  /// Yazı tanıma için saniyede en çok bu kadar kare verilir. Android'de 5; iPhone'da Vision bölgeyi ~70–100 ms'de
+  /// okuyor ve çeviri ~80 ms sürüyor, gecikmenin çoğu kareler arası beklemeydi (kararlılık iki kare ister).
+  /// Bölge değişmedikçe okuma yeniden kullanıldığı için yük yalnız altyazı değişirken artar.
+  static let maxFps = 10
   private static let logLimit = 300
 
   /// idle, starting, waking, connecting, streaming, reconnecting, stopping, failed
