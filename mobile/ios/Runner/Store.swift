@@ -77,7 +77,7 @@ struct Settings: Equatable {
       "style": [
         "fontSize": style.fontSize, "bottomPercent": style.bottomPercent, "placement": style.placement,
         "background": style.background, "bold": style.bold, "textColor": style.textColor,
-        "displayMode": style.displayMode, "stackPrevious": style.stackPrevious,
+        "displayMode": style.displayMode, "stackPrevious": style.stackPrevious, "speakerColor": style.speakerColor,
       ] as [String: Any],
     ]
   }
@@ -120,7 +120,8 @@ struct Settings: Equatable {
       bold: bool(s?["bold"], ds.bold),
       textColor: string(s?["textColor"], ds.textColor),
       displayMode: string(s?["displayMode"], ds.displayMode),
-      stackPrevious: bool(s?["stackPrevious"], ds.stackPrevious))
+      stackPrevious: bool(s?["stackPrevious"], ds.stackPrevious),
+      speakerColor: bool(s?["speakerColor"], ds.speakerColor))
     return out
   }
 

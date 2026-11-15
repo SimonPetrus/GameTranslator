@@ -548,6 +548,17 @@ class _SettingsTabState extends State<SettingsTab> {
               title: 'Kalın yazı',
               trailing: CupertinoSwitch(value: style['bold'] as bool, activeTrackColor: Tokens.success, onChanged: (value) => setStyle('bold', value)),
             ),
+            // Bilgisayar sürümündeki "Konuşmacı adı renkli"; TV uygulaması adı ("ENZO:") ayrı renkte yazar.
+            if (Platform.isIOS)
+              Cell(
+                title: 'Konuşmacı adı renkli',
+                subtitle: 'Konuşanın adı (ör. ENZO:) sarı, sarı yazıda açık mavi',
+                trailing: CupertinoSwitch(
+                  value: style['speakerColor'] as bool? ?? false,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => setStyle('speakerColor', value),
+                ),
+              ),
             Cell(title: 'TV\'ye Deneme Altyazısı Gönder', titleColor: Tokens.accent, onTap: sendTest),
           ],
         ),

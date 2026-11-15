@@ -23,6 +23,8 @@ struct SubtitleStyle: Equatable {
   /// inApp, overlay (yalnız Android TV uygulaması kullanır)
   var displayMode = "inApp"
   var stackPrevious = true
+  /// Konuşmacı adı ("ENZO:") renkli; bilgisayar sürümündeki "Konuşmacı adı renkli" (yalnız iPhone ayarlarında).
+  var speakerColor = false
 }
 
 /// TV uygulamasının bağlandığı yerel Server-Sent Events sunucusu. `GET /events` akışında `subtitle`, `clear` ve
@@ -195,7 +197,14 @@ final class SubtitleServer {
     frame("style",
           "{\"background\":\(min(100, max(0, s.background))),\"bold\":\(s.bold),\"bottomPercent\":\(s.bottomPercent),"
             + "\"displayMode\":\(jsonString(s.displayMode)),\"fontSize\":\(s.fontSize),\"placement\":\(jsonString(s.placement)),"
+            + "\"speakerColor\":\(jsonString(speakerColorValue(s))),"
             + "\"stackPrevious\":\(s.stackPrevious),\"textColor\":\(jsonString(s.textColor))}")
+  }
+
+  /// Bilgisayar sürümüyle aynı: kapalıysa "", yazı sarıysa ad açık mavi, değilse sarı.
+  static func speakerColorValue(_ s: SubtitleStyle) -> String {
+    guard s.speakerColor else { return "" }
+    return s.textColor == "yellow" ? "#64D2FF" : "#FFD60A"
   }
 
   // MARK: - Dinleme
