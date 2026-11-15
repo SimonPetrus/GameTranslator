@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>GameTranslator, aynı Wi-Fi ağındaki PS5 ve TV ile konuşmak için yerel ağı kullanır.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
