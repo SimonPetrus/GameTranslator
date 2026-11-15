@@ -69,6 +69,43 @@ class _SettingsTabState extends State<SettingsTab> {
   final deepLController = TextEditingController();
   final geminiController = TextEditingController();
   bool checkingGemini = false;
+  bool updatingPatches = false;
+  (bool, String)? patchesResult;
+
+  /// Bilgisayar sürümündeki "Oyun" seçimi: en üstte Otomatik, altında Türkçe yaması olan oyunlar.
+  Future<void> pickGame() async {
+    final games = await Bridge.packList();
+    if (!mounted) return;
+    final options = <String, String>{'': 'Otomatik (oyunu kendisi bulur)'};
+    for (final game in games) {
+      options[game.id] = '${game.title} · ${game.entries} satır';
+    }
+    final picked = await showApplePicker(context, title: 'Oyun', options: options, selected: settings?.packChoice ?? '');
+    if (picked != null) change((s) => s.json['packChoice'] = picked);
+    if (games.isNotEmpty) setState(() => gameTitles = {for (final game in games) game.id: game.title});
+  }
+
+  Map<String, String> gameTitles = {};
+
+  /// Paket listesi henüz alınmadıysa kimlikten okunur ad: "mafia-the-old-country" → "Mafia The Old Country".
+  static String titleFromId(String id) => id
+      .split(RegExp('[-_]'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => RegExp(r'^(ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii)$').hasMatch(w) ? w.toUpperCase() : w[0].toUpperCase() + w.substring(1))
+      .join(' ');
+
+  Future<void> updatePatches() async {
+    setState(() {
+      updatingPatches = true;
+      patchesResult = null;
+    });
+    final result = await Bridge.updatePatches();
+    if (!mounted) return;
+    setState(() {
+      updatingPatches = false;
+      patchesResult = result;
+    });
+  }
   (bool, String)? geminiResult;
 
   /// Anahtarı hemen kaydeder ve bir deneme çevirisiyle sınar.
@@ -297,6 +334,23 @@ class _SettingsTabState extends State<SettingsTab> {
                   activeTrackColor: Tokens.success,
                   onChanged: (value) => change((s) => s.json['packsEnabled'] = value),
                 ),
+              ),
+            if (Platform.isIOS && s.packsEnabled && s.sourceLanguage == 'en' && s.targetLanguage == 'tr')
+              Cell(
+                icon: CupertinoIcons.gamecontroller_fill,
+                iconColor: Tokens.accent,
+                title: 'Oyun',
+                value: s.packChoice.isEmpty ? 'Otomatik' : (gameTitles[s.packChoice] ?? titleFromId(s.packChoice)),
+                chevron: true,
+                onTap: pickGame,
+              ),
+            if (Platform.isIOS && s.packsEnabled && s.sourceLanguage == 'en' && s.targetLanguage == 'tr')
+              Cell(
+                icon: CupertinoIcons.arrow_down_circle_fill,
+                iconColor: Tokens.success,
+                title: updatingPatches ? 'Yamalar denetleniyor…' : 'Topluluk yamalarını güncelle',
+                subtitle: patchesResult?.$2 ?? 'Yeni ve güncellenen oyun yamalarını indirir (haftada bir kendiliğinden)',
+                onTap: updatingPatches ? null : updatePatches,
               ),
             if (Platform.isIOS)
               Cell(

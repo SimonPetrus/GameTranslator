@@ -13,6 +13,7 @@
 		1EBE6FC1F1E7AFD863F94AAC /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EC5BAE0B64481896FC6DA33 /* Engine.swift */; };
 		22142CCC970E93D325186CAA /* Channels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47964395D1CC1DE18DC30B9C /* Channels.swift */; };
 		23495909864DF45A724757F4 /* Glossary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B569C0A1F2FF3AD97C8C020 /* Glossary.swift */; };
+		258D764A3BA16BA428227C06 /* CommunityPatches.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49FFD04407055D8838CE7C5 /* CommunityPatches.swift */; };
 		27B485B9449541180F60CFD0 /* SpeakerName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B70FF1C5AB4D576A8DF11A /* SpeakerName.swift */; };
 		2F375C9B1D24C831D8D6D5F9 /* GamePacks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -113,6 +114,7 @@
 		B8660D70772C73423AED9503 /* packs */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = packs; path = ../../windows/src/GameTranslator.Core/Resources/packs; sourceTree = SOURCE_ROOT; };
 		BBF80853CA8AC14BDE6191D0 /* ButtonHints.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ButtonHints.swift; sourceTree = "<group>"; };
 		CCE460BE59646CAB2561F841 /* GameTranslator.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = GameTranslator.xcconfig; sourceTree = "<group>"; };
+		D49FFD04407055D8838CE7C5 /* CommunityPatches.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CommunityPatches.swift; sourceTree = "<group>"; };
 		DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */ = {isa = PBXFileReference; includeInIndex = 1; name = "obs-overlay.html"; path = "../../core/Sources/GameTranslatorCore/Resources/obs-overlay.html"; sourceTree = SOURCE_ROOT; };
 		DC9810D431EF03C829F82AEA /* OcrNoise.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OcrNoise.swift; sourceTree = "<group>"; };
 		E21EDF6F214E264E06FE19AD /* Store.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
@@ -230,6 +232,7 @@
 				A67E8D5159FE7C82481D432C /* Packs.swift */,
 				B8660D70772C73423AED9503 /* packs */,
 				E8FACE6924BA544DE9B6B11B /* GeminiTranslator.swift */,
+				D49FFD04407055D8838CE7C5 /* CommunityPatches.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -361,7 +364,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Depodaki patches/ klasöründeki topluluk yamaları (bilgisayar sürümüyle aynı biçim, düz JSON) uygulamanın\n# \"packs\" klasörüne sıkıştırılarak eklenir. Uygulamayla zaten gelen pakette olanlar (aynı ad) atlanır.\nset -e\nSRC=\"$SRCROOT/../../patches\"\nPACKS=\"$SRCROOT/../../windows/src/GameTranslator.Core/Resources/packs\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/packs\"\n[ -d \"$SRC\" ] || exit 0\nmkdir -p \"$DEST\"\nfor f in \"$SRC\"/*.json; do\n  [ -f \"$f\" ] || continue\n  n=\"$(basename \"$f\")\"\n  [ -f \"$PACKS/$n.gz\" ] && continue\n  gzip -9 -n -c \"$f\" > \"$DEST/$n.gz\"\ndone\n";
+			shellScript = "/bin/sh \"$SRCROOT/scripts/bundle-patches.sh\"\n";
 		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -438,6 +441,7 @@
 				DAF2EB6287AA3A5A9ABB5ABE /* Packs.swift in Sources */,
 				80CE5D4E018A7CCB0B1D2D8B /* GeminiTranslator.swift in Sources */,
 				88D36BB321238532E2F6F0FB /* ButtonHints.swift in Sources */,
+				258D764A3BA16BA428227C06 /* CommunityPatches.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

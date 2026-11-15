@@ -77,6 +77,7 @@ final class VisionReader: FrameReader {
       // Oyun paketi: satır paketteyse motora gidilmez. Bulanık arama yalnız son tam eşleşmenin paketinde (oynanan oyun).
       if s.packsEnabled && PackTranslation.applies(s.sourceLanguage, s.targetLanguage) {
         let library = Packs.shared.library
+        library.setPinned(s.packChoice.isEmpty ? nil : s.packChoice)
         // Paketler çeviri kuyruğunda ilk istekten önce açılır (~1 sn; okuma beklemez).
         self.translating.async {
           let started = DispatchTime.now().uptimeNanoseconds

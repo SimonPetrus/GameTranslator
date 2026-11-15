@@ -23,7 +23,9 @@ final class Packs {
 
   lazy var library: GamePackLibrary = {
     let bundleDir = self.bundleDir
-    return GamePackLibrary(bundled: { bundleDir.map { GamePackLibrary.files(in: $0) } ?? [] }, userDirectory: store.folder)
+    // Topluluk yamaları (GitLab patches/) en son okunur: aynı oyunun gömülü paketinin yerine geçer.
+    return GamePackLibrary(bundled: { bundleDir.map { GamePackLibrary.files(in: $0) } ?? [] }, userDirectory: store.folder,
+                           extraDirectories: [CommunityPatches.shared.folder])
   }()
 
   /// Haftada bir sunucudaki yeni ve güncellenen paketleri indirir (SHA-256 doğrulanır; uygulamada olanlar inmez).
@@ -42,6 +44,26 @@ final class Packs {
       } catch {
         log(1, "paket sunucusuna ulaşılamadı: \(error)")
       }
+      // Topluluk yamaları: haftada bir kendiliğinden.
+      if let result = try? CommunityPatches.shared.update(force: false, log: log), result.changed { self.library.reload() }
+    }
+  }
+
+  /// Ayarlardaki "Topluluk yamalarını güncelle": hemen kontrol eder (bloklar). Kullanıcıya gösterilecek metni döner.
+  func updateCommunityPatches(log: @escaping (Int, String) -> Void) -> (Bool, String) {
+    do {
+      guard let result = try CommunityPatches.shared.update(force: true, log: log) else {
+        return (true, "Güncelleme zaten sürüyor.")
+      }
+      if result.changed { library.reload() }
+      var parts: [String] = []
+      if !result.added.isEmpty { parts.append("\(result.added.count) yeni") }
+      if !result.updated.isEmpty { parts.append("\(result.updated.count) güncellendi") }
+      if !result.removed.isEmpty { parts.append("\(result.removed.count) kaldırıldı") }
+      if !result.failed.isEmpty { return (false, "\(result.failed.count) yama inemedi. İnternet bağlantını kontrol edip yeniden dene.") }
+      return (true, parts.isEmpty ? "Yamalar güncel." : "Yamalar: " + parts.joined(separator: ", ") + ".")
+    } catch {
+      return (false, "Yama listesine ulaşılamadı. İnternet bağlantını kontrol et.")
     }
   }
 }

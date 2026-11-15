@@ -40,6 +40,9 @@ kurar (Feather, Sideloadly, AltStore gibi araçlarla).
     ve Türkçe'yi indir.
 - **Oyun paketleri:** GTA V, RDR2, Elden Ring, Mafia: The Old Country, Final Fantasy VII Remake ve Rebirth, Watch Dogs ve başkalarının (12 oyun) hazır Türkçesi; açık kalması
   önerilir. Uygulama hangi oyunu oynadığını kendisi anlar.
+- **Oyun:** "Otomatik" (önerilen) ya da listeden oyunu seç; seçilen oyunda yalnız onun yaması kullanılır.
+- **Topluluk yamalarını güncelle:** Yayıncının GitLab'deki `patches/` klasörüne eklenen yeni ve güncellenen yamaları
+  indirir; uygulamayı yeniden kurmak gerekmez. Haftada bir kendiliğinden de bakar.
 - **Tuş yazılarını gizle:** "SKIP", "RESUME" gibi düğme yazıları çevrilmez; bir sorun çıkarırsa kapat.
 - **Altyazı bölgesi:** Oyunun altyazısının arandığı yer. İki satırlık altyazılar yarım geliyorsa üst kenarı biraz yukarı
   çek.

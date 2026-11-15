@@ -372,6 +372,9 @@ final class GamePackLibrary: @unchecked Sendable {
 
   private let bundled: (() -> [Bundled])?
   private let userDirectory: URL?
+  /// Ek klasörler (ör. GitLab'den inen topluluk yamaları); sırayla, userDirectory'den sonra okunur, aynı kimlikli
+  /// paketin yerine geçer. Bilgisayar sürümündeki extraDirectories karşılığı.
+  private let extraDirectories: [URL]
 
   private let lock = NSRecursiveLock()
   private var loaded = false
@@ -385,9 +388,10 @@ final class GamePackLibrary: @unchecked Sendable {
 
   /// [bundled]: uygulamayla gelen paketlerin adları ve okuyucuları (iOS: uygulama paketindeki dosyalar);
   /// [userDirectory]: indirilen paketlerin klasörü (PackStore.folder).
-  init(bundled: (() -> [Bundled])?, userDirectory: URL?) {
+  init(bundled: (() -> [Bundled])?, userDirectory: URL?, extraDirectories: [URL] = []) {
     self.bundled = bundled
     self.userDirectory = userDirectory
+    self.extraDirectories = extraDirectories
   }
 
   /// Uygulama paketindeki bir klasörün (ör. `Bundle.main.url(forResource: "packs", withExtension: nil)`) dosyaları.
@@ -400,10 +404,27 @@ final class GamePackLibrary: @unchecked Sendable {
     }
   }
 
+  /// Elle seçilen oyun (bilgisayar sürümündeki "Oyun" seçimi): verildiyse yalnız o paket kullanılır ve bulanık arama ilk
+  /// satırdan itibaren onda yapılır. Yalnız iOS'ta (henüz); Kotlin'de karşılığı yok.
+  private var _pinned: String?
+
   private var disabled: Set<String> {
     disabledLock.lock()
     defer { disabledLock.unlock() }
     return _disabled
+  }
+
+  private var pinned: String? {
+    disabledLock.lock()
+    defer { disabledLock.unlock() }
+    return _pinned
+  }
+
+  /// Oyunu elle seçer; nil: otomatik (oynanan oyun tam eşleşmelerden bulunur).
+  func setPinned(_ id: String?) {
+    disabledLock.lock()
+    _pinned = id
+    disabledLock.unlock()
   }
 
   var infos: [Info] {
@@ -437,7 +458,13 @@ final class GamePackLibrary: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     loadIfNeeded()
-    return (packs, generation, scope)
+    return (packs, generation, pinnedIndex() ?? scope)
+  }
+
+  /// Kilit altında: elle seçilen oyunun [packs] sırası; seçim yoksa ya da paket yoksa nil.
+  private func pinnedIndex() -> Int? {
+    guard let id = pinned else { return nil }
+    return packs.firstIndex { $0.pack.id == id }
   }
 
   /// Satırın tamamı için paketteki Türkçe ve paketin kimliği (parçalara bölme yok; bkz. [PackLookup]).
@@ -466,7 +493,7 @@ final class GamePackLibrary: @unchecked Sendable {
   var searchScope: String? {
     lock.lock()
     defer { lock.unlock() }
-    guard let scope = scope, scope < packs.count else { return nil }
+    guard let scope = pinnedIndex() ?? scope, scope < packs.count else { return nil }
     return packs[scope].pack.id
   }
 
@@ -474,7 +501,7 @@ final class GamePackLibrary: @unchecked Sendable {
   var scopeTitle: String? {
     lock.lock()
     defer { lock.unlock() }
-    guard let scope = scope, scope < packs.count else { return nil }
+    guard let scope = pinnedIndex() ?? scope, scope < packs.count else { return nil }
     return packs[scope].pack.title
   }
 
@@ -505,7 +532,11 @@ final class GamePackLibrary: @unchecked Sendable {
 
   /// Anahtarın Türkçesi: açık paketlerde sondan başa tam satır, yoksa parça (masaüstünün birleşik sözlüğüyle aynı).
   private func lookup(_ current: [(pack: GamePack, builtIn: Bool)], _ number: Int64) -> PackMatch? {
-    let off = disabled
+    var off = disabled
+    // Oyun elle seçildiyse diğer oyunların satırları kullanılmaz (seçilen paket hâlâ varsa).
+    if let id = pinned, current.contains(where: { $0.pack.id == id }) {
+      off.formUnion(current.map(\.pack.id).filter { $0 != id })
+    }
     for entry in current.reversed() where !off.contains(entry.pack.id) {
       if let text = entry.pack[number] { return PackMatch(text: text, packId: entry.pack.id) }
     }
@@ -543,7 +574,7 @@ final class GamePackLibrary: @unchecked Sendable {
         }
       }
     }
-    if let directory = userDirectory {
+    for directory in [userDirectory].compactMap({ $0 }) + extraDirectories {
       let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
       let files = names.filter { name in
         var isDirectory: ObjCBool = false

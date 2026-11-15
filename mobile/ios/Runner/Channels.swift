@@ -95,6 +95,19 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
       engine.sendTestSubtitle()
       result(nil)
     case "logs": result(engine.logLines())
+    case "packList":
+      // Oyun seçimi listesi: yüklü paketler (gömülü + inen); ilk çağrıda paketler açılır (~1 sn).
+      background.async {
+        let list = Packs.shared.library.infos
+          .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+          .map { ["id": $0.id, "title": $0.title, "entries": $0.entries] as [String: Any] }
+        DispatchQueue.main.async { result(list) }
+      }
+    case "updatePatches":
+      background.async {
+        let (ok, detail) = Packs.shared.updateCommunityPatches { level, text in engine.log(level, text) }
+        DispatchQueue.main.async { result(["ok": ok, "detail": detail]) }
+      }
     case "checkGemini":
       let key = call.arguments as? String ?? ""
       background.async {

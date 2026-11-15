@@ -113,6 +113,7 @@ class AppSettings {
   String get glossary => json['glossary'] as String? ?? '';
   bool get packsEnabled => json['packsEnabled'] as bool? ?? true;
   bool get hideButtonHints => json['hideButtonHints'] as bool? ?? true;
+  String get packChoice => json['packChoice'] as String? ?? '';
 
   AppSettings copy() => AppSettings(jsonDecode(jsonEncode(json)) as Map<String, dynamic>);
 }
@@ -168,6 +169,29 @@ class Bridge {
   static Future<void> stop() => _channel.invokeMethod('stop');
   static Future<void> testSubtitle() => _channel.invokeMethod('testSubtitle');
   static Future<Uint8List?> snapshot({int width = 960}) => _channel.invokeMethod<Uint8List>('snapshot', width);
+
+  /// Türkçe yaması olan oyunlar (kimlik, başlık, satır sayısı); yalnız iOS.
+  static Future<List<({String id, String title, int entries})>> packList() async {
+    try {
+      final list = await _channel.invokeMethod<List<Object?>>('packList') ?? [];
+      return [
+        for (final item in list.cast<Map<Object?, Object?>>())
+          (id: item['id'] as String, title: item['title'] as String? ?? '', entries: (item['entries'] as num?)?.toInt() ?? 0),
+      ];
+    } on MissingPluginException {
+      return [];
+    }
+  }
+
+  /// Topluluk yamalarını (GitLab patches/) hemen günceller (yalnız iOS). (başarılı mı, gösterilecek metin)
+  static Future<(bool, String)> updatePatches() async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('updatePatches') ?? {};
+      return (map['ok'] as bool? ?? false, map['detail'] as String? ?? '');
+    } on MissingPluginException {
+      return (false, 'Bu telefonda desteklenmiyor.');
+    }
+  }
 
   /// Gemini anahtarını bir deneme çevirisiyle sınar (yalnız iOS). (başarılı mı, gösterilecek metin)
   static Future<(bool, String)> checkGemini(String key) async {

@@ -54,3 +54,13 @@ iOS sürümünde (`ios-app` dalı) yapılıp Android'e (`mobile/android`) ve bil
   üzerinden kurulum).
 - **Engel:** iOS'ta TizenSdb kütüphanesinin karşılığı yok. sdb protokolü ve widget imzalaması (XML-DSig) yazılmalı.
 - **Deneme:** TV'de geliştirici modu açılmalı ve TV'ye "Host PC IP" olarak telefonun adresi girilmeli.
+
+## 6. Topluluk yamalarını derlemeden indirme ve elle oyun seçme
+
+- **Yamalar:** `mobile/ios/Runner/CommunityPatches.swift`. GitLab API'sinden `patches/` listesini alır, Git blob özetiyle
+  doğrulanan yeni ya da değişen yamaları indirir. Uygulamayla gelenlerin özetleri derlemede
+  `mobile/ios/scripts/bundle-patches.sh` ile yazılır.
+- **Yama biçimleri:** Düz `{"English": "Türkçe"}` biçimi ve UTF-8 BOM'lu dosyalar okunur (`GamePacks.swift`; Kotlin
+  okumuyor).
+- **Oyun seçimi:** `GamePackLibrary.setPinned` (bilgisayar sürümündeki "Oyun" satırı). Seçilen oyunda yalnız o paket
+  kullanılır.

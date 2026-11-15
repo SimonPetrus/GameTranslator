@@ -119,6 +119,22 @@ enum GamePackTest {
       }
       assertThrows(InvalidPackException.self) { try GamePack.decode(data("{\"bad\":\"x\"}"), "x") }
     }
+    /// Elle seçilen oyun (yalnız iOS): yalnız o paket kullanılır, bulanık arama ilk satırdan onda.
+    TestRun.test("GamePackTest.pinnedGameIsTheOnlyPack") {
+      func pack(_ id: String, _ text: String) -> String {
+        "{\"format\":2,\"id\":\"\(id)\",\"title\":\"\(id.uppercased())\",\"entries\":{\"\(PackKey.key("Let's go.")!)\":\"\(text)\"}}"
+      }
+      let a = pack("a", "Hadi gidelim."), b = pack("b", "Gidelim hadi.")
+      let library = GamePackLibrary(bundled: { [(name: "a.json", read: { Data(a.utf8) }), (name: "b.json", read: { Data(b.utf8) })] },
+                                    userDirectory: nil)
+      // Otomatik: aynı satır iki pakette; sonra gelen kazanır.
+      assertEquals("Gidelim hadi.", library.findWithPack("Let's go.")?.text)
+      library.setPinned("a")
+      assertEquals("Hadi gidelim.", library.findWithPack("Let's go.")?.text)
+      assertEquals("A", library.scopeTitle)
+      library.setPinned(nil)
+      assertEquals("Gidelim hadi.", library.findWithPack("Let's go.")?.text)
+    }
     /// Topluluk yaması düz biçimi (yalnız iOS): {"English line": "Türkçe"}; BOM'lu da olabilir.
     TestRun.test("GamePackTest.plainEnglishPatchesAreRead") {
       var pairs = (1...10).map { "\"Line number \($0) here\": \"Satır \($0)\"" }
