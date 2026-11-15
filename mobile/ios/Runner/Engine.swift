@@ -143,6 +143,7 @@ final class Engine: Native.Listener {
       self.server.start()
       self.log(2, "altyazı sunucusu: \(Network.localAddress() ?? "?"):\(SubtitleServer.defaultPort)")
       self.server.sendStyle(self.settings.style)
+      if self.reader == nil { self.reader = VisionReader(engine: self) }
       self.reader?.rebuild(settings: self.settings)
       self.connect()
     }

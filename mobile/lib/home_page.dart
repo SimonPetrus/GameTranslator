@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -109,7 +110,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   (String, String, Color) get headline => switch (state.phase) {
-        'streaming' => ('Çeviri açık', 'Ekranı kapatabilirsin; çeviri arka planda sürer.', Tokens.success),
+        'streaming' => (
+            'Çeviri açık',
+            // iPhone ekran kilitlenince uygulamayı askıya alır; Android'de çeviri bildirimdeki serviste sürer.
+            Platform.isIOS ? 'Telefonun ekranı açık kalsın; uygulama açıkken çeviri sürer.' : 'Ekranı kapatabilirsin; çeviri arka planda sürer.',
+            Tokens.success,
+          ),
         'starting' => ('Başlatılıyor…', 'Birkaç saniye sürer.', Tokens.warning),
         'connecting' => ('PS5\'e bağlanılıyor…', 'PS5 açık ve aynı Wi-Fi\'de olmalı.', Tokens.warning),
         'waking' => ('PS5 uyandırılıyor…', 'Dinlenme modundan çıkması bir dakikayı bulabilir.', Tokens.warning),

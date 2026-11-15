@@ -289,6 +289,7 @@ List<GuideChapter> guideChapters(String? address) {
           'Durum "Çeviri açık" olunca PS5 kartı "Bağlı" yazar. İlk bağlantı birkaç saniye sürer.',
           'TV\'de GameTranslator uygulamasını aç. Birkaç saniye içinde telefondaki TV kartı "Bağlı" olur.',
           'TV\'de oyun görüntüsü gelmezse Tamam tuşuyla paneli aç, sol ve sağ tuşlarıyla PS5\'in bağlı olduğu HDMI girişini seç.',
+          'TV\'den ses gelmezse PS5 sesi Remote Play\'e yönlendirmiştir: PS tuşuna bas, alttaki menüden Ses › Çıkış Cihazı\'nı aç ve HDMI\'ı seç. Bu bir kez yapılır.',
           'Telefonda "TV\'ye deneme altyazısı gönder"e dokun. TV\'de yazıyı görüyorsan her şey hazır.',
         ]),
         _Tip('Çeviri açıkken telefonun ekranını kapatabilirsin. Durdurmak için uygulamadaki düğmeye ya da bildirimdeki "Durdur"a dokun.'),

@@ -7,14 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		049FB1C836CE0E1B74ABF222 /* TextMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B66B2558B5B2BF364DD1B0 /* TextMatch.swift */; };
+		1147037439550C6518C29057 /* VisionReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4161DB086FF3B5AEF3EBC4 /* VisionReader.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		1EBE6FC1F1E7AFD863F94AAC /* Engine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EC5BAE0B64481896FC6DA33 /* Engine.swift */; };
 		22142CCC970E93D325186CAA /* Channels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47964395D1CC1DE18DC30B9C /* Channels.swift */; };
+		23495909864DF45A724757F4 /* Glossary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B569C0A1F2FF3AD97C8C020 /* Glossary.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
+		3AA2CC8118D3BACD0DA5E0C5 /* SubtitleStabilizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE00BB3DC6C5FDB1845B4B8 /* SubtitleStabilizer.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		5821F729B04442538FF44ADF /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21EDF6F214E264E06FE19AD /* Store.swift */; };
 		5A2A20027073BEDA434D01EF /* Native.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088725EB0948165AA7A4549B /* Native.swift */; };
+		5ADD631357CC111771DD9279 /* SubtitlePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ED462B749A44F73A4D971F0 /* SubtitlePipeline.swift */; };
+		6035ABD3DA1F77F9F77F3EB3 /* KotlinText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86992DEC8125ED93333BC754 /* KotlinText.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
+		75FE326AA0194592A1349EE7 /* Translators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 403CCB3EA4B6971C26AD679B /* Translators.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		884E03E882B506B84B2C064C /* SubtitleServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AFC5C6EAA33F03864A1857F /* SubtitleServer.swift */; };
@@ -22,7 +29,9 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		A60760B7CE6D195742FFE84E /* OcrNoise.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC9810D431EF03C829F82AEA /* OcrNoise.swift */; };
 		C26575231AE6FD6D9CCA7126 /* obs-overlay.html in Resources */ = {isa = PBXBuildFile; fileRef = DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */; };
+		D38D43FEE9CA5C7BB88233A2 /* SpeakerPrefix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6286E9DEE374161706704FAF /* SpeakerPrefix.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,18 +62,25 @@
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		1EC5BAE0B64481896FC6DA33 /* Engine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Engine.swift; sourceTree = "<group>"; };
+		2AE00BB3DC6C5FDB1845B4B8 /* SubtitleStabilizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleStabilizer.swift; sourceTree = "<group>"; };
 		2AFC5C6EAA33F03864A1857F /* SubtitleServer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleServer.swift; sourceTree = "<group>"; };
+		2ED462B749A44F73A4D971F0 /* SubtitlePipeline.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitlePipeline.swift; sourceTree = "<group>"; };
+		2F4161DB086FF3B5AEF3EBC4 /* VisionReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VisionReader.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A3FAF57CDF168403A678E03 /* gt_native.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = gt_native.h; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
+		403CCB3EA4B6971C26AD679B /* Translators.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Translators.swift; sourceTree = "<group>"; };
 		47964395D1CC1DE18DC30B9C /* Channels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Channels.swift; sourceTree = "<group>"; };
+		47B66B2558B5B2BF364DD1B0 /* TextMatch.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TextMatch.swift; sourceTree = "<group>"; };
+		6286E9DEE374161706704FAF /* SpeakerPrefix.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpeakerPrefix.swift; sourceTree = "<group>"; };
 		637B2FEE2FE0E0D1FFF4A309 /* gt_native.c */ = {isa = PBXFileReference; includeInIndex = 1; path = gt_native.c; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
+		86992DEC8125ED93333BC754 /* KotlinText.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KotlinText.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -72,8 +88,10 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9B569C0A1F2FF3AD97C8C020 /* Glossary.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Glossary.swift; sourceTree = "<group>"; };
 		CCE460BE59646CAB2561F841 /* GameTranslator.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = GameTranslator.xcconfig; sourceTree = "<group>"; };
 		DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */ = {isa = PBXFileReference; includeInIndex = 1; name = "obs-overlay.html"; path = "../../core/Sources/GameTranslatorCore/Resources/obs-overlay.html"; sourceTree = SOURCE_ROOT; };
+		DC9810D431EF03C829F82AEA /* OcrNoise.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OcrNoise.swift; sourceTree = "<group>"; };
 		E21EDF6F214E264E06FE19AD /* Store.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -89,6 +107,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		22277569CEE8367E529AAD92 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				9B569C0A1F2FF3AD97C8C020 /* Glossary.swift */,
+				86992DEC8125ED93333BC754 /* KotlinText.swift */,
+				DC9810D431EF03C829F82AEA /* OcrNoise.swift */,
+				6286E9DEE374161706704FAF /* SpeakerPrefix.swift */,
+				2ED462B749A44F73A4D971F0 /* SubtitlePipeline.swift */,
+				2AE00BB3DC6C5FDB1845B4B8 /* SubtitleStabilizer.swift */,
+				47B66B2558B5B2BF364DD1B0 /* TextMatch.swift */,
+			);
+			name = Core;
+			path = Core;
+			sourceTree = "<group>";
+		};
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -158,6 +191,9 @@
 				DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */,
 				86BD0E03C4B22A59BB9C160D /* Native */,
 				088725EB0948165AA7A4549B /* Native.swift */,
+				22277569CEE8367E529AAD92 /* Core */,
+				403CCB3EA4B6971C26AD679B /* Translators.swift */,
+				2F4161DB086FF3B5AEF3EBC4 /* VisionReader.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -325,6 +361,15 @@
 				22142CCC970E93D325186CAA /* Channels.swift in Sources */,
 				9686FC4D5C0D1DBBA060F89D /* gt_native.c in Sources */,
 				5A2A20027073BEDA434D01EF /* Native.swift in Sources */,
+				23495909864DF45A724757F4 /* Glossary.swift in Sources */,
+				6035ABD3DA1F77F9F77F3EB3 /* KotlinText.swift in Sources */,
+				A60760B7CE6D195742FFE84E /* OcrNoise.swift in Sources */,
+				D38D43FEE9CA5C7BB88233A2 /* SpeakerPrefix.swift in Sources */,
+				5ADD631357CC111771DD9279 /* SubtitlePipeline.swift in Sources */,
+				3AA2CC8118D3BACD0DA5E0C5 /* SubtitleStabilizer.swift in Sources */,
+				049FB1C836CE0E1B74ABF222 /* TextMatch.swift in Sources */,
+				75FE326AA0194592A1349EE7 /* Translators.swift in Sources */,
+				1147037439550C6518C29057 /* VisionReader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

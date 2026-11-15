@@ -41,6 +41,20 @@ struct Settings: Equatable {
   /// Oyun paketleri (İngilizce→Türkçe).
   var packsEnabled = true
 
+  /// Sözlük metni çözülmüş hâliyle; boş ya da bozuksa boş sözlük (Android'deki parsedGlossary).
+  func parsedGlossary() -> Glossary {
+    if glossary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .EMPTY }
+    guard let data = glossary.data(using: .utf8),
+          let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return .EMPTY }
+    var terms: [(String, String)] = []
+    if let map = root["terms"] as? [String: Any] {
+      // JSON nesnesinin sırası korunmaz; Android'deki JSONObject de sıra garantisi vermez.
+      for (key, value) in map { if let text = value as? String { terms.append((key, text)) } }
+    }
+    let keep = (root["keep"] as? [Any])?.compactMap { $0 as? String } ?? []
+    return Glossary.of(pairs: terms, keep: keep)
+  }
+
   func toJson() -> [String: Any] {
     [
       "region": ["top": region.top, "bottom": region.bottom, "left": region.left, "right": region.right],
