@@ -27,7 +27,7 @@ xcrun swiftc -swift-version "${SWIFT_VERSION:-5}" -O \
   -module-name CoreTests \
   -module-cache-path "$BUILD/module-cache" \
   "$RUNNER"/Core/*.swift "$BUILD/TextBox.swift" \
-  "$HERE/Harness.swift" "$HERE/CoreTest.swift" "$HERE/GlossaryTest.swift" "$HERE/main.swift" \
+  "$HERE/Harness.swift" "$HERE/CoreTest.swift" "$HERE/GlossaryTest.swift" "$HERE/SpeakerNameTest.swift" "$HERE/main.swift" \
   -o "$BUILD/coretests"
 
 "$BUILD/coretests"

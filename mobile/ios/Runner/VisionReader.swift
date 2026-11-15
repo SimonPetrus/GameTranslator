@@ -45,7 +45,8 @@ final class VisionReader: FrameReader {
       if !glossary.isEmpty { self.engine.log(2, "terim sözlüğü: \(glossary.count) terim") }
       let withGlossary: TextTranslator = glossary.isEmpty ? online : GlossaryTranslator(glossary, online)
       // Baştaki konuşmacı işareti ("- ", ">>") motorlara gönderilmez; hangi motor çevirirse çevirsin korunur.
-      let translator = TimedTranslator(PrefixTranslator(withGlossary), engine: self.engine)
+      // Konuşmacı adı ("ENZO: ", "MINE GUARD: ") çevrilmez: satırdan satıra tutarsız çıkıyordu.
+      let translator = TimedTranslator(PrefixTranslator(SpeakerNameTranslator(withGlossary)), engine: self.engine)
       let engine = self.engine
       let built = SubtitlePipeline(translator: translator, sink: ServerSink(server: engine.server), translateQueue: self.translating)
       built.onPair = { source, translation in
