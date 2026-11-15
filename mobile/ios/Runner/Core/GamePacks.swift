@@ -142,6 +142,9 @@ final class GamePack: @unchecked Sendable {
 
     var size: Int { keys.count }
 
+    /// Bellekte tuttuğu bayt (ölçüm için).
+    var bytes: Int { keys.count * 8 + offsets.count * 4 + blob.count }
+
     /// java.util.Arrays.binarySearch (işaretli sıra); yoksa -1.
     private func find(_ key: Int64) -> Int {
       var low = 0
@@ -227,6 +230,9 @@ final class GamePack: @unchecked Sendable {
 
   /// Tam satır sayısı (parçalar hariç).
   var size: Int { entries.size }
+
+  /// Bellekte tuttuğu bayt: satırlar, parçalar ve bulanık dizin (ölçüm için).
+  var bytes: Int { entries.bytes + segments.bytes + (fuzzy?.bytes ?? 0) }
 
   /// Anahtarın (sayı hâli) tam satır Türkçesi.
   subscript(key: Int64) -> String? { entries[key] }

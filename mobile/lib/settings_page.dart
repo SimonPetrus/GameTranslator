@@ -2,6 +2,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -304,7 +306,9 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
             Cell(
               title: 'Cihazda',
-              subtitle: 'İnternetsiz çalışır; kalitesi daha düşüktür. Dil modeli bir kez iner.',
+              subtitle: Platform.isIOS
+                  ? 'İnternetsiz çalışır (Apple Çeviri). Önce iPhone\'da Ayarlar › Uygulamalar › Çeviri › İndirilen Diller\'den İngilizce ve Türkçe\'yi indir.'
+                  : 'İnternetsiz çalışır; kalitesi daha düşüktür. Dil modeli bir kez iner.',
               checked: s.engine == 'mlkit',
               onTap: () => change((s) => s.json['engine'] = 'mlkit'),
             ),

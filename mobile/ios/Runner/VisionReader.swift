@@ -32,22 +32,26 @@ final class VisionReader: FrameReader {
       self.pipeline?.reset()
       self.region = s.region
       self.language = s.sourceLanguage
-      let online: TextTranslator
+      // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
+      let local = AppleTranslator(source: s.sourceLanguage, target: s.targetLanguage) { level, text in self.engine.log(level, text) }
+      self.translating.async { _ = local.prepare() }
+      let online: TextTranslator?
       switch s.engine {
-      case "deepl" where !s.deepLKey.trimmingCharacters(in: .whitespaces).isEmpty:
-        online = FallbackTranslator(DeepLTranslator(key: s.deepLKey, source: s.sourceLanguage, target: s.targetLanguage),
-                                    GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage))
+      case "deepl":
+        online = s.deepLKey.trimmingCharacters(in: .whitespaces).isEmpty
+          ? GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage)
+          : FallbackTranslator(DeepLTranslator(key: s.deepLKey, source: s.sourceLanguage, target: s.targetLanguage),
+                               GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage))
       case "mlkit":
-        // Cihaz üstü çeviri (Android'de ML Kit) iPhone'da henüz yok; Google'a düşülür.
-        self.engine.log(1, "cihaz üstü çeviri iPhone'da henüz yok; Google kullanılıyor")
-        online = GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage)
+        online = nil
       default:
         online = GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage)
       }
+      let engineTranslator: TextTranslator = online.map { FallbackTranslator($0, local) } ?? local
       // Sözlüğün ek kuralları Türkçeye göredir; bilgisayarda da yalnız İngilizce→Türkçe için çalışır.
       let glossary = s.sourceLanguage == "en" && s.targetLanguage == "tr" ? s.parsedGlossary() : Glossary.EMPTY
       if !glossary.isEmpty { self.engine.log(2, "terim sözlüğü: \(glossary.count) terim") }
-      let withGlossary: TextTranslator = glossary.isEmpty ? online : GlossaryTranslator(glossary, online)
+      let withGlossary: TextTranslator = glossary.isEmpty ? engineTranslator : GlossaryTranslator(glossary, engineTranslator)
       // Baştaki konuşmacı işareti ("- ", ">>") motorlara gönderilmez; hangi motor çevirirse çevirsin korunur.
       // Konuşmacı adı ("ENZO: ", "MINE GUARD: ") çevrilmez: satırdan satıra tutarsız çıkıyordu.
       let translator = TimedTranslator(PrefixTranslator(SpeakerNameTranslator(withGlossary)), engine: self.engine)

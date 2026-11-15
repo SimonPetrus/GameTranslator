@@ -137,3 +137,77 @@ final class FallbackTranslator: TextTranslator {
 
   func translate(_ text: String) -> String? { primary.translate(text) ?? fallback.translate(text) }
 }
+
+#if canImport(Translation)
+import Translation
+#endif
+
+/// Cihaz üstünde çeviri: Apple'ın Translation çatısı (Android'deki ML Kit'in karşılığı). İnternetsiz çalışır.
+/// iOS 26+ gerekir ve dil modelleri telefonda indirilmiş olmalı (Ayarlar › Uygulamalar › Çeviri › İndirilen Diller);
+/// uygulama ekran açmadan modeli indiremez. Kullanılamıyorsa her çağrı nil döner.
+final class AppleTranslator: TextTranslator {
+  private let source: String
+  private let target: String
+  private let lock = NSLock()
+  private var session: AnyObject?
+  private var checked = false
+  private var usable = false
+  private let log: (Int, String) -> Void
+
+  init(source: String, target: String, log: @escaping (Int, String) -> Void) {
+    self.source = source
+    self.target = target
+    self.log = log
+  }
+
+  /// Dil çifti indirilmiş mi, oturum kurulabiliyor mu (bloklar; ilk çağrıda bir kez bakılır).
+  func prepare() -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    if checked { return usable }
+    checked = true
+    #if canImport(Translation)
+    if #available(iOS 26.0, *) {
+      let from = Locale.Language(identifier: source)
+      let to = Locale.Language(identifier: target)
+      let semaphore = DispatchSemaphore(value: 0)
+      var status: LanguageAvailability.Status = .unsupported
+      Task.detached {
+        status = await LanguageAvailability().status(from: from, to: to)
+        semaphore.signal()
+      }
+      _ = semaphore.wait(timeout: .now() + 10)
+      switch status {
+      case .installed:
+        session = TranslationSession(installedSource: from, target: to)
+        usable = true
+        log(2, "cihaz üstü çeviri hazır (Apple, \(source)→\(target))")
+      case .supported:
+        log(1, "cihaz üstü çeviri için dil indirilmemiş: Ayarlar › Uygulamalar › Çeviri › İndirilen Diller'den \(source) ve \(target) indirilmeli")
+      default:
+        log(1, "cihaz üstü çeviri bu dil çiftini desteklemiyor: \(source)→\(target)")
+      }
+    } else {
+      log(1, "cihaz üstü çeviri iOS 26 ister")
+    }
+    #endif
+    return usable
+  }
+
+  func translate(_ text: String) -> String? {
+    guard prepare() else { return nil }
+    #if canImport(Translation)
+    if #available(iOS 26.0, *), let session = session as? TranslationSession {
+      let semaphore = DispatchSemaphore(value: 0)
+      var result: String?
+      Task.detached {
+        result = try? await session.translate(text).targetText
+        semaphore.signal()
+      }
+      if semaphore.wait(timeout: .now() + 8) == .timedOut { return nil }
+      let trimmed = result?.trimmingCharacters(in: .whitespacesAndNewlines)
+      return trimmed?.isEmpty == false ? trimmed : nil
+    }
+    #endif
+    return nil
+  }
+}
