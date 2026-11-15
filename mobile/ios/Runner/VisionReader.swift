@@ -175,7 +175,8 @@ final class VisionReader: FrameReader {
     if let box, !pieces.isEmpty {
       // Satır yüksekliği: okunan satırların ortanca yüksekliği, ekran yüksekliğine oranla.
       let heights = pieces.map { $0.bottom - $0.top }.sorted()
-      sink.remember(box, line: Double(heights[heights.count / 2]) / Double(fullHeight))
+      sink.remember(box, line: Double(heights[heights.count / 2]) / Double(fullHeight),
+                    characters: lines.reduce(0) { $0 + $1.count })
     }
     lastLines = lines
     lastBox = box
@@ -235,26 +236,49 @@ final class VisionReader: FrameReader {
 private final class ServerSink: SubtitleSink {
   private let server: SubtitleServer
   private let lock = NSLock()
-  /// Son okumaların kutusu → satır yüksekliği (hat aynı kutuyu çeviriyle birlikte geri verir).
-  private var lines: [(TextBox, Double)] = []
+  /// Son okumaların kutusu → (satır yüksekliği, okunan İngilizce metnin karakter sayısı); hat aynı kutuyu çeviriyle
+  /// birlikte geri verir.
+  private var lines: [(box: TextBox, line: Double, characters: Int)] = []
 
   init(server: SubtitleServer) { self.server = server }
 
-  func remember(_ box: TextBox, line: Double) {
+  func remember(_ box: TextBox, line: Double, characters: Int) {
     lock.lock(); defer { lock.unlock() }
-    if let last = lines.last, last.0 == box { return }
-    lines.append((box, line))
+    if let last = lines.last, last.box == box { return }
+    lines.append((box, line, characters))
     if lines.count > 32 { lines.removeFirst(lines.count - 32) }
   }
 
   func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool) {
     var line: Double?
+    var source = box
     if let box {
       lock.lock()
-      line = lines.last(where: { $0.0 == box })?.1
+      let known = lines.last(where: { $0.box == box })
       lock.unlock()
+      line = known?.line
+      if let known, known.characters > 0 {
+        source = Self.widened(box, ratio: Double(text.count) / Double(known.characters))
+      }
     }
-    server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces, source: box, line: line)
+    server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces, source: source, line: line)
+  }
+
+  /// Türkçe çoğu zaman İngilizceden uzundur: TV çeviriyi oyunun altyazısının genişliğine sığdıramayınca iki satıra
+  /// bölüp küçültüyordu. Alan, çevirinin uzunluk oranında (%8 payla) iki yana genişletilir; ekranın %90'ını ve
+  /// kenarları (%5) aşmaz. Çeviri daha kısaysa alan küçültülmez (oyunun altyazısı tamamen örtülsün).
+  static func widened(_ box: TextBox, ratio: Double) -> TextBox {
+    let width = box.right - box.left
+    guard width > 0, ratio.isFinite else { return box }
+    let target = min(0.9, width * ratio * 1.08)
+    guard target > width else { return box }
+    let center = (box.left + box.right) / 2
+    var left = center - target / 2
+    var right = center + target / 2
+    // Bir kenara dayanırsa öbür yana kaydırılır.
+    if left < 0.05 { right += 0.05 - left; left = 0.05 }
+    if right > 0.95 { left -= right - 0.95; right = 0.95 }
+    return TextBox(left: max(0.05, left), top: box.top, right: min(0.95, right), bottom: box.bottom)
   }
 
   func clear() { server.clear() }
