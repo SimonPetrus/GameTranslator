@@ -9,6 +9,8 @@ import UIKit
   ) -> Bool {
     // Mac'ten deneme: `xcrun devicectl device process launch ... <paket> --gt-test-subtitle` altyazı sunucusunu açar ve
     // deneme altyazısını gönderir (Android'deki gt_test_subtitle hata ayıklama isteğinin karşılığı; kayıt bilgisi taşımaz).
+    // TV telefonu çeviri başlamadan da bulsun diye altyazı sunucusu uygulama açılınca açılır.
+    Engine.shared.openServer()
     if ProcessInfo.processInfo.arguments.contains("--gt-test-subtitle") {
       Engine.shared.sendTestSubtitle()
     }

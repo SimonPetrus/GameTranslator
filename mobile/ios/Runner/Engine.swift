@@ -56,6 +56,18 @@ final class Engine: Native.Listener {
   private var frame: Frame?
 
   private init() {
+    // Uygulama arka plandan dönünce (çeviri kapalıyken iOS uygulamayı askıya almış olabilir) dinleyici bozulmuş olabilir;
+    // TV "bekleniyor"da kalıyordu, çeviriyi kapatıp açmak düzeltiyordu. Dönüşte sunucu yeniden kurulur.
+    NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
+      self?.onControl {
+        guard let self else { return }
+        if !self.running || !self.server.isReady {
+          self.log(2, "uygulama önde: altyazı sunucusu yeniden kuruluyor")
+          self.server.restart()
+          self.server.sendStyle(Store.shared.settings.style)
+        }
+      }
+    }
     server.onChanged = { [weak self] in self?.notifyChanged() }
     server.onLog = { [weak self] level, text in self?.log(level, text) }
     if let url = Bundle.main.url(forResource: "obs-overlay", withExtension: "html") {
@@ -124,6 +136,16 @@ final class Engine: Native.Listener {
 
   // MARK: - Başlat / durdur
 
+  /// Uygulama açılınca: altyazı sunucusu çeviri başlamadan da açık olur; TV telefonu hemen bulur.
+  func openServer() {
+    onControl {
+      self.settings = Store.shared.settings
+      self.server.start()
+      self.server.sendStyle(self.settings.style)
+      self.log(2, "altyazı sunucusu: \(Network.localAddress() ?? "?"):\(SubtitleServer.defaultPort)")
+    }
+  }
+
   func start() {
     stopRequested = false
     onControl {
@@ -164,8 +186,8 @@ final class Engine: Native.Listener {
       self.retry = nil
       self.closeSession()
       self.reader?.reset()
+      // Sunucu açık kalır: TV bağlı kalsın, çeviri yeniden başlayınca altyazılar hemen gitsin.
       self.server.clear()
-      self.server.stop()
       self.frameLock.lock(); self.frame = nil; self.frameLock.unlock()
       BackgroundKeeper.shared.stop()
       self.setPhase("idle")

@@ -55,6 +55,10 @@ final class SubtitleServer {
   private var _boundPort: UInt16 = 0
   private var _connected = 0
   private var page: Data?
+  /// Sunucu açık olmalı mı (start çağrıldı, stop çağrılmadı); dinleyici düşerse yeniden kurulur.
+  private var wanted = false
+  private var ready = false
+  private var retryScheduled = false
 
   /// Bağlı TV sayısı ya da dinlenen port değişince çağrılır (sunucu kuyruğunda).
   var onChanged: (() -> Void)?
@@ -80,30 +84,51 @@ final class SubtitleServer {
 
   var isStarted: Bool { queue.sync { listener != nil } }
 
-  /// Sunucuyu başlatır. 8787 doluysa rastgele bir port seçilir (TV yalnız 8787'yi tarar, ama tarayıcı yine bağlanır).
+  /// Dinleyici kurulmuş ve bağlantı kabul ediyor mu.
+  var isReady: Bool { queue.sync { listener != nil && ready } }
+
+  /// Sunucuyu başlatır. TV yalnız 8787'yi taradığı için port hep 8787'dir; doluysa (ör. uygulama yeniden açılırken
+  /// eski dinleyici henüz kapanmadıysa) birkaç saniyede bir yeniden denenir.
   func start() {
-    queue.async { self.startLocked(port: self.port) }
+    queue.async {
+      self.wanted = true
+      self.startLocked()
+    }
+  }
+
+  /// Dinleyiciyi ve bağlantıları kapatıp yeniden kurar (uygulama arka plandan dönünce dinleyici bozulmuş olabilir).
+  func restart() {
+    queue.async {
+      self.closeLocked()
+      self.wanted = true
+      self.startLocked()
+    }
   }
 
   func stop() {
     queue.async {
-      self.pingTimer?.cancel()
-      self.pingTimer = nil
-      self.listener?.cancel()
-      self.listener = nil
-      self._boundPort = 0
-      let closing = Array(self.clients.values)
-      self.clients.removeAll()
-      for client in closing { client.connection.cancel() }
-      for connection in self.pending.values { connection.cancel() }
-      self.pending.removeAll()
+      self.wanted = false
+      self.closeLocked()
       self.updateCount()
       self.onChanged?()
     }
   }
 
-  /// [source]: oyunun altyazısının ekrandaki yeri, [line]: satır yüksekliği (ekran yüksekliğine oranla). TV "cover"
-  /// yerleşiminde bunlarla çeviriyi oyunun altyazısının alanına, onun boyunda sığdırır ve alanı opak bantla örter.
+  private func closeLocked() {
+    pingTimer?.cancel()
+    pingTimer = nil
+    listener?.cancel()
+    listener = nil
+    ready = false
+    _boundPort = 0
+    let closing = Array(clients.values)
+    clients.removeAll()
+    for client in closing { client.connection.cancel() }
+    for connection in pending.values { connection.cancel() }
+    pending.removeAll()
+    updateCount()
+  }
+
   func sendSubtitle(_ text: String, durationMs: Int = 15000, box: TextBox? = nil, replaces: Bool = false,
                     source: TextBox? = nil, line: Double? = nil) {
     let at = Int64(Date().timeIntervalSince1970 * 1000)
@@ -175,8 +200,8 @@ final class SubtitleServer {
 
   // MARK: - Dinleme
 
-  private func startLocked(port: UInt16) {
-    guard listener == nil else { return }
+  private func startLocked() {
+    guard wanted, listener == nil else { return }
     let parameters = NWParameters.tcp
     parameters.allowLocalEndpointReuse = true
     if let tcp = parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
@@ -186,10 +211,10 @@ final class SubtitleServer {
     }
     let created: NWListener
     do {
-      created = port == 0 ? try NWListener(using: parameters) : try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+      created = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
     } catch {
       onLog?(0, "altyazı sunucusu açılamadı: \(error)")
-      return
+      return retryLater()
     }
     listener = created
     created.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
@@ -197,30 +222,41 @@ final class SubtitleServer {
       guard let self, let created, self.listener === created else { return }
       switch state {
       case .ready:
+        self.ready = true
         self._boundPort = created.port?.rawValue ?? 0
         self.onLog?(2, "altyazı sunucusu dinliyor: \(self._boundPort)")
         self.onChanged?()
-      case .failed(let error):
+      case .failed(let error), .waiting(let error):
+        // Port dolu, ağ değişti ya da iOS dinleyiciyi kapattı: kapatılıp birkaç saniye sonra yeniden kurulur.
+        self.onLog?(1, "altyazı sunucusu düştü (\(error)); yeniden kuruluyor")
         created.cancel()
         self.listener = nil
+        self.ready = false
         self._boundPort = 0
-        if port != 0, case .posix(let code) = error, code == .EADDRINUSE {
-          self.onLog?(1, "\(port) portu dolu; rastgele port deneniyor")
-          self.startLocked(port: 0)
-        } else {
-          self.onLog?(0, "altyazı sunucusu durdu: \(error)")
-          self.onChanged?()
-        }
+        self.onChanged?()
+        self.retryLater()
       default:
         break
       }
     }
     created.start(queue: queue)
-    let timer = DispatchSource.makeTimerSource(queue: queue)
-    timer.schedule(deadline: .now() + pingInterval, repeating: pingInterval)
-    timer.setEventHandler { [weak self] in self?.broadcastLocked(Self.pingFrame) }
-    timer.resume()
-    pingTimer = timer
+    if pingTimer == nil {
+      let timer = DispatchSource.makeTimerSource(queue: queue)
+      timer.schedule(deadline: .now() + pingInterval, repeating: pingInterval)
+      timer.setEventHandler { [weak self] in self?.broadcastLocked(Self.pingFrame) }
+      timer.resume()
+      pingTimer = timer
+    }
+  }
+
+  private func retryLater() {
+    guard wanted, !retryScheduled else { return }
+    retryScheduled = true
+    queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+      guard let self else { return }
+      self.retryScheduled = false
+      self.startLocked()
+    }
   }
 
   private func accept(_ connection: NWConnection) {
