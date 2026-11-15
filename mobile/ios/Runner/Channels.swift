@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import Flutter
 import Foundation
+import UIKit
 
 /// Flutter arayüzü ile [Engine] arasındaki köprü: "gt/bridge" yöntem kanalı ve "gt/events" durum akışı
 /// (Android'deki MainActivity ile aynı yöntemler ve dönüş biçimleri).
@@ -94,6 +95,10 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
       engine.sendTestSubtitle()
       result(nil)
     case "logs": result(engine.logLines())
+    case "openUrl":
+      // Yalnız https adresleri (ör. Gemini anahtar sayfası) Safari'de açılır.
+      guard let text = call.arguments as? String, let url = URL(string: text), url.scheme == "https" else { return result(false) }
+      UIApplication.shared.open(url) { opened in result(opened) }
     default: result(FlutterMethodNotImplemented)
     }
   }

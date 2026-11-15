@@ -42,6 +42,11 @@ final class VisionReader: FrameReader {
           ? GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage)
           : FallbackTranslator(DeepLTranslator(key: s.deepLKey, source: s.sourceLanguage, target: s.targetLanguage),
                                GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage))
+      case "gemini":
+        let google = GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage)
+        online = s.geminiKey.trimmingCharacters(in: .whitespaces).isEmpty || s.targetLanguage != "tr"
+          ? google
+          : FallbackTranslator(GeminiTranslator(key: s.geminiKey) { level, text in self.engine.log(level, text) }, google)
       case "mlkit":
         online = nil
       default:

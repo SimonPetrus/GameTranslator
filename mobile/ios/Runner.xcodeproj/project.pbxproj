@@ -28,6 +28,7 @@
 		75FE326AA0194592A1349EE7 /* Translators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 403CCB3EA4B6971C26AD679B /* Translators.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		80CE5D4E018A7CCB0B1D2D8B /* GeminiTranslator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8FACE6924BA544DE9B6B11B /* GeminiTranslator.swift */; };
 		83C03677928B4EB7D195C519 /* packs in Resources */ = {isa = PBXBuildFile; fileRef = B8660D70772C73423AED9503 /* packs */; };
 		884E03E882B506B84B2C064C /* SubtitleServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AFC5C6EAA33F03864A1857F /* SubtitleServer.swift */; };
 		9686FC4D5C0D1DBBA060F89D /* gt_native.c in Sources */ = {isa = PBXBuildFile; fileRef = 637B2FEE2FE0E0D1FFF4A309 /* gt_native.c */; };
@@ -113,6 +114,7 @@
 		DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */ = {isa = PBXFileReference; includeInIndex = 1; name = "obs-overlay.html"; path = "../../core/Sources/GameTranslatorCore/Resources/obs-overlay.html"; sourceTree = SOURCE_ROOT; };
 		DC9810D431EF03C829F82AEA /* OcrNoise.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OcrNoise.swift; sourceTree = "<group>"; };
 		E21EDF6F214E264E06FE19AD /* Store.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
+		E8FACE6924BA544DE9B6B11B /* GeminiTranslator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiTranslator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -224,6 +226,7 @@
 				407C42CC22B3E271B89FBD45 /* BackgroundKeeper.swift */,
 				A67E8D5159FE7C82481D432C /* Packs.swift */,
 				B8660D70772C73423AED9503 /* packs */,
+				E8FACE6924BA544DE9B6B11B /* GeminiTranslator.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -410,6 +413,7 @@
 				5CB1247C4A43D0A205E67485 /* SubtitleSegmenter.swift in Sources */,
 				ED7B03CD7E5F6CFBDC3BE13F /* BackgroundKeeper.swift in Sources */,
 				DAF2EB6287AA3A5A9ABB5ABE /* Packs.swift in Sources */,
+				80CE5D4E018A7CCB0B1D2D8B /* GeminiTranslator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

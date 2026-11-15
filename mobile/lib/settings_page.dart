@@ -67,6 +67,7 @@ class _SettingsTabState extends State<SettingsTab> {
 
   AppSettings? settings;
   final deepLController = TextEditingController();
+  final geminiController = TextEditingController();
   Uint8List? preview;
   Timer? saveTimer;
   Timer? previewTimer;
@@ -89,6 +90,7 @@ class _SettingsTabState extends State<SettingsTab> {
     final current = settings;
     if (current != null) Bridge.saveSettings(current);
     deepLController.dispose();
+    geminiController.dispose();
     super.dispose();
   }
 
@@ -100,6 +102,7 @@ class _SettingsTabState extends State<SettingsTab> {
       settings = loaded;
       preview = image;
       deepLController.text = loaded.deepLKey;
+      geminiController.text = loaded.geminiKey;
     });
   }
 
@@ -302,6 +305,35 @@ class _SettingsTabState extends State<SettingsTab> {
                   autocorrect: false,
                   decoration: const InputDecoration(hintText: 'DeepL API anahtarı'),
                   onChanged: (value) => change((s) => s.json['deepLKey'] = value.trim()),
+                ),
+              ),
+            // Yapay zekâ çevirisi (bilgisayar sürümündeki gibi); şimdilik yalnız iPhone'da.
+            if (Platform.isIOS)
+              Cell(
+                title: 'Google Gemini',
+                subtitle: 'Yapay zekâ ile en doğal Türkçe. Ücretsiz anahtarla çalışır; sınır dolunca bir dakika Google kullanılır.',
+                checked: s.engine == 'gemini',
+                onTap: () => change((s) => s.json['engine'] = 'gemini'),
+              ),
+            if (Platform.isIOS && s.engine == 'gemini')
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: geminiController,
+                      autocorrect: false,
+                      obscureText: true,
+                      decoration: const InputDecoration(hintText: 'Gemini API anahtarı'),
+                      onChanged: (value) => change((s) => s.json['geminiKey'] = value.trim()),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 36)),
+                      onPressed: () => Bridge.openUrl('https://aistudio.google.com/apikey'),
+                      child: const Text('Ücretsiz Google Gemini API anahtarı al'),
+                    ),
+                  ],
                 ),
               ),
             Cell(

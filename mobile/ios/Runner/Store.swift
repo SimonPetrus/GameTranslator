@@ -33,6 +33,8 @@ struct Settings: Equatable {
   /// google (çevrimiçi, anahtarsız), mlkit (cihaz üstünde), deepl (kendi anahtarınla)
   var engine = "google"
   var deepLKey = ""
+  /// Google Gemini anahtarı (aistudio.google.com/apikey; yalnız iOS'ta, bilgisayar sürümündeki gibi).
+  var geminiKey = ""
   var style = SubtitleStyle()
   /// PS5 dinlenme modundaysa uyandır.
   var autoWake = true
@@ -62,6 +64,7 @@ struct Settings: Equatable {
       "targetLanguage": targetLanguage,
       "engine": engine,
       "deepLKey": deepLKey,
+      "geminiKey": geminiKey,
       "autoWake": autoWake,
       "glossary": glossary,
       "packsEnabled": packsEnabled,
@@ -96,6 +99,7 @@ struct Settings: Equatable {
     out.targetLanguage = string(json["targetLanguage"], d.targetLanguage)
     out.engine = string(json["engine"], d.engine)
     out.deepLKey = string(json["deepLKey"], "")
+    out.geminiKey = string(json["geminiKey"], "")
     out.autoWake = bool(json["autoWake"], true)
     out.glossary = string(json["glossary"], "")
     out.packsEnabled = bool(json["packsEnabled"], true)

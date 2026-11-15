@@ -108,6 +108,7 @@ class AppSettings {
   String get targetLanguage => json['targetLanguage'] as String? ?? 'tr';
   String get sourceLanguage => json['sourceLanguage'] as String? ?? 'en';
   String get deepLKey => json['deepLKey'] as String? ?? '';
+  String get geminiKey => json['geminiKey'] as String? ?? '';
   bool get autoWake => json['autoWake'] as bool? ?? true;
   String get glossary => json['glossary'] as String? ?? '';
   bool get packsEnabled => json['packsEnabled'] as bool? ?? true;
@@ -166,6 +167,17 @@ class Bridge {
   static Future<void> stop() => _channel.invokeMethod('stop');
   static Future<void> testSubtitle() => _channel.invokeMethod('testSubtitle');
   static Future<Uint8List?> snapshot({int width = 960}) => _channel.invokeMethod<Uint8List>('snapshot', width);
+
+  /// Adresi tarayıcıda açar (yalnız iOS'ta; Android'de false döner).
+  static Future<bool> openUrl(String url) async {
+    try {
+      return await _channel.invokeMethod<bool>('openUrl', url) ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
 
   static Future<List<String>> logs() async =>
       (await _channel.invokeMethod<List<Object?>>('logs') ?? []).cast<String>();
