@@ -6,3 +6,8 @@ GT_CHIAKI_DIR = $(SRCROOT)/../../work/libchiaki-ios
 HEADER_SEARCH_PATHS = $(inherited) "$(GT_CHIAKI_DIR)/include"
 LIBRARY_SEARCH_PATHS = $(inherited) "$(GT_CHIAKI_DIR)/lib"
 OTHER_LDFLAGS = $(inherited) -lgtchiaki_ios -framework SystemConfiguration -framework CoreServices -framework VideoToolbox -framework CoreMedia -framework CoreVideo
+
+// İmzalı derleme (Xcode'dan telefona yükleme) için kendi Apple ekip numaranızı depoya girmeyen Local.xcconfig'e yazın:
+//   DEVELOPMENT_TEAM = ABCDE12345
+// GitHub Actions ve Feather gibi araçlarla dağıtılan IPA imzasız derlenir; ekip numarası gerekmez.
+#include? "Local.xcconfig"
