@@ -47,8 +47,8 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# Kök .gitignore *.txt dosyalarını yok sayıyor
+# KÃ¶k .gitignore *.txt dosyalarÄ±nÄ± yok sayÄ±yor
 !CMakeLists.txt
 
-# DerlenmiÅŸ APK
+# DerlenmiÃ…Å¸ APK
 /dist/
