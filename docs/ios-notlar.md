@@ -37,3 +37,20 @@ iOS sürümünde (`ios-app` dalı) yapılıp Android'e (`mobile/android`) ve bil
 - **Kodda fark yok:** Üç sürüm de `CHIAKI_AUDIO_DISABLED` ile bağlanıyor.
 - **Tahmin (doğrulanmadı):** Ayar PS5 kullanıcısına göre tutuluyor olabilir.
 - **Rehber:** Bu not uygulama rehberine eklendi (`mobile/lib/guide_page.dart`).
+
+## 4. Tuş yazılarını gizleme
+
+- **Sorun:** Altyazının yanındaki oyun düğmesi yazıları ("RESUME BA", "SKIP RESUME BA") okunup çeviriye karışıyor
+  ("BA'yı DEVAM ET").
+- **Kural:** Satır sonundaki büyük harfli düğme sözcükleri ve yanlarındaki 1–2 karakterlik tuş işaretleri silinir. Kuyrukta
+  en az bir düğme sözcüğü bulunmalı ve kuyruk ya satırın tamamı olmalı ya da cümle sonu işaretinden sonra gelmeli.
+- **Ayar:** "Tuş yazılarını gizle", varsayılan olarak açık (`hideButtonHints`).
+- **iOS'ta:** `mobile/ios/Runner/Core/ButtonHints.swift`, testleri `mobile/ios/CoreTests/ButtonHintsTest.swift`.
+
+## 5. Yapılacak: telefondan Samsung TV'ye kurulum
+
+- **Durum:** iPhone'dan da Android'den de yok. Bilgisayar sürümü kuruyor
+  (`windows/src/GameTranslator.TvInstall/Samsung/`; Samsung girişi, TV'ye özel sertifika, TizenSdb ile imzalama ve sdb
+  üzerinden kurulum).
+- **Engel:** iOS'ta TizenSdb kütüphanesinin karşılığı yok. sdb protokolü ve widget imzalaması (XML-DSig) yazılmalı.
+- **Deneme:** TV'de geliştirici modu açılmalı ve TV'ye "Host PC IP" olarak telefonun adresi girilmeli.

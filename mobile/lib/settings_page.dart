@@ -298,6 +298,18 @@ class _SettingsTabState extends State<SettingsTab> {
                   onChanged: (value) => change((s) => s.json['packsEnabled'] = value),
                 ),
               ),
+            if (Platform.isIOS)
+              Cell(
+                icon: CupertinoIcons.game_controller_solid,
+                iconColor: Tokens.accent,
+                title: 'Tuş yazılarını gizle',
+                subtitle: 'Altyazının yanındaki "SKIP", "RESUME" gibi düğme yazıları çevrilmez',
+                trailing: CupertinoSwitch(
+                  value: s.hideButtonHints,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => change((s) => s.json['hideButtonHints'] = value),
+                ),
+              ),
           ],
         ),
         if (s.sourceLanguage == 'en' && s.targetLanguage == 'tr')

@@ -15,6 +15,7 @@ final class VisionReader: FrameReader {
   private var pipeline: SubtitlePipeline?
   private var region = Region()
   private var language = "en"
+  private var hideButtonHints = true
   private var lastLines: [String] = []
   private var lastBox: TextBox?
   private var ocrTimes: [Int] = []
@@ -32,6 +33,7 @@ final class VisionReader: FrameReader {
       self.pipeline?.reset()
       self.region = s.region
       self.language = s.sourceLanguage
+      self.hideButtonHints = s.hideButtonHints
       // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
       let local = AppleTranslator(source: s.sourceLanguage, target: s.targetLanguage) { level, text in self.engine.log(level, text) }
       self.translating.async { _ = local.prepare() }
@@ -59,7 +61,7 @@ final class VisionReader: FrameReader {
       let withGlossary: TextTranslator = glossary.isEmpty ? engineTranslator : GlossaryTranslator(glossary, engineTranslator)
       // Baştaki konuşmacı işareti ("- ", ">>") motorlara gönderilmez; hangi motor çevirirse çevirsin korunur.
       // Konuşmacı adı ("ENZO: ", "MINE GUARD: ") çevrilmez: satırdan satıra tutarsız çıkıyordu.
-      let translator = TimedTranslator(PrefixTranslator(SpeakerNameTranslator(withGlossary)), engine: self.engine)
+      let translator = PrefixTranslator(SpeakerNameTranslator(withGlossary))
       let engine = self.engine
       let built = SubtitlePipeline(translator: translator, sink: self.sink, translateQueue: self.translating)
       built.onPair = { source, translation in
@@ -146,7 +148,7 @@ final class VisionReader: FrameReader {
       let started = DispatchTime.now().uptimeNanoseconds
       try VNImageRequestHandler(cgImage: crop, options: [:]).perform([request])
       ocrTimes.append(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
-      if ocrTimes.count >= 25 {
+      if ocrTimes.count >= 100 {
         let sorted = ocrTimes.sorted()
         engine.log(2, "ölçüm: yazı tanıma \(w)x\(h) ortanca \(sorted[sorted.count / 2]) ms, en çok \(sorted.last!) ms")
         ocrTimes.removeAll()
@@ -163,7 +165,12 @@ final class VisionReader: FrameReader {
       let top = Int(((1 - b.maxY) * CGFloat(h)).rounded()), bottom = Int(((1 - b.minY) * CGFloat(h)).rounded())
       return Piece(text: text, left: left, top: top, right: right, bottom: bottom)
     }
-    let (lines, box) = Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight)
+    var (lines, box) = Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight)
+    if hideButtonHints {
+      // Oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye karışmasın.
+      lines = lines.map(ButtonHints.strip).filter { !$0.isEmpty }
+      if lines.isEmpty { box = nil }
+    }
     if let box, !pieces.isEmpty {
       // Satır yüksekliği: okunan satırların ortanca yüksekliği, ekran yüksekliğine oranla.
       let heights = pieces.map { $0.bottom - $0.top }.sorted()
@@ -219,22 +226,6 @@ final class VisionReader: FrameReader {
       let r = Int(pixels[i * 4]), g = Int(pixels[i * 4 + 1]), b = Int(pixels[i * 4 + 2])
       return UInt8((r * 3 + g * 6 + b) / 10)
     }
-  }
-}
-
-/// Çevirinin süresini günlüğe yazar (gecikmeyi ölçmek için).
-private final class TimedTranslator: TextTranslator {
-  private let inner: TextTranslator
-  private unowned let engine: Engine
-  init(_ inner: TextTranslator, engine: Engine) {
-    self.inner = inner
-    self.engine = engine
-  }
-  func translate(_ text: String) -> String? {
-    let started = DispatchTime.now().uptimeNanoseconds
-    let result = inner.translate(text)
-    engine.log(2, "ölçüm: çeviri \((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000) ms")
-    return result
   }
 }
 

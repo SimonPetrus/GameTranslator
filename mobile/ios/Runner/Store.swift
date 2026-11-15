@@ -42,6 +42,8 @@ struct Settings: Equatable {
   var glossary = ""
   /// Oyun paketleri (İngilizce→Türkçe).
   var packsEnabled = true
+  /// Satır sonundaki oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye gitmez (yalnız iOS'ta, ayarlardan kapatılır).
+  var hideButtonHints = true
 
   /// Sözlük metni çözülmüş hâliyle; boş ya da bozuksa boş sözlük (Android'deki parsedGlossary).
   func parsedGlossary() -> Glossary {
@@ -68,6 +70,7 @@ struct Settings: Equatable {
       "autoWake": autoWake,
       "glossary": glossary,
       "packsEnabled": packsEnabled,
+      "hideButtonHints": hideButtonHints,
       "style": [
         "fontSize": style.fontSize, "bottomPercent": style.bottomPercent, "placement": style.placement,
         "background": style.background, "bold": style.bold, "textColor": style.textColor,
@@ -103,6 +106,7 @@ struct Settings: Equatable {
     out.autoWake = bool(json["autoWake"], true)
     out.glossary = string(json["glossary"], "")
     out.packsEnabled = bool(json["packsEnabled"], true)
+    out.hideButtonHints = bool(json["hideButtonHints"], true)
     let ds = d.style
     out.style = SubtitleStyle(
       fontSize: int(s?["fontSize"], ds.fontSize),

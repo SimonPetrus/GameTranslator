@@ -205,7 +205,7 @@ final class Engine: Native.Listener {
       if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.sourceLanguage != before.sourceLanguage
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled {
         self.reader?.rebuild(settings: now)
-      } else if now.region != before.region {
+      } else if now.region != before.region || now.hideButtonHints != before.hideButtonHints {
         self.reader?.reset()
       }
     }

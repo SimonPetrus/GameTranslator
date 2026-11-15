@@ -112,6 +112,7 @@ class AppSettings {
   bool get autoWake => json['autoWake'] as bool? ?? true;
   String get glossary => json['glossary'] as String? ?? '';
   bool get packsEnabled => json['packsEnabled'] as bool? ?? true;
+  bool get hideButtonHints => json['hideButtonHints'] as bool? ?? true;
 
   AppSettings copy() => AppSettings(jsonDecode(jsonEncode(json)) as Map<String, dynamic>);
 }

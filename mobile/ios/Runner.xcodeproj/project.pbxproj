@@ -31,6 +31,7 @@
 		80CE5D4E018A7CCB0B1D2D8B /* GeminiTranslator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8FACE6924BA544DE9B6B11B /* GeminiTranslator.swift */; };
 		83C03677928B4EB7D195C519 /* packs in Resources */ = {isa = PBXBuildFile; fileRef = B8660D70772C73423AED9503 /* packs */; };
 		884E03E882B506B84B2C064C /* SubtitleServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AFC5C6EAA33F03864A1857F /* SubtitleServer.swift */; };
+		88D36BB321238532E2F6F0FB /* ButtonHints.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBF80853CA8AC14BDE6191D0 /* ButtonHints.swift */; };
 		9686FC4D5C0D1DBBA060F89D /* gt_native.c in Sources */ = {isa = PBXBuildFile; fileRef = 637B2FEE2FE0E0D1FFF4A309 /* gt_native.c */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -110,6 +111,7 @@
 		A67E8D5159FE7C82481D432C /* Packs.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Packs.swift; sourceTree = "<group>"; };
 		B83BDC67080AC749B786DCA7 /* SubtitleSegmenter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleSegmenter.swift; sourceTree = "<group>"; };
 		B8660D70772C73423AED9503 /* packs */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = packs; path = ../../windows/src/GameTranslator.Core/Resources/packs; sourceTree = SOURCE_ROOT; };
+		BBF80853CA8AC14BDE6191D0 /* ButtonHints.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ButtonHints.swift; sourceTree = "<group>"; };
 		CCE460BE59646CAB2561F841 /* GameTranslator.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = GameTranslator.xcconfig; sourceTree = "<group>"; };
 		DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */ = {isa = PBXFileReference; includeInIndex = 1; name = "obs-overlay.html"; path = "../../core/Sources/GameTranslatorCore/Resources/obs-overlay.html"; sourceTree = SOURCE_ROOT; };
 		DC9810D431EF03C829F82AEA /* OcrNoise.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OcrNoise.swift; sourceTree = "<group>"; };
@@ -146,6 +148,7 @@
 				8BE6D858AACC2DD6FC2F88F7 /* PackStore.swift */,
 				2E30468FEE82EE398D6C7CCC /* PackTranslation.swift */,
 				B83BDC67080AC749B786DCA7 /* SubtitleSegmenter.swift */,
+				BBF80853CA8AC14BDE6191D0 /* ButtonHints.swift */,
 			);
 			name = Core;
 			path = Core;
@@ -414,6 +417,7 @@
 				ED7B03CD7E5F6CFBDC3BE13F /* BackgroundKeeper.swift in Sources */,
 				DAF2EB6287AA3A5A9ABB5ABE /* Packs.swift in Sources */,
 				80CE5D4E018A7CCB0B1D2D8B /* GeminiTranslator.swift in Sources */,
+				88D36BB321238532E2F6F0FB /* ButtonHints.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -12,6 +12,7 @@ TurkishSuffixTest.run()
 TermProtectionTest.run()
 SpeakerPrefixTest.run()
 SpeakerNameTest.run()
+ButtonHintsTest.run()
 // Bellek ölçümü önce: başka paket denemelerinin bıraktığı bellek ölçüme karışmasın.
 PackMemoryTest.run()
 PackKeyTest.run()
