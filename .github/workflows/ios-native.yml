@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# iOS fizibilite adımı 1: libchiaki (chiaki-ng v1.10.1) + bağımlılıkları iOS cihaz hedefi (arm64, iphoneos)
+# için statik kütüphane olarak derlenir ve gerçek chiaki işlevlerini çağıran bir dosya dylib/çalıştırılabilir
+# olarak bağlanır. Ayrıntı: mobile/ios-native/README.md
+name: iOS native (libchiaki)
+
+on:
+  push:
+    branches: [ios-port]
+    paths:
+      - 'mobile/ios-native/**'
+      - '.github/workflows/ios-native.yml'
+  pull_request:
+    paths:
+      - 'mobile/ios-native/**'
+      - '.github/workflows/ios-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  libchiaki-ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      GT_WORK_DIR: ${{ github.workspace }}/work/ios-native
+      GT_IOS_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Araç sürümleri
+        run: |
+          xcodebuild -version
+          echo "iphoneos SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
+          cmake --version | head -1
+          python3 --version
+          echo "XCODE_ID=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_ENV"
+
+      - name: OpenSSL önbelleği
+        uses: actions/cache@v6
+        with:
+          path: work/ios-native/deps
+          key: openssl-ios-arm64-${{ env.GT_IOS_DEPLOYMENT_TARGET }}-${{ env.XCODE_ID }}-${{ hashFiles('mobile/ios-native/scripts/build-openssl.sh') }}
+
+      - name: Derle ve bağla
+        env:
+          PYTHON: python3
+        run: bash mobile/ios-native/build.sh
+
+      - name: Bağlama raporu
+        if: always()
+        run: |
+          if [ -f work/ios-native/out/LINK_REPORT.md ]; then
+            cat work/ios-native/out/LINK_REPORT.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "LINK_REPORT.md üretilmedi" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Çıktıları yükle
+        uses: actions/upload-artifact@v7
+        with:
+          name: libchiaki-ios-arm64
+          path: work/ios-native/out
+          if-no-files-found: error
+          retention-days: 30

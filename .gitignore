@@ -33,3 +33,8 @@ couchsubs*
 # Mobil derleme için klonlanan chiaki-ng kaynakları
 third-party/chiaki-ng/
 !mobile/assets/*.jpg
+
+# Ajan çalışma klasörü, graphify çıktısı ve yerel Claude ayarları
+work/
+graphify-out/
+.claude/
