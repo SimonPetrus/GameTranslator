@@ -39,17 +39,14 @@ Ayrıntılı notlar: [docs/ios-kurulum.md](docs/ios-kurulum.md).
 TV'den ses gelmezse PS5'te PS tuşu › Ses › Çıkış Cihazı'ndan HDMI'ı seç. Ayarlar ve bilinen sınırlar:
 [docs/ios-kurulum.md](docs/ios-kurulum.md).
 
-## Ekran görüntüleri
-
 <!--
-Görüntüler docs/ios-screenshots/ altına eklenince bu yorumu kaldırıp aşağıdaki şablonu kullan:
+Ekran görüntüleri gelince, görüntüleri docs/ios-screenshots/ altına koyup bu yorumu açarak kullan:
+## Ekran görüntüleri
 <p>
   <img src="docs/ios-screenshots/ana-ekran.png" width="240">
   <img src="docs/ios-screenshots/ayarlar.png" width="240">
 </p>
 -->
-
-Yakında.
 
 ## Lisans ve telif
 
