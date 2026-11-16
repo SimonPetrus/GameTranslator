@@ -10,9 +10,15 @@ Kullanım: build_source.py --template feather/source.template.json --ipa X.ipa -
 import argparse, json, os, plistlib, re, sys, zipfile
 
 
+EXPECTED_BUNDLE = "com.gametranslator.gametranslatorMobile"
+
+
 def read_ipa(path):
     with zipfile.ZipFile(path) as z:
-        name = next(n for n in z.namelist() if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", n))
+        names = [n for n in z.namelist() if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", n)]
+        if len(names) != 1:
+            sys.exit(f"HATA: IPA'da tam bir Payload/*.app/Info.plist olmalı, bulunan: {len(names)} ({path})")
+        name = names[0]
         info = plistlib.loads(z.read(name))
     return info, os.path.getsize(path)
 
@@ -26,8 +32,15 @@ def main():
     a = a.parse_args()
 
     info, size = read_ipa(a.ipa)
-    bundle = info["CFBundleIdentifier"]
-    version = info["CFBundleShortVersionString"]
+    bundle = info.get("CFBundleIdentifier")
+    version = info.get("CFBundleShortVersionString")
+    if bundle != EXPECTED_BUNDLE:
+        sys.exit(f"HATA: bundle id {bundle!r}, beklenen {EXPECTED_BUNDLE!r}; kaynak değiştirilmedi")
+    if not version:
+        sys.exit("HATA: IPA'da CFBundleShortVersionString yok; kaynak değiştirilmedi")
+    tag_version = a.tag[len("ios-v"):] if a.tag.startswith("ios-v") else a.tag
+    if tag_version != version:
+        sys.exit(f"HATA: etiket sürümü {tag_version!r}, IPA sürümü {version!r}; kaynak değiştirilmedi")
     min_os = info.get("MinimumOSVersion", "15.0")
 
     with open(a.template, encoding="utf-8") as f:
@@ -37,9 +50,14 @@ def main():
 
     old = []
     if a.existing and os.path.exists(a.existing):
-        with open(a.existing, encoding="utf-8") as f:
-            prev = json.load(f)
-        old = prev["apps"][0].get("versions", []) if prev.get("apps") else []
+        try:
+            with open(a.existing, encoding="utf-8") as f:
+                prev = json.load(f)
+            old = prev["apps"][0]["versions"]
+            if not isinstance(old, list):
+                raise TypeError("versions liste değil")
+        except (ValueError, KeyError, IndexError, TypeError) as e:
+            sys.exit(f"HATA: mevcut kaynak dosyası bozuk veya boş ({a.existing}): {e!r}; sıfırdan başlanmadı")
 
     url = f"https://github.com/{a.repo}/releases/download/{a.tag}/{os.path.basename(a.ipa)}"
     entry = {

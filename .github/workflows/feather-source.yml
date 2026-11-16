@@ -60,8 +60,9 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           mkdir -p work
-          gh release download "$TAG" --pattern '*.ipa' --dir work
+          gh release download "$TAG" --pattern "GameTranslator-iOS-${TAG#ios-v}.ipa" --dir work
           gh release view "$TAG" --json publishedAt --jq .publishedAt > work/date.txt
+          [ "$(ls work/*.ipa | wc -l)" = 1 ] || { echo "Tek bir beklenen .ipa yok"; exit 1; }
           ls -l work
 
       - name: feather-source dalini hazirla

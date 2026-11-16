@@ -24,7 +24,7 @@ Ayrıntılı notlar: [docs/ios-kurulum.md](docs/ios-kurulum.md).
 
 ## Gereksinimler
 
-- iPhone (iOS 15 ve üstü; cihazda internetsiz çeviri iOS 26 ister).
+- iPhone (iOS 15 ve üstü; internetsiz (cihazda) çeviri için iOS 26 gerekir).
 - PS5, telefon ve TV aynı Wi-Fi ağında.
 - TV'de GameTranslator TV uygulaması: [docs/tv-kurulum.md](docs/tv-kurulum.md).
 - PS5'te şifresiz bir ikinci kullanıcı ve onun PSN hesabı.

@@ -5,7 +5,7 @@ kurar (Feather, Sideloadly, AltStore gibi araçlarla).
 
 ## Gerekenler
 
-- iOS 26 veya üstü bir iPhone (iOS 15 ve sonrasında çalışır; internetsiz çeviri iOS 26 ister).
+- iOS 15 ve üstü bir iPhone (internetsiz (cihazda) çeviri için iOS 26 gerekir).
 - PS5, telefon ve TV aynı Wi-Fi ağında.
 - TV'de GameTranslator TV uygulaması (LG, Samsung, Android TV; kurulum: `docs/tv-kurulum.md`).
 - PS5'te şifresiz bir ikinci kullanıcı ve onun PSN hesabı (kumanda TV'de kalsın diye).
