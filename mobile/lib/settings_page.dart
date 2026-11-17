@@ -105,6 +105,23 @@ class _SettingsTabState extends State<SettingsTab> {
   static const edges = {'top': 'Üst', 'bottom': 'Alt', 'left': 'Sol', 'right': 'Sağ'};
   static const defaultRegion = {'top': 0.62, 'bottom': 0.97, 'left': 0.14, 'right': 0.86};
 
+  /// Tek dokunuşla bölge seçimleri (Windows'taki Alt/Üst/Tam seçimlerinin genişletilmişi). "Özel" hiçbiriyle eşleşmeyen değerlerdir.
+  static const regionPresets = <(String, Map<String, double>)>[
+    ('Alt orta (standart)', {'top': 0.62, 'bottom': 0.97, 'left': 0.14, 'right': 0.86}),
+    ('Alt yarı', {'top': 0.50, 'bottom': 0.98, 'left': 0.05, 'right': 0.95}),
+    ('Geniş alt bant', {'top': 0.70, 'bottom': 0.98, 'left': 0.03, 'right': 0.97}),
+    ('Üst bölge', {'top': 0.03, 'bottom': 0.30, 'left': 0.10, 'right': 0.90}),
+    ('Tam ekran', {'top': 0.02, 'bottom': 0.98, 'left': 0.02, 'right': 0.98}),
+  ];
+
+  /// Geçerli bölgeyle eşleşen hazır seçimin adı; yoksa 'Özel'.
+  String matchingPreset(AppSettings s) {
+    for (final (name, values) in regionPresets) {
+      if (values.entries.every((e) => (s.regionValue(e.key) - e.value).abs() <= 0.006)) return name;
+    }
+    return 'Özel';
+  }
+
   AppSettings? settings;
   final deepLController = TextEditingController();
   final geminiController = TextEditingController();
@@ -218,6 +235,18 @@ class _SettingsTabState extends State<SettingsTab> {
     saveTimer?.cancel();
     saveTimer = Timer(const Duration(milliseconds: 300), () => Bridge.saveSettings(current));
   }
+
+  Widget _presetChip(String label, {required bool selected, VoidCallback? onTap}) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? Tokens.accent : Tokens.inset,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(label, style: Txt.subhead.copyWith(fontFamily: 'Inter', color: Colors.white, fontWeight: selected ? FontWeight.w600 : FontWeight.w500)),
+        ),
+      );
 
   void setRegion(String edge, double value) => change((s) {
         final region = s.region;
@@ -518,7 +547,24 @@ class _SettingsTabState extends State<SettingsTab> {
             children: [
               if (preview != null) RegionPreview(image: preview!, settings: s, subtitle: 'Örnek altyazı') else _RegionPlaceholder(settings: s),
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 2),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final name in [...regionPresets.map((p) => p.$1), 'Özel'])
+                      _presetChip(
+                        name,
+                        selected: matchingPreset(s) == name,
+                        onTap: name == 'Özel'
+                            ? null
+                            : () => change((s) => s.json['region'] = Map<String, dynamic>.from(regionPresets.firstWhere((p) => p.$1 == name).$2)),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
                 child: CupertinoSlidingSegmentedControl<String>(
                   groupValue: edge,
                   backgroundColor: Tokens.inset,

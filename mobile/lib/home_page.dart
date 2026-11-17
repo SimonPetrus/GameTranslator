@@ -454,7 +454,12 @@ class _LiveCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 if (hasTranslation) ...[
-                  Text(state.lastTranslation, style: Txt.title3.copyWith(fontWeight: FontWeight.w500)),
+                  Text(
+                    state.lastTranslation,
+                    textDirection: isRtlText(state.lastTranslation) ? TextDirection.rtl : TextDirection.ltr,
+                    textAlign: isRtlText(state.lastTranslation) ? TextAlign.right : TextAlign.left,
+                    style: Txt.title3.copyWith(fontWeight: FontWeight.w500),
+                  ),
                   const SizedBox(height: 4),
                   Text(state.lastSource.replaceAll('\n', ' '), style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
                   if (state.packHits > 0 && state.packGame.isNotEmpty) ...[
@@ -560,6 +565,7 @@ class RegionPreview extends StatelessWidget {
           decoration: BoxDecoration(color: Colors.black.withValues(alpha: alpha), borderRadius: BorderRadius.circular(6)),
           child: Text(
             subtitle!,
+            textDirection: isRtlText(subtitle!) ? TextDirection.rtl : TextDirection.ltr,
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

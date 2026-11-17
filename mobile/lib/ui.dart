@@ -800,3 +800,23 @@ class _CommaToDot extends TextInputFormatter {
   TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) =>
       newValue.text.contains(',') ? newValue.copyWith(text: newValue.text.replaceAll(',', '.')) : newValue;
 }
+
+/// Metindeki sağdan sola yazılan harfler (Arapça, Farsça, İbranice ve benzerleri) baskınsa true.
+/// Yalnızca harflere bakılır; rakam, noktalama ve boşluk sayılmaz.
+bool isRtlText(String text) {
+  var rtl = 0;
+  var other = 0;
+  for (final rune in text.runes) {
+    final isRtl = (rune >= 0x0590 && rune <= 0x08FF) ||
+        (rune >= 0xFB1D && rune <= 0xFDFF) ||
+        (rune >= 0xFE70 && rune <= 0xFEFF) ||
+        (rune >= 0x10800 && rune <= 0x10FFF) ||
+        (rune >= 0x1E800 && rune <= 0x1EFFF);
+    if (isRtl) {
+      rtl++;
+    } else if ((rune >= 0x41 && rune <= 0x5A) || (rune >= 0x61 && rune <= 0x7A) || (rune >= 0xC0 && rune <= 0x24F) || (rune >= 0x370 && rune <= 0x58F) || (rune >= 0x0900 && rune <= 0xFAFF)) {
+      other++;
+    }
+  }
+  return rtl > other;
+}

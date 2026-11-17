@@ -58,7 +58,7 @@ final class Engine: Native.Listener {
     return DiskTranslationCache(storage: FileCacheStorage(url: url))
   }()
   /// Çeviri kurallarının sürümü: kurallar (ör. sözlük) değişince eski önbellek kayıtları kullanılmaz.
-  private static let rulesVersion = "r1"
+  private static let rulesVersion = "r2"
   private let stopLock = NSLock()
   private var _stopRequested = false
   /// Durdurma istendi ama denetim kuyruğu henüz işlemedi (uyandırma beklemesini keser).
@@ -89,6 +89,8 @@ final class Engine: Native.Listener {
       options.targetLanguage = s.targetLanguage
       let glossary = s.sourceLanguage == "en" && s.targetLanguage == "tr" ? s.glossary : ""
       options.rulesVersion = Engine.rulesVersion + "-" + DiskTranslationCache.stableHash(glossary)
+      // Ad koruması kullanıcı sözlüğündeki terimlere dokunmaz.
+      if !glossary.isEmpty { options.glossary = s.parsedGlossary() }
       return options
     }
     // Uygulama arka plandan dönünce (çeviri kapalıyken iOS uygulamayı askıya almış olabilir) dinleyici bozulmuş olabilir;

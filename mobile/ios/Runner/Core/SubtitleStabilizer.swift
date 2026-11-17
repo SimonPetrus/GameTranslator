@@ -83,6 +83,9 @@ final class SubtitleStabilizer {
   private var sent = ""
   private var sentRaw = ""
   private var emptySince: Int64?
+  /// Bu boşluk için satırı ekranda tutma süresi (boşluk başlarken belirlenir).
+  private var emptyGraceMs = SubtitleStabilizer.CLEAR_AFTER_MS
+  private var hold = FlickerHold()
   private var history: [Left] = []
   /// Çevirisi başarısız olan satır ve en erken yeniden deneneceği an.
   private var forgotten = ""
@@ -96,14 +99,22 @@ final class SubtitleStabilizer {
       candidate = ""
       candidateCount = 0
       let since: Int64
-      if let existing = emptySince { since = existing } else { since = time; emptySince = time }
-      if !sent.isEmpty && time - since >= Int64(clearAfterMs) {
+      if let existing = emptySince {
+        since = existing
+      } else {
+        since = time
+        emptySince = time
+        // Titreyen (parlak/gürültülü) arka planda satır daha uzun tutulur; yoksa her zamanki bekleme.
+        emptyGraceMs = hold.clearDelay(base: clearAfterMs, at: time)
+      }
+      if !sent.isEmpty && time - since >= Int64(emptyGraceMs) {
         leaveScreen(time)
         return StabilizerAction.Clear
       }
       return StabilizerAction.None
     }
 
+    let hadGap = emptySince != nil
     emptySince = nil
     if TextMatch.isSimilar(text, candidate, similarity) {
       candidateCount += 1
@@ -118,7 +129,17 @@ final class SubtitleStabilizer {
       ? candidateCount >= stableFrames && time - candidateSince >= Int64(SubtitleStabilizer.GARBLED_STABLE_MS)
       : candidateCount >= stableFrames || SubtitleStabilizer.endsSentence(rawText)
     // Gönderilenin gürültülü yeniden okuması yeni satır değildir.
-    if isSame(text, sent) { return StabilizerAction.None }
+    let flatSent = sent.replacingOccurrences(of: "\n", with: " ")
+    if isSame(text, sent) {
+      // Boşluktan dönüş ya da farklı okunmuş aynı satır: arka plan titriyor demektir.
+      if hadGap || text != flatSent { hold.note(time) }
+      return StabilizerAction.None
+    }
+    // Parlak arka planda sözcük düşüren ya da birkaç harfi yanlış okuyan okuma da yeni satır değildir.
+    if !sent.isEmpty && FlickerHold.isFlicker(text, flatSent) {
+      hold.note(time)
+      return StabilizerAction.None
+    }
     if !ready { return StabilizerAction.None }
     // Aynı cümlenin daha iyi olmayan okuması da yeni satır değildir.
     if !sentRaw.isEmpty && TextMatch.isWorseReread(rawText, sentRaw) { return StabilizerAction.None }
@@ -174,6 +195,7 @@ final class SubtitleStabilizer {
     candidate = ""
     candidateCount = 0
     emptySince = nil
+    hold.reset()
     history.removeAll()
     forgotten = ""
     if sent.isEmpty { return StabilizerAction.None }

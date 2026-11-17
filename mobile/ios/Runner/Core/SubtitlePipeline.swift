@@ -49,6 +49,8 @@ struct PipelineOptions {
   var sourceLanguage = ""
   var targetLanguage = ""
   var rulesVersion = ""
+  /// Kullanıcının terim sözlüğü (ad koruması bu terimlere dokunmaz); uygulama kurar.
+  var glossary: Glossary = Glossary.EMPTY
 
   func cacheKey(_ text: String) -> String {
     DiskTranslationCache.key(engine: engineId, model: model, source: sourceLanguage, target: targetLanguage,
@@ -82,6 +84,13 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// Ekranda duran satırın numarası; satır kalktıysa -1.
   private var onScreen = -1
   private var lastShownSource: String?
+  /// [lastShownSource]'un gösterildiği an ([contextClock] saniyesi); kısa satırın bağlamı yeterince yeni mi bakılır.
+  private var lastShownAt: Double?
+  /// Doğal Türkçe adımlarının (sen/siz belleği) oturum durumu; oyun/paket değişince ve [reset]te sıfırlanır.
+  private let address: AddressMemory
+  private var lastPackId: String?
+  /// Kısa satır bağlamının zaman ölçüsü (saniye); testte sahte saat verilir.
+  var contextClock: () -> Double = { ProcessInfo.processInfo.systemUptime }
 
   /// Seçenekler (Türkçe satırı atlama, kalıcı önbellek); varsayılanı [optionsProvider]'dan gelir.
   var options: PipelineOptions {
@@ -129,6 +138,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     self.sink = sink
     self.translateExecutor = translateExecutor
     self.stabilizer = stabilizer
+    self.address = AddressMemory()
     _options = SubtitlePipeline.optionsProvider?() ?? PipelineOptions()
   }
 
@@ -165,6 +175,9 @@ final class SubtitlePipeline: @unchecked Sendable {
   }
 
   private func request(_ number: Int, _ source: String, _ box: TextBox?) {
+    // Kısa satırın bağlamı: bu an gösterilmiş olan satır ve ne zaman gösterildiği (kilit altında okunur).
+    let previous = lastShownSource
+    let previousAt = lastShownAt
     translateExecutor { [self] in
       let options = self.options
       // Satır zaten Türkçeyse motora gidilmez; sonuç kaynağıyla aynı olduğundan eskiden olduğu gibi gösterilmez.
@@ -178,20 +191,50 @@ final class SubtitlePipeline: @unchecked Sendable {
       let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
       // İki satırlık altyazı tek cümledir; çevirmene tek satır olarak gider.
       let oneLine = KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })
-      let diskKey = options.cache != nil ? options.cacheKey(oneLine) : nil
+      // Doğal Türkçe adımları yalnız İngilizce→Türkçe; Gemini bağlamı kendisi anlar (deyim, bağlam, ad adımları yok).
+      let natural = packed == nil && options.sourceLanguage == "en" && options.targetLanguage == "tr"
+      let gemini = options.engineId == "gemini"
+      let stock: String? = natural ? StockLines.lookup(oneLine) : nil
+      var context: String? = nil
+      if natural && !gemini && stock == nil, let previousAt {
+        let age = contextClock() - previousAt
+        if age >= 0 && age <= ShortLineContext.maxAgeSeconds { context = ShortLineContext.context(for: oneLine, previous: previous) }
+      }
+      // Hazır cevap diske yazılmaz; bağlamla çevrilen satır da yazılmaz (aynı satır başka bağlamda başka çıkar).
+      let cacheable = stock == nil && context == nil
+      let diskKey = cacheable && options.cache != nil ? options.cacheKey(oneLine) : nil
       let stored: String? = packed == nil ? diskKey.flatMap { options.cache?.get($0) } : nil
       FallbackSignal.reset()
-      let translated: String? = packed.map { KotlinText.trim($0.text) }
-        ?? stored
-        ?? (translator.translate(oneLine)).map { KotlinText.trim($0) }
+      var translated: String?
+      var memoryStep = false
+      if let packed {
+        translated = KotlinText.trim(packed.text)
+      } else if let stock {
+        translated = stock
+      } else if let stored {
+        translated = stored
+        memoryStep = natural
+      } else {
+        translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: context, options: options)
+        memoryStep = natural
+      }
       // Yedek motorun çevirisi gösterilir ama asıl motorun anahtarıyla diske yazılmaz.
       if packed == nil, stored == nil, !FallbackSignal.marked, let diskKey, let translated, !translated.isEmpty {
         options.cache?.set(diskKey, translated)
+      }
+      // Konuşmacı belleği diske yazılan metne değil gösterilene uygulanır (oturuma bağlı olduğu için önbelleğe girmez).
+      if memoryStep, let current = translated, !current.isEmpty {
+        translated = address.apply(current, speaker: AddressMemory.speaker(of: oneLine))
       }
       lock.lock()
       defer { lock.unlock() }
       if let packed = packed {
         _packHits += 1
+        // Oyun/paket değişti: konuşmacıların sen/siz belleği geçerli değil.
+        if let id = packed.packId, id != lastPackId {
+          address.reset()
+          lastPackId = id
+        }
         onPackHit?(source, packed)
       }
       guard let translated = translated, !translated.isEmpty else {
@@ -199,9 +242,30 @@ final class SubtitlePipeline: @unchecked Sendable {
         onTranslateFailed?(source)
         return
       }
-      cache.set(key(source), translated)
+      if context == nil { cache.set(key(source), translated) }
       deliver(number, source, translated, box)
     }
+  }
+
+  /// Motor çağrısı ve (İngilizce→Türkçe ise) çevrilmeden önce/sonra adımlar: deyim sadeleştirme, ad koruması, kısa satır
+  /// bağlamı, Türkçe son düzeltme, satır içi sen/siz tutarlılığı. Çevrilemezse nil.
+  private func translateEngine(_ line: String, natural: Bool, gemini: Bool, context: String?,
+                               options: PipelineOptions) -> String? {
+    if !natural {
+      return translator.translate(line).map { KotlinText.trim($0) }
+    }
+    var input = line
+    var engine: TextTranslator = translator
+    if !gemini {
+      input = IdiomNormalizer.apply(input)
+      let names = NameProtection.candidates(input, glossary: options.glossary)
+      if !names.isEmpty { engine = GlossaryTranslator(NameProtection.glossary(for: names), translator) }
+    }
+    TranslationContext.set(context)
+    defer { TranslationContext.set(nil) }
+    guard let raw = engine.translate(input).map({ KotlinText.trim($0) }), !raw.isEmpty else { return nil }
+    let edited = TurkishPostEdit.apply(raw, source: line)
+    return AddressForm.harmonizeLine(edited)
   }
 
   /// Kilit altında çağrılır. Yerine yenisi gelmiş satırın geç kalan çevirisi gösterilmez.
@@ -216,6 +280,7 @@ final class SubtitlePipeline: @unchecked Sendable {
 
   private func show(_ source: String, _ translated: String, _ box: TextBox?, _ duration: Int, replaces: Bool) {
     lastShownSource = source
+    lastShownAt = contextClock()
     sink.show(translated, durationMs: duration, box: box, replaces: replaces)
     onPair?(source, translated)
   }
@@ -228,6 +293,9 @@ final class SubtitlePipeline: @unchecked Sendable {
     latest += 1
     onScreen = -1
     lastShownSource = nil
+    lastShownAt = nil
+    lastPackId = nil
+    address.reset()
     if stabilizer.reset().kind == .clear { sink.clear() }
   }
 }

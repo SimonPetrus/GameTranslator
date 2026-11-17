@@ -28,7 +28,12 @@ final class GoogleGtxTranslator: TextTranslator {
     self.target = LanguageCodes.google(target)
   }
 
+  /// Kısa satırın önceki satırı bağlam olarak hat tarafından konduysa ("###" ayraçlı birleşik çeviri) kullanılır.
   func translate(_ text: String) -> String? {
+    ContextSplit.translate(text, context: TranslationContext.current) { translateOne($0) }
+  }
+
+  private func translateOne(_ text: String) -> String? {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.isEmpty { return "" }
     // Java'daki URLEncoder gibi: yalnız ASCII harf/rakam ve "-._*" olduğu gibi kalır (Türkçe harfler kodlanır).
@@ -116,7 +121,9 @@ final class DeepLTranslator: TextTranslator {
     request.httpMethod = "POST"
     request.setValue("DeepL-Auth-Key \(key)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    let body: [String: Any] = ["text": [text], "source_lang": source, "target_lang": target]
+    var body: [String: Any] = ["text": [text], "source_lang": source, "target_lang": target]
+    // Kısa satırın önceki satırı: DeepL `context` parametresi çevrilmez ve faturalandırılmaz (API belgesi).
+    if let context = TranslationContext.current, !context.isEmpty { body["context"] = context }
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
     guard let (status, data) = fetch(request), status == 200,
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -183,6 +190,10 @@ final class AppleTranslator: TextTranslator {
   }
 
   func translate(_ text: String) -> String? {
+    ContextSplit.translate(text, context: TranslationContext.current) { translateOne($0) }
+  }
+
+  private func translateOne(_ text: String) -> String? {
     guard prepare() else { return nil }
     #if canImport(Translation)
     if #available(iOS 26.0, *), let session = session as? TranslationSession {

@@ -7,10 +7,15 @@ import Vision
 /// rows ve buildPipeline'ın karşılığı). Yazı tanıma ML Kit yerine Apple'ın Vision çatısıyla, cihaz üstünde.
 final class VisionReader: FrameReader {
   private unowned let engine: Engine
-  private let queue = DispatchQueue(label: "gt.reader")
+  /// Okuma kuyruğu; okuyucu takılırsa yenisiyle değiştirilir (busyLock altında okunur/yazılır).
+  private var queue = DispatchQueue(label: "gt.reader")
   private let translating = DispatchQueue(label: "gt.translate")
   private let busyLock = NSLock()
   private var busy = false
+  /// Takılma kurtarmasında artar; eski (takılmış) okumanın bitişi yeni durumu bozmasın diye.
+  private var generation = 0
+  private var stuck = StuckDetector()
+  private var retryLimiter = RetryLimiter()
   private let scheduler = ReadScheduler()
   private var pipeline: SubtitlePipeline?
   private var region = Region()
@@ -30,8 +35,13 @@ final class VisionReader: FrameReader {
 
   // MARK: - FrameReader
 
+  private func currentQueue() -> DispatchQueue {
+    busyLock.lock(); defer { busyLock.unlock() }
+    return queue
+  }
+
   func rebuild(settings s: Settings) {
-    queue.async {
+    currentQueue().async {
       self.pipeline?.reset()
       self.region = s.region
       self.language = s.sourceLanguage
@@ -108,23 +118,64 @@ final class VisionReader: FrameReader {
   }
 
   func reset() {
-    queue.async {
+    currentQueue().async {
       self.region = Store.shared.settings.region
       self.scheduler.reset()
+      self.retryLimiter.reset()
       self.pipeline?.reset()
     }
   }
 
   func offer(_ frame: Frame) {
-    // Önceki kare hâlâ okunuyorsa bu kare atlanır; okuma kareleri biriktirmez.
+    let now = SubtitleStabilizer.monotonicMillis()
+    let hash = frame.pixels.withUnsafeBytes { StuckDetector.hash(of: $0) }
     busyLock.lock()
-    if busy { busyLock.unlock(); return }
+    stuck.frame(at: now, hash: hash)
+    var recovered: StuckDetector.Reason?
+    if let reason = stuck.check(at: now) {
+      // Takılan okuma bırakılır: yeni kuyruk, boş durum; eski okuma dönerse yeni durumu bozmaz (generation).
+      generation += 1
+      busy = false
+      queue = DispatchQueue(label: "gt.reader.\(generation)")
+      recovered = reason
+    }
+    // Önceki kare hâlâ okunuyorsa bu kare atlanır; okuma kareleri biriktirmez.
+    if busy { busyLock.unlock(); reportRecovery(recovered); return }
     busy = true
+    stuck.readStarted(at: now)
+    let token = generation
+    let target = queue
     busyLock.unlock()
-    queue.async {
-      defer { self.busyLock.lock(); self.busy = false; self.busyLock.unlock() }
+    reportRecovery(recovered)
+    if recovered != nil {
+      target.async {
+        self.scheduler.reset()
+        self.retryLimiter.reset()
+        self.pipeline?.reset()
+      }
+    }
+    target.async {
+      defer {
+        self.busyLock.lock()
+        if token == self.generation {
+          self.busy = false
+          self.stuck.readFinished(at: SubtitleStabilizer.monotonicMillis())
+        }
+        self.busyLock.unlock()
+      }
       self.read(frame)
     }
+  }
+
+  private func reportRecovery(_ reason: StuckDetector.Reason?) {
+    guard let reason else { return }
+    let text: String
+    switch reason {
+    case .busyTooLong: text = "okuyucu takıldı (okuma çok uzun sürdü); sıfırlandı"
+    case .noResult: text = "okuyucu takıldı (karelere sonuç gelmiyor); sıfırlandı"
+    case .frozenFrame: text = "okuyucu takıldı (aynı kare tekrarlanıyor); sıfırlandı"
+    }
+    engine.log(1, text)
   }
 
   /// Kaynak dil kodunu Vision'ın desteklediği bir kimliğe çevirir. Desteklenmiyorsa tek bir uyarı yazılır ve
@@ -157,31 +208,20 @@ final class VisionReader: FrameReader {
       return
     }
 
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = true
-    if let ocrLanguage { request.recognitionLanguages = [ocrLanguage] }
-    do {
-      let started = DispatchTime.now().uptimeNanoseconds
-      try VNImageRequestHandler(cgImage: crop, options: [:]).perform([request])
-      ocrTimes.append(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
-      if ocrTimes.count >= 100 {
-        let sorted = ocrTimes.sorted()
-        engine.log(2, "ölçüm: yazı tanıma \(w)x\(h) ortanca \(sorted[sorted.count / 2]) ms, en çok \(sorted.last!) ms")
-        ocrTimes.removeAll()
+    // İlk okuma tüm bölgede; sonuç yoksa ya da güvensizse sınırlı sıklıkta, ortalanmış bandı büyüterek bir kez daha.
+    guard let first = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: true) else { return }
+    var selected = ReadingSelector.select(first, width: w, height: h)
+    if ReadingSelector.needsRetry(selected), retryLimiter.allow(at: SubtitleStabilizer.monotonicMillis()) {
+      let band = ReadingSelector.retryBand(width: w, height: h)
+      let scale = ReadingSelector.RETRY_SCALE
+      if let part = image.cropping(to: CGRect(x: cropX + band.x, y: cropY + band.y, width: band.width, height: band.height)),
+         let big = Self.upscaled(part, factor: scale),
+         let again = recognize(big, offsetX: band.x, offsetY: band.y, scale: scale, timed: false) {
+        let retried = ReadingSelector.select(again, width: w, height: h)
+        if ReadingSelector.isBetter(retried, than: selected) { selected = retried }
       }
-    } catch {
-      engine.log(1, "yazı tanıma başarısız: \(error.localizedDescription)")
-      return
     }
-    let pieces: [Piece] = (request.results ?? []).compactMap { observation in
-      guard let text = observation.topCandidates(1).first?.string.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
-      // Vision kutusu 0–1 ve sol alttan; piksel ve sol üstten koordinata çevrilir.
-      let b = observation.boundingBox
-      let left = Int((b.minX * CGFloat(w)).rounded()), right = Int((b.maxX * CGFloat(w)).rounded())
-      let top = Int(((1 - b.maxY) * CGFloat(h)).rounded()), bottom = Int(((1 - b.minY) * CGFloat(h)).rounded())
-      return Piece(text: text, left: left, top: top, right: right, bottom: bottom)
-    }
+    let pieces: [Piece] = selected.map { Piece(text: $0.text, left: $0.left, top: $0.top, right: $0.right, bottom: $0.bottom) }
     var (lines, box) = Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight)
     if hideButtonHints {
       // Oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye karışmasın.
@@ -197,6 +237,53 @@ final class VisionReader: FrameReader {
     lastLines = lines
     lastBox = box
     pipeline.onRead(lines, box)
+  }
+
+  /// Görüntüyü okur; her çağrıda taze bir istek kurulur. Parçalar bölge pikselinde (sol üstten) döner;
+  /// [offsetX]/[offsetY]/[scale] büyütülmüş bir alt bandın bölgedeki yerini belirtir. Okuma hatasında nil.
+  private func recognize(_ image: CGImage, offsetX: Int, offsetY: Int, scale: Int, timed: Bool) -> [TextObservation]? {
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = true
+    if let ocrLanguage { request.recognitionLanguages = [ocrLanguage] }
+    do {
+      let started = DispatchTime.now().uptimeNanoseconds
+      try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+      if timed {
+        ocrTimes.append(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
+        if ocrTimes.count >= 100 {
+          let sorted = ocrTimes.sorted()
+          engine.log(2, "ölçüm: yazı tanıma \(image.width)x\(image.height) ortanca \(sorted[sorted.count / 2]) ms, en çok \(sorted.last!) ms")
+          ocrTimes.removeAll()
+        }
+      }
+    } catch {
+      engine.log(1, "yazı tanıma başarısız: \(error.localizedDescription)")
+      return nil
+    }
+    return (request.results ?? []).compactMap { (observation) -> TextObservation? in
+      guard let candidate = observation.topCandidates(1).first else { return nil }
+      let text = candidate.string.trimmingCharacters(in: .whitespaces)
+      if text.isEmpty { return nil }
+      // Vision kutusu 0–1 ve sol alttan; piksel ve sol üstten koordinata çevrilir.
+      let b = observation.boundingBox
+      let p = ReadingSelector.pixels(minX: Double(b.minX), minY: Double(b.minY), maxX: Double(b.maxX), maxY: Double(b.maxY),
+                                     imageWidth: image.width, imageHeight: image.height,
+                                     offsetX: offsetX, offsetY: offsetY, scale: scale)
+      return TextObservation(text: text, confidence: Double(candidate.confidence),
+                             left: p.left, top: p.top, right: p.right, bottom: p.bottom)
+    }
+  }
+
+  /// Görüntüyü [factor] kat büyütür (küçük yazı için yeniden okuma).
+  static func upscaled(_ image: CGImage, factor: Int) -> CGImage? {
+    let width = image.width * factor, height = image.height * factor
+    guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return context.makeImage()
   }
 
   struct Piece {
