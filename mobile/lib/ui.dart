@@ -14,6 +14,7 @@ import 'package:cupertino_ui/cupertino_ui.dart'
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'l10n.dart';
 import 'main.dart';
 
 export 'package:cupertino_ui/cupertino_ui.dart'
@@ -148,7 +149,7 @@ class GlassBackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GlassIconButton(
         icon: CupertinoIcons.chevron_back,
-        tooltip: 'Geri',
+        tooltip: L.t('Geri', 'Back'),
         onTap: () => Navigator.of(context).maybePop(),
       );
 }
@@ -201,7 +202,13 @@ class LargeTitleList extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(4, 0, 0, 14),
               child: Row(
                 children: [
-                  Expanded(child: Text(title, style: Txt.largeTitle)),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(title, style: Txt.largeTitle, maxLines: 1),
+                    ),
+                  ),
                   ?trailing,
                 ],
               ),
@@ -629,7 +636,7 @@ Future<String?> showApplePicker(BuildContext context, {required String title, re
       cancelButton: CupertinoActionSheetAction(
         isDefaultAction: true,
         onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Vazgeç', style: TextStyle(fontFamily: 'Inter')),
+        child: Text(L.t('Vazgeç', 'Cancel'), style: const TextStyle(fontFamily: 'Inter')),
       ),
     ),
   );
@@ -643,7 +650,7 @@ Future<bool> confirmApple(BuildContext context, {required String title, required
       title: Text(title, style: const TextStyle(fontFamily: 'Inter')),
       content: Padding(padding: const EdgeInsets.only(top: 4), child: Text(message, style: const TextStyle(fontFamily: 'Inter', fontSize: 13.5, height: 1.35))),
       actions: [
-        CupertinoDialogAction(onPressed: () => Navigator.of(context).pop(false), child: const Text('Vazgeç', style: TextStyle(fontFamily: 'Inter'))),
+        CupertinoDialogAction(onPressed: () => Navigator.of(context).pop(false), child: Text(L.t('Vazgeç', 'Cancel'), style: const TextStyle(fontFamily: 'Inter'))),
         CupertinoDialogAction(
           isDestructiveAction: destructive,
           isDefaultAction: !destructive,
@@ -752,7 +759,7 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
             const SizedBox(height: 6),
             FadeTransition(
               opacity: tagline,
-              child: Text('Oyunu kendi dilinde oyna', style: Txt.body.copyWith(color: Tokens.textSecondary)),
+              child: Text(L.t('Oyunu kendi dilinde oyna', 'Play in your own language'), style: Txt.body.copyWith(color: Tokens.textSecondary)),
             ),
             const SizedBox(height: 60),
           ],

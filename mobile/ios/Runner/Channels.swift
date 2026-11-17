@@ -41,14 +41,14 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
     case "getSettings": result(store.settings.toJsonString())
     case "setSettings":
       guard let settings = Settings.fromJsonString(call.arguments as? String) else {
-        return result(FlutterError(code: "bad_settings", message: "Ayarlar okunamadı", details: nil))
+        return result(FlutterError(code: "bad_settings", message: Lang.t("Ayarlar okunamadı", "Could not read the settings"), details: nil))
       }
       store.settings = settings
       engine.applySettings()
       result(nil)
     case "setAccountId":
       guard let bytes = (call.arguments as? String).flatMap({ Data(base64Encoded: $0) }), bytes.count == 8 else {
-        return result(FlutterError(code: "bad_account", message: "Hesap kimliği 8 bayt olmalı", details: nil))
+        return result(FlutterError(code: "bad_account", message: Lang.t("Hesap kimliği 8 bayt olmalı", "The account ID must be 8 bytes"), details: nil))
       }
       store.accountId = bytes
       result(nil)
@@ -73,7 +73,7 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
       let host = (args?["host"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       let pin = args?["pin"] as? Int ?? -1
       if host.isEmpty || pin < 0 {
-        return result(FlutterError(code: "bad_arguments", message: "Adres ve kod gerekli", details: nil))
+        return result(FlutterError(code: "bad_arguments", message: Lang.t("Adres ve kod gerekli", "Address and code are required"), details: nil))
       }
       background.async {
         let outcome = engine.register(host: host, pin: pin)
@@ -205,7 +205,8 @@ final class TvChannel: NSObject, FlutterStreamHandler {
     case "check": result(["ready": false, "keyServer": false, "hasKey": false])
     case "install":
       result(["ok": false, "error": "IOS_UNSUPPORTED",
-              "detail": "TV uygulamasını iPhone'dan kurma henüz yok; şimdilik bilgisayardan ya da Android telefondan kurun."])
+              "detail": Lang.t("TV uygulamasını iPhone'dan kurma henüz yok; şimdilik bilgisayardan ya da Android telefondan kurun.",
+                               "Installing the TV app from an iPhone is not available yet; for now install it from a computer or an Android phone.")])
     case "cancel": result(nil)
     default: result(FlutterMethodNotImplemented)
     }

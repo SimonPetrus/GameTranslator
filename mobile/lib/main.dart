@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'bridge.dart';
 import 'home_page.dart';
 import 'intro_page.dart';
+import 'l10n.dart';
 import 'setup_page.dart';
 import 'ui.dart';
 
@@ -18,6 +19,7 @@ void main() {
     systemNavigationBarContrastEnforced: false,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+  L.apply('auto');
   runApp(const GameTranslatorApp());
 }
 
@@ -85,6 +87,14 @@ class GameTranslatorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Dil değişince tüm arayüz yeniden kurulur.
+    return ValueListenableBuilder<String>(
+      valueListenable: L.language,
+      builder: (context, language, _) => _buildApp(),
+    );
+  }
+
+  Widget _buildApp() {
     final scheme = ColorScheme.fromSeed(seedColor: Tokens.accent, brightness: Brightness.dark).copyWith(
       primary: Tokens.accent,
       onPrimary: Colors.white,
@@ -179,9 +189,47 @@ class GameTranslatorApp extends StatelessWidget {
         dividerTheme: const DividerThemeData(color: Tokens.separator, thickness: 0.6, space: 0.6),
         progressIndicatorTheme: const ProgressIndicatorThemeData(color: Tokens.accent),
       ),
+      builder: (context, child) => _LanguageHost(child: child ?? const SizedBox.shrink()),
       home: const RootPage(),
     );
   }
+}
+
+/// Dil değiştiğinde altındaki bütün öğeleri yeniden kurdurur (const sayfalar ve açık sayfalar dahil).
+class _LanguageHost extends StatefulWidget {
+  const _LanguageHost({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_LanguageHost> createState() => _LanguageHostState();
+}
+
+class _LanguageHostState extends State<_LanguageHost> {
+  @override
+  void initState() {
+    super.initState();
+    L.language.addListener(_languageChanged);
+  }
+
+  @override
+  void dispose() {
+    L.language.removeListener(_languageChanged);
+    super.dispose();
+  }
+
+  void _markDirty(Element element) {
+    element.markNeedsBuild();
+    element.visitChildren(_markDirty);
+  }
+
+  void _languageChanged() {
+    if (!mounted) return;
+    context.visitChildElements(_markDirty);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Her platformda iOS'un esneyen kaydırması; kenar parlaması (Android) gösterilmez.
@@ -227,9 +275,20 @@ class _RootPageState extends State<RootPage> {
     super.dispose();
   }
 
+  /// Kayıtlı arayüz dili ayarını uygular (okunamazsa mevcut dil kalır).
+  Future<void> loadLanguage() async {
+    try {
+      final settings = await Bridge.settings();
+      L.apply(settings.uiLanguage);
+    } catch (_) {
+      // Ayarlar okunamadı: dil olduğu gibi kalır.
+    }
+  }
+
   Future<void> reload() async {
     final info = await Bridge.setup();
     if (mounted) setState(() => setup = info);
+    await loadLanguage();
   }
 
   Future<void> finishIntro() async {

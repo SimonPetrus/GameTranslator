@@ -63,9 +63,5 @@ struct ExtraRegion: Equatable {
 
   private static func clamp(_ value: Double, _ low: Double, _ high: Double) -> Double { min(max(value, low), high) }
 
-  private static func double(_ value: Any?, _ fallback: Double) -> Double {
-    if let n = value as? NSNumber, !(value is Bool) { let v = n.doubleValue; return v.isFinite ? v : fallback }
-    if let t = value as? String, let v = Double(t), v.isFinite { return v }
-    return fallback
-  }
+  private static func double(_ value: Any?, _ fallback: Double) -> Double { JsonNumber.double(value, fallback) }
 }

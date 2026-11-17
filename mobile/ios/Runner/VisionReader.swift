@@ -20,7 +20,13 @@ final class VisionReader: FrameReader {
   private var lastSubtitleAt: Int64?
   private let scheduler = ReadScheduler()
   private var pipeline: SubtitlePipeline?
+  /// Elle seçilen bölge; otomatik alan kapalıyken ya da şerit henüz bulunamadıyken okunan alan.
   private var region = Region()
+  /// Otomatik altyazı alanı (ayar açıkken): arama ve kilit durumu yalnız okuma kuyruğunda değişir.
+  private var autoEnabled = false
+  private var finder = AutoRegionFinder()
+  /// Kilitli şerit, durum bilgisi için (busyLock altında).
+  private var lockedBand: AutoRegionBand?
   private var language = "en"
   /// Vision'a verilecek tanıma dili; nil: Vision kendi seçsin (kaynak dil bu iOS sürümünde desteklenmiyor).
   private var ocrLanguage: String? = "en-US"
@@ -60,9 +66,10 @@ final class VisionReader: FrameReader {
       guard self.isCurrent(target.token) else { return }
       self.pipeline?.reset()
       self.region = s.region
+      self.resetAuto(enabled: s.autoRegion, token: target.token)
       self.language = s.sourceLanguage
       self.ocrLanguage = self.resolveOcrLanguage(s.sourceLanguage)
-      let languageName = self.ocrLanguage ?? "otomatik"
+      let languageName = self.ocrLanguage ?? Lang.t("otomatik", "automatic")
       _ = self.whenCurrent(target.token) { self.healthLanguage = languageName }
       self.hideButtonHints = s.hideButtonHints
       // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
@@ -95,8 +102,9 @@ final class VisionReader: FrameReader {
       let translator = PrefixTranslator(SpeakerNameTranslator(withGlossary))
       let engine = self.engine
       let built = SubtitlePipeline(translator: translator, sink: self.sink, translateQueue: self.translating)
-      built.onShown = { source, translation, origin in
-        Engine.history.record(source: source, text: translation, engine: origin)
+      built.onShown = { source, translation, origin, replaces in
+        // Önceki satırın düzeltilmiş hâliyse geçmişte yeni satır açılmaz, sonuncusu güncellenir.
+        Engine.history.record(source: source, text: translation, engine: origin, replacesLast: replaces)
       }
       built.onPair = { source, translation in
         engine.noteTranslation(ok: true)
@@ -107,7 +115,7 @@ final class VisionReader: FrameReader {
         engine.notifyChanged()
       }
       built.onTranslateFailed = { source in
-        engine.noteTranslation(ok: false, error: "Çeviri alınamadı (motor yanıt vermedi)")
+        engine.noteTranslation(ok: false, error: Lang.t("Çeviri alınamadı (motor yanıt vermedi)", "Translation failed (the engine did not respond)"))
         engine.log(1, "çevrilemedi: \"\(source.replacingOccurrences(of: "\n", with: " "))\"")
       }
       // Oyun paketi: satır paketteyse motora gidilmez. Bulanık arama yalnız son tam eşleşmenin paketinde (oynanan oyun).
@@ -144,7 +152,9 @@ final class VisionReader: FrameReader {
     let target = currentQueue()
     target.queue.async {
       guard self.isCurrent(target.token) else { return }
-      self.region = Store.shared.settings.region
+      let settings = Store.shared.settings
+      self.region = settings.region
+      self.resetAuto(enabled: settings.autoRegion, token: target.token)
       self.scheduler.reset()
       _ = self.whenCurrent(target.token) { self.retryLimiter.reset() }
       self.pipeline?.reset()
@@ -233,6 +243,118 @@ final class VisionReader: FrameReader {
     return ReaderHealth(lastReadMs: lastOcrMs, language: healthLanguage, stuckRecoveries: stuckRecoveries)
   }
 
+  // MARK: - Otomatik altyazı alanı
+
+  /// Kilitli şerit (yoksa nil); durum bilgisi için her iş parçacığından okunur.
+  var autoRegion: AutoRegionBand? {
+    busyLock.lock(); defer { busyLock.unlock() }
+    return lockedBand
+  }
+
+  /// Okuma kuyruğunda: ayar değişti ya da akış sıfırlandı; öğrenilenler unutulur.
+  private func resetAuto(enabled: Bool, token: Int) {
+    autoEnabled = enabled
+    finder.reset()
+    let had: Bool = whenCurrent(token) { () -> Bool in
+      let was = lockedBand != nil
+      lockedBand = nil
+      return was
+    } ?? false
+    if had { engine.notifyChanged() }
+  }
+
+  /// Okuma kuyruğunda: bulucunun kararı okunan alana, duruma ve günlüğe yansır.
+  private func applyAuto(_ event: AutoRegionEvent, token: Int) {
+    let band: AutoRegionBand?
+    let text: String
+    switch event {
+    case .none:
+      return
+    case .locked(let found):
+      band = found
+      text = "otomatik altyazı alanı bulundu: \(Self.describe(found))"
+    case .adjusted(let moved):
+      band = moved
+      text = "otomatik altyazı alanı güncellendi: \(Self.describe(moved))"
+    case .unlocked:
+      band = nil
+      text = "otomatik altyazı alanı bırakıldı (uzun süredir altyazı okunmadı); yeniden aranıyor, o sürece elle seçilen bölge okunur"
+    }
+    // Alan değişti: bölge özeti önbelleği geçersiz olur.
+    let applied: Bool? = whenCurrent(token) { () -> Bool in
+      lockedBand = band
+      scheduler.reset()
+      return true
+    }
+    guard applied != nil else { return }
+    engine.log(2, text)
+    engine.notifyChanged()
+  }
+
+  private static func describe(_ band: AutoRegionBand) -> String {
+    func percent(_ value: Double) -> Int { Int((value * 100).rounded()) }
+    return "üst %\(percent(band.top)), alt %\(percent(band.bottom)), sol %\(percent(band.left)), sağ %\(percent(band.right))"
+  }
+
+  /// Okuma kuyruğunda, normal okumadan sonra: tam kare aralıklı (aranırken ~2 sn, kilitliyken ~15 sn) küçültülüp hızlı
+  /// düzeyde okunur; satırlar bulucuya verilir. Okuyucu meşgulken kare zaten gelmez (offer atlar), bu yüzden ek bekleme yok.
+  private func autoScan(_ frame: Frame, token: Int) {
+    guard isCurrent(token) else { return }
+    let now = SubtitleStabilizer.monotonicMillis()
+    guard finder.scanDue(at: now) else { return }
+    finder.markScan(at: now)
+    guard let image = frame.cgImage() else { return }
+    let size = AutoRegionFinder.scanSize(width: frame.width, height: frame.height)
+    let scan: CGImage = (size.width == frame.width && size.height == frame.height) ? image
+      : (Self.resized(image, width: size.width, height: size.height) ?? image)
+    guard let found = recognizeFull(scan) else { return }
+    guard isCurrent(token) else { return }
+    let w = Double(scan.width), h = Double(scan.height)
+    let lines = found.map { o in
+      AutoRegionLine(text: o.text, left: Double(o.left) / w, top: Double(o.top) / h, right: Double(o.right) / w,
+                     bottom: Double(o.bottom) / h, confidence: o.confidence)
+    }
+    applyAuto(finder.ingest(lines, at: SubtitleStabilizer.monotonicMillis()), token: token)
+  }
+
+  /// Tam kareyi hızlı düzeyde okur (alan bulma için doğruluk yetmez, hız gerekir). Parçalar görüntü pikselinde, sol üstten.
+  private func recognizeFull(_ image: CGImage) -> [TextObservation]? {
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .fast
+    request.usesLanguageCorrection = false
+    // Hızlı düzey her dili desteklemez; desteklenmiyorsa Vision'ın kendi seçimi kullanılır.
+    if let ocrLanguage, ((try? request.supportedRecognitionLanguages()) ?? []).contains(ocrLanguage) {
+      request.recognitionLanguages = [ocrLanguage]
+    }
+    do {
+      try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+    } catch {
+      engine.log(1, "otomatik alan taraması başarısız: \(error.localizedDescription)")
+      return nil
+    }
+    return (request.results ?? []).compactMap { (observation) -> TextObservation? in
+      guard let candidate = observation.topCandidates(1).first else { return nil }
+      let text = candidate.string.trimmingCharacters(in: .whitespaces)
+      if text.isEmpty { return nil }
+      let b = observation.boundingBox
+      let p = ReadingSelector.pixels(minX: Double(b.minX), minY: Double(b.minY), maxX: Double(b.maxX), maxY: Double(b.maxY),
+                                     imageWidth: image.width, imageHeight: image.height, offsetX: 0, offsetY: 0, scale: 1)
+      return TextObservation(text: text, confidence: Double(candidate.confidence),
+                             left: p.left, top: p.top, right: p.right, bottom: p.bottom)
+    }
+  }
+
+  /// Görüntüyü verilen boyuta küçültür.
+  static func resized(_ image: CGImage, width: Int, height: Int) -> CGImage? {
+    guard width > 0, height > 0 else { return nil }
+    guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+    context.interpolationQuality = .medium
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return context.makeImage()
+  }
+
   /// Ek alanı bir kez okur: yazı tanıma okuma kuyruğunda sıraya girer (asıl okuma ve kararlılık durumuna dokunmaz),
   /// çeviri çeviri kuyruğunda yapılır, sonuç ~8 sn'lik altyazı olarak TV'ye gider. Bloklar (en çok ~30 sn).
   func readExtra(_ frame: Frame, region r: ExtraRegion) -> ExtraReadResult {
@@ -247,22 +369,22 @@ final class VisionReader: FrameReader {
       slot.lines = self.extraLines(frame, r, token: target.token)
     }
     if semaphore.wait(timeout: .now() + 12) == .timedOut {
-      failed.error = "Okuma zaman aşımına uğradı; yeniden deneyin."
+      failed.error = Lang.t("Okuma zaman aşımına uğradı; yeniden deneyin.", "Reading timed out; try again.")
       return failed
     }
     guard let pipeline = slot.pipeline, let lines = slot.lines else {
-      failed.error = "Alan okunamadı; yeniden deneyin."
+      failed.error = Lang.t("Alan okunamadı; yeniden deneyin.", "The area could not be read; try again.")
       return failed
     }
     let source = ExtraRegion.joinLines(lines.map { OcrNoise.clean($0) })
     if source.isEmpty {
-      failed.error = "Bu alanda okunacak yazı bulunamadı."
+      failed.error = Lang.t("Bu alanda okunacak yazı bulunamadı.", "No text to read was found in this area.")
       return failed
     }
     failed.source = source
     let translated = pipeline.translateOnce(source)
     guard let text = translated.text, !text.isEmpty else {
-      failed.error = "Çeviri alınamadı; bağlantıyı kontrol edin."
+      failed.error = Lang.t("Çeviri alınamadı; bağlantıyı kontrol edin.", "Translation failed; check your connection.")
       return failed
     }
     // Ek alan çevirisi 8 sn kalır; kutu verilmez, TV kendi yerleşimini kullanır.
@@ -298,8 +420,21 @@ final class VisionReader: FrameReader {
 
   private func read(_ frame: Frame, token: Int) {
     guard isCurrent(token) else { return }
+    if autoEnabled { applyAuto(finder.checkIdle(at: SubtitleStabilizer.monotonicMillis()), token: token) }
+    readRegion(frame, token: token)
+    if autoEnabled { autoScan(frame, token: token) }
+  }
+
+  /// Okunan alan: otomatik şerit kilitliyse o, değilse elle seçilen bölge (yalnız okuma kuyruğunda).
+  private var activeRegion: Region {
+    if autoEnabled, let band = finder.band { return Region(top: band.top, bottom: band.bottom, left: band.left, right: band.right) }
+    return region
+  }
+
+  private func readRegion(_ frame: Frame, token: Int) {
+    guard isCurrent(token) else { return }
     guard let pipeline, let image = frame.cgImage() else { return }
-    let r = region
+    let r = activeRegion
     let fullWidth = frame.width, fullHeight = frame.height
     let cropX = min(max(Int(r.left * Double(fullWidth)), 0), fullWidth - 2)
     let cropY = min(max(Int(r.top * Double(fullHeight)), 0), fullHeight - 2)
@@ -348,7 +483,10 @@ final class VisionReader: FrameReader {
     }
     // Kurtarmadan önce başlamış eski okumanın bayat satırları hatta ve ortak duruma gitmez.
     guard isCurrent(token) else { return }
-    if !lines.isEmpty { lastSubtitleAt = clock }
+    if !lines.isEmpty {
+      lastSubtitleAt = clock
+      if autoEnabled { finder.noteReading(at: clock) }
+    }
     lastLines = lines
     lastBox = box
     pipeline.onRead(lines, box)

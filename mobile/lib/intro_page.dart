@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import 'package:material_ui/material_ui.dart';
 
+import 'l10n.dart';
 import 'main.dart';
 import 'ui.dart';
 
@@ -52,7 +53,7 @@ class _IntroPageState extends State<IntroPage> {
                 child: AnimatedOpacity(
                   opacity: last ? 0 : 1,
                   duration: const Duration(milliseconds: 200),
-                  child: TextButton(onPressed: last ? null : () => widget.onDone(), child: Text(widget.replay ? 'Kapat' : 'Geç', style: const TextStyle(color: Tokens.textSecondary, fontSize: 17, fontWeight: FontWeight.w500))),
+                  child: TextButton(onPressed: last ? null : () => widget.onDone(), child: Text(widget.replay ? L.t('Kapat', 'Close') : L.t('Geç', 'Skip'), style: const TextStyle(color: Tokens.textSecondary, fontSize: 17, fontWeight: FontWeight.w500))),
                 ),
               ),
             ),
@@ -81,7 +82,7 @@ class _IntroPageState extends State<IntroPage> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
-              child: GlowButton(onPressed: next, label: last ? (widget.replay ? 'Tamam' : 'Kuruluma başla') : 'Devam'),
+              child: GlowButton(onPressed: next, label: last ? (widget.replay ? L.t('Tamam', 'Done') : L.t('Kuruluma başla', 'Start setup')) : L.t('Devam', 'Continue')),
             ),
           ],
         ),
@@ -147,8 +148,9 @@ class _WelcomePage extends StatelessWidget {
           const _SceneCard(),
         ],
       ),
-      title: 'Oyunu kendi dilinde oyna',
-      body: 'PS5\'teki oyunların altyazılarını anında Türkçeye çevirip TV\'de gösterir.',
+      title: L.t('Oyunu kendi dilinde oyna', 'Play the game in your own language'),
+      body: L.t('PS5\'teki oyunların altyazılarını anında Türkçeye çevirip TV\'de gösterir.',
+          'Translates the subtitles of your PS5 games into Turkish on the fly and shows them on your TV.'),
     );
   }
 }
@@ -227,20 +229,24 @@ class _HowPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _IntroLayout(
+    return _IntroLayout(
       visual: Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: FlowRow(
           nodes: [
-            FlowNode(icon: CupertinoIcons.gamecontroller_fill, label: 'PS5', detail: 'Görüntü', color: Tokens.textSecondary),
-            FlowNode(icon: CupertinoIcons.device_phone_portrait, label: 'Telefon', detail: 'Çevirir', color: Tokens.accent),
-            FlowNode(icon: CupertinoIcons.tv_fill, label: 'TV', detail: 'Gösterir', color: Tokens.success),
+            FlowNode(icon: CupertinoIcons.gamecontroller_fill, label: 'PS5', detail: L.t('Görüntü', 'Video'), color: Tokens.textSecondary),
+            FlowNode(icon: CupertinoIcons.device_phone_portrait, label: L.t('Telefon', 'Phone'), detail: L.t('Çevirir', 'Translates'), color: Tokens.accent),
+            FlowNode(icon: CupertinoIcons.tv_fill, label: 'TV', detail: L.t('Gösterir', 'Displays'), color: Tokens.success),
           ],
         ),
       ),
-      title: 'Telefonun aradaki çevirmen',
-      body: 'Telefon oyun görüntüsünü PS5\'ten Remote Play ile alır, altyazıyı okuyup çevirir ve TV\'ye gönderir. '
-          'Kamera yok; ekranı kapatsan da çalışmaya devam eder.',
+      title: L.t('Telefonun aradaki çevirmen', 'Your phone is the translator in between'),
+      body: L.t(
+        'Telefon oyun görüntüsünü PS5\'ten Remote Play ile alır, altyazıyı okuyup çevirir ve TV\'ye gönderir. '
+            'Kamera yok; ekranı kapatsan da çalışmaya devam eder.',
+        'The phone receives the game video from the PS5 over Remote Play, reads and translates the subtitles, and sends them to the TV. '
+            'No camera is involved; it keeps working even if you turn the screen off.',
+      ),
     );
   }
 }
@@ -250,26 +256,28 @@ class _NeedsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _IntroLayout(
-      visual: SizedBox.shrink(),
-      title: 'Başlamadan önce',
-      body: 'Kurulum birkaç dakika sürer. Şunlar hazır olsun:',
+    return _IntroLayout(
+      visual: const SizedBox.shrink(),
+      title: L.t('Başlamadan önce', 'Before you start'),
+      body: L.t('Kurulum birkaç dakika sürer. Şunlar hazır olsun:', 'Setup takes a few minutes. Have these ready:'),
       extra: Column(
         children: [
           _Need(
             icon: CupertinoIcons.person_2_fill,
-            title: 'PS5\'te ikinci bir kullanıcı',
-            text: 'Oyunu kendi hesabınla oynarsın; telefon ikinci hesapla bağlanır, böylece kumandan TV\'den kopmaz.',
+            title: L.t('PS5\'te ikinci bir kullanıcı', 'A second user on the PS5'),
+            text: L.t('Oyunu kendi hesabınla oynarsın; telefon ikinci hesapla bağlanır, böylece kumandan TV\'den kopmaz.',
+                'You play on your own account; the phone connects with the second account, so your controller stays connected to the TV.'),
           ),
           _Need(
             icon: CupertinoIcons.tv_fill,
-            title: 'TV\'de GameTranslator uygulaması',
-            text: 'Samsung, LG ve Android TV\'de çalışır. TV\'ye kurulum bilgisayardaki GameTranslator ile yapılır.',
+            title: L.t('TV\'de GameTranslator uygulaması', 'The GameTranslator app on your TV'),
+            text: L.t('Samsung, LG ve Android TV\'de çalışır. TV\'ye kurulum bilgisayardaki GameTranslator ile yapılır.',
+                'Works on Samsung, LG and Android TV. The TV app is installed using GameTranslator on your computer.'),
           ),
           _Need(
             icon: CupertinoIcons.wifi,
-            title: 'Aynı Wi-Fi ağı',
-            text: 'Telefon, PS5 ve TV aynı ev ağına bağlı olmalı.',
+            title: L.t('Aynı Wi-Fi ağı', 'The same Wi-Fi network'),
+            text: L.t('Telefon, PS5 ve TV aynı ev ağına bağlı olmalı.', 'The phone, PS5 and TV must be on the same home network.'),
           ),
         ],
       ),

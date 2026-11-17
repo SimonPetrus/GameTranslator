@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import 'l10n.dart';
+
 /// Çekirdeğin (Android tarafındaki Engine) arayüze bildirdiği durum.
 class EngineState {
   const EngineState({
@@ -23,6 +25,7 @@ class EngineState {
     this.packGame = '',
     this.nativeAvailable = true,
     this.demo,
+    this.autoRegion,
   });
 
   /// idle, starting, waking, connecting, streaming, reconnecting, stopping, failed
@@ -48,6 +51,19 @@ class EngineState {
   /// PS5'siz deneme çalışıyor mu (yalnız iOS; alan yoksa null).
   final bool? demo;
 
+  /// Otomatik bulunan altyazı alanı (top, bottom, left, right; 0–1); bulunmadıysa null.
+  final ({double top, double bottom, double left, double right})? autoRegion;
+
+  static ({double top, double bottom, double left, double right})? _parseAuto(Object? raw) {
+    if (raw is! Map) return null;
+    final top = (raw['top'] as num?)?.toDouble();
+    final bottom = (raw['bottom'] as num?)?.toDouble();
+    final left = (raw['left'] as num?)?.toDouble();
+    final right = (raw['right'] as num?)?.toDouble();
+    if (top == null || bottom == null || left == null || right == null) return null;
+    return (top: top, bottom: bottom, left: left, right: right);
+  }
+
   factory EngineState.fromMap(Map<Object?, Object?> map) => EngineState(
         phase: map['phase'] as String? ?? 'idle',
         message: map['message'] as String? ?? '',
@@ -66,6 +82,7 @@ class EngineState {
         packGame: map['packGame'] as String? ?? '',
         nativeAvailable: map['nativeAvailable'] as bool? ?? true,
         demo: map['demo'] as bool?,
+        autoRegion: _parseAuto(map['autoRegion']),
       );
 }
 
@@ -227,6 +244,8 @@ class AppSettings {
   bool get packsEnabled => json['packsEnabled'] as bool? ?? true;
   bool get hideButtonHints => json['hideButtonHints'] as bool? ?? true;
   String get packChoice => json['packChoice'] as String? ?? '';
+  String get uiLanguage => json['uiLanguage'] as String? ?? 'auto';
+  bool get autoRegion => json['autoRegion'] as bool? ?? false;
 
   /// Ek okuma alanları (en çok 3): üst, alt, sol, sağ (0–1) ve ad.
   List<Map<String, dynamic>> get extraRegions {
@@ -312,7 +331,7 @@ class Bridge {
       final map = await _channel.invokeMethod<Map<Object?, Object?>>('updatePatches') ?? {};
       return (map['ok'] as bool? ?? false, map['detail'] as String? ?? '');
     } on MissingPluginException {
-      return (false, 'Bu telefonda desteklenmiyor.');
+      return (false, L.t('Bu telefonda desteklenmiyor.', 'Not supported on this phone.'));
     }
   }
 
@@ -322,7 +341,7 @@ class Bridge {
       final map = await _channel.invokeMethod<Map<Object?, Object?>>('checkGemini', key) ?? {};
       return (map['ok'] as bool? ?? false, map['detail'] as String? ?? '');
     } on MissingPluginException {
-      return (false, 'Bu telefonda desteklenmiyor.');
+      return (false, L.t('Bu telefonda desteklenmiyor.', 'Not supported on this phone.'));
     }
   }
 
@@ -454,9 +473,9 @@ class Bridge {
         error: map['error'] as String? ?? '',
       );
     } on MissingPluginException {
-      return const ExtraReadResult(error: 'Bu telefonda desteklenmiyor.');
+      return ExtraReadResult(error: L.t('Bu telefonda desteklenmiyor.', 'Not supported on this phone.'));
     } on PlatformException {
-      return const ExtraReadResult(error: 'Okunamadı.');
+      return ExtraReadResult(error: L.t('Okunamadı.', 'Could not read.'));
     }
   }
 

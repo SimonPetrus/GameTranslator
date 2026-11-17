@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'bridge.dart';
 import 'guide_page.dart';
 import 'history_page.dart';
+import 'l10n.dart';
 import 'main.dart';
 import 'settings_page.dart';
 import 'tv_install_page.dart';
@@ -26,11 +27,11 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
-  static const tabs = [
-    (CupertinoIcons.captions_bubble, CupertinoIcons.captions_bubble_fill, 'Çeviri'),
-    (CupertinoIcons.book, CupertinoIcons.book_fill, 'Rehber'),
-    (CupertinoIcons.gear_alt, CupertinoIcons.gear_alt_fill, 'Ayarlar'),
-  ];
+  static List<(IconData, IconData, String)> get tabs => [
+        (CupertinoIcons.captions_bubble, CupertinoIcons.captions_bubble_fill, L.t('Çeviri', 'Translate')),
+        (CupertinoIcons.book, CupertinoIcons.book_fill, L.t('Rehber', 'Guide')),
+        (CupertinoIcons.gear_alt, CupertinoIcons.gear_alt_fill, L.t('Ayarlar', 'Settings')),
+      ];
 
   int tab = 0;
   EngineState state = const EngineState();
@@ -84,6 +85,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (mounted) setState(() => settings = loaded);
   }
 
+  /// Başlıktaki küre düğmesi: dili Türkçe ile İngilizce arasında değiştirir ve ayara yazar.
+  Future<void> toggleLanguage() async {
+    final next = L.en ? 'tr' : 'en';
+    L.apply(next);
+    try {
+      final fresh = await Bridge.settings();
+      fresh.json['uiLanguage'] = next;
+      await Bridge.saveSettings(fresh);
+      if (mounted) setState(() => settings = fresh);
+    } catch (_) {
+      // Ayar yazılamadı: dil bu oturumda değişmiş kalır.
+    }
+  }
+
   Future<void> refreshPreview() async {
     if (!streaming || tab != 0) return;
     final image = await Bridge.snapshot(width: 640);
@@ -107,7 +122,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> sendTest() async {
     await Bridge.testSubtitle();
     if (!mounted) return;
-    toast(context, state.tvClients > 0 ? 'Deneme altyazısı TV\'ye gönderildi.' : 'TV bağlı değil. Önce TV\'de GameTranslator\'ı aç.');
+    toast(
+      context,
+      state.tvClients > 0
+          ? L.t('Deneme altyazısı TV\'ye gönderildi.', 'Test subtitle sent to the TV.')
+          : L.t('TV bağlı değil. Önce TV\'de GameTranslator\'ı aç.', 'The TV is not connected. Open GameTranslator on the TV first.'),
+    );
   }
 
   /// Şu an okunan ek alanın sırası (yoksa null).
@@ -131,7 +151,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           children: [
             if (failed)
               Text(
-                result.error.isEmpty ? 'Bu alanda okunacak yazı bulunamadı.' : result.error,
+                result.error.isEmpty ? L.t('Bu alanda okunacak yazı bulunamadı.', 'No text to read in this area.') : result.error,
                 style: Txt.subhead.copyWith(color: Tokens.danger),
               )
             else ...[
@@ -151,14 +171,30 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   (String, String, Color) get headline => switch (state.phase) {
-        'streaming' => ('Çeviri açık', 'Ekranı kapatabilirsin; çeviri arka planda sürer.', Tokens.success),
-        'starting' => ('Başlatılıyor…', 'Birkaç saniye sürer.', Tokens.warning),
-        'connecting' => ('PS5\'e bağlanılıyor…', 'PS5 açık ve aynı Wi-Fi\'de olmalı.', Tokens.warning),
-        'waking' => ('PS5 uyandırılıyor…', 'Dinlenme modundan çıkması bir dakikayı bulabilir.', Tokens.warning),
-        'reconnecting' => ('Yeniden bağlanılıyor…', 'Bağlantı koptu, tekrar deneniyor.', Tokens.warning),
-        'stopping' => ('Durduruluyor…', '', Tokens.textSecondary),
-        'failed' => ('Başlatılamadı', 'Yeniden denemek için dokun.', Tokens.danger),
-        _ => ('Çeviri kapalı', 'Başlatmak için dokun.', Tokens.textSecondary),
+        'streaming' => (
+            L.t('Çeviri açık', 'Translation on'),
+            L.t('Ekranı kapatabilirsin; çeviri arka planda sürer.', 'You can lock the screen; translation keeps running in the background.'),
+            Tokens.success
+          ),
+        'starting' => (L.t('Başlatılıyor…', 'Starting…'), L.t('Birkaç saniye sürer.', 'This takes a few seconds.'), Tokens.warning),
+        'connecting' => (
+            L.t('PS5\'e bağlanılıyor…', 'Connecting to the PS5…'),
+            L.t('PS5 açık ve aynı Wi-Fi\'de olmalı.', 'The PS5 must be on and on the same Wi-Fi.'),
+            Tokens.warning
+          ),
+        'waking' => (
+            L.t('PS5 uyandırılıyor…', 'Waking the PS5…'),
+            L.t('Dinlenme modundan çıkması bir dakikayı bulabilir.', 'Leaving rest mode can take up to a minute.'),
+            Tokens.warning
+          ),
+        'reconnecting' => (
+            L.t('Yeniden bağlanılıyor…', 'Reconnecting…'),
+            L.t('Bağlantı koptu, tekrar deneniyor.', 'The connection dropped; trying again.'),
+            Tokens.warning
+          ),
+        'stopping' => (L.t('Durduruluyor…', 'Stopping…'), '', Tokens.textSecondary),
+        'failed' => (L.t('Başlatılamadı', 'Could not start'), L.t('Yeniden denemek için dokun.', 'Tap to try again.'), Tokens.danger),
+        _ => (L.t('Çeviri kapalı', 'Translation off'), L.t('Başlatmak için dokun.', 'Tap to start.'), Tokens.textSecondary),
       };
 
   List<FlowNode> get nodes {
@@ -170,25 +206,25 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         icon: CupertinoIcons.gamecontroller_fill,
         label: 'PS5',
         detail: streaming
-            ? 'Bağlı'
+            ? L.t('Bağlı', 'Connected')
             : switch (state.phase) {
-                'waking' => 'Uyanıyor',
-                'starting' || 'connecting' || 'reconnecting' => 'Bağlanıyor',
-                _ => 'Eşleşti',
+                'waking' => L.t('Uyanıyor', 'Waking'),
+                'starting' || 'connecting' || 'reconnecting' => L.t('Bağlanıyor', 'Connecting'),
+                _ => L.t('Eşleşti', 'Paired'),
               },
         color: streaming ? Tokens.success : (connecting ? Tokens.warning : Tokens.textSecondary),
         busy: connecting,
       ),
       FlowNode(
         icon: CupertinoIcons.device_phone_portrait,
-        label: 'Telefon',
-        detail: address == null ? 'Wi-Fi yok' : (streaming ? 'Çeviriyor' : 'Hazır'),
+        label: L.t('Telefon', 'Phone'),
+        detail: address == null ? L.t('Wi-Fi yok', 'No Wi-Fi') : (streaming ? L.t('Çeviriyor', 'Translating') : L.t('Hazır', 'Ready')),
         color: address == null ? Tokens.danger : (streaming ? Tokens.accent : Tokens.textSecondary),
       ),
       FlowNode(
         icon: CupertinoIcons.tv_fill,
         label: 'TV',
-        detail: tvOn ? 'Bağlı' : (active ? 'Bekleniyor' : 'Bağlı değil'),
+        detail: tvOn ? L.t('Bağlı', 'Connected') : (active ? L.t('Bekleniyor', 'Waiting') : L.t('Bağlı değil', 'Not connected')),
         color: tvOn ? Tokens.success : (active ? Tokens.warning : Tokens.textSecondary),
       ),
     ];
@@ -235,7 +271,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final tvOn = state.tvClients > 0;
     return LargeTitleList(
       title: 'GameTranslator',
-      trailing: const GtLogo(size: 38, glow: false),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GlassIconButton(
+            icon: CupertinoIcons.globe,
+            size: 34,
+            tooltip: L.t('Uygulama dili', 'App language'),
+            onTap: toggleLanguage,
+          ),
+          const SizedBox(width: 8),
+          const GtLogo(size: 34, glow: false),
+        ],
+      ),
       children: [
         const SizedBox(height: 22),
         Center(
@@ -259,29 +307,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         FlowRow(nodes: nodes),
         if (!state.nativeAvailable) ...[
           const SizedBox(height: 12),
-          const Notice(
+          Notice(
             icon: CupertinoIcons.exclamationmark_circle_fill,
             color: Tokens.danger,
-            title: 'Bu telefon desteklenmiyor',
-            text: 'Remote Play kütüphanesi bu cihazda yüklenemedi.',
+            title: L.t('Bu telefon desteklenmiyor', 'This phone is not supported'),
+            text: L.t('Remote Play kütüphanesi bu cihazda yüklenemedi.', 'The Remote Play library could not be loaded on this device.'),
           ),
         ],
         if (state.localAddress == null) ...[
           const SizedBox(height: 12),
-          const Notice(
+          Notice(
             icon: CupertinoIcons.wifi_slash,
             color: Tokens.danger,
-            title: 'Wi-Fi bağlantısı yok',
-            text: 'Telefon, PS5 ve TV ile aynı Wi-Fi ağına bağlı olmalı.',
+            title: L.t('Wi-Fi bağlantısı yok', 'No Wi-Fi connection'),
+            text: L.t('Telefon, PS5 ve TV ile aynı Wi-Fi ağına bağlı olmalı.', 'The phone must be on the same Wi-Fi network as the PS5 and the TV.'),
           ),
         ],
         if (streaming && !tvOn && !tvStuck) ...[
           const SizedBox(height: 12),
-          const Notice(
+          Notice(
             icon: CupertinoIcons.tv,
             color: Tokens.warning,
-            title: 'TV\'de GameTranslator\'ı aç',
-            text: 'TV uygulaması telefonu ağda kendisi bulur; açtıktan sonra bağlanması birkaç saniye sürer.',
+            title: L.t('TV\'de GameTranslator\'ı aç', 'Open GameTranslator on the TV'),
+            text: L.t(
+              'TV uygulaması telefonu ağda kendisi bulur; açtıktan sonra bağlanması birkaç saniye sürer.',
+              'The TV app finds the phone on the network by itself; it takes a few seconds to connect after you open it.',
+            ),
           ),
         ],
         if (streaming && !tvOn && tvStuck) ...[
@@ -289,18 +340,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           Notice(
             icon: CupertinoIcons.exclamationmark_triangle_fill,
             color: Tokens.warning,
-            title: 'TV hâlâ bağlanmadı',
-            text: 'TV uygulaması daha önce bilgisayara bağlandıysa eski adreste takılı kalmış olabilir. '
-                'TV\'de uygulamanın verilerini bir kez temizlemek bunu düzeltir.',
+            title: L.t('TV hâlâ bağlanmadı', 'The TV still has not connected'),
+            text: L.t(
+              'TV uygulaması daha önce bilgisayara bağlandıysa eski adreste takılı kalmış olabilir. '
+                  'TV\'de uygulamanın verilerini bir kez temizlemek bunu düzeltir.',
+              'If the TV app was connected to a computer before, it may be stuck on the old address. '
+                  'Clearing the app\'s data on the TV once fixes this.',
+            ),
             action: TextButton(
               style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
               onPressed: () => Navigator.of(context).push(appleRoute<void>((_) => const TvHelpPage())),
-              child: const Text('Adım adım göster', style: TextStyle(fontWeight: FontWeight.w600)),
+              child: Text(L.t('Adım adım göster', 'Show step by step'), style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
           ),
         ],
         if (active) ...[
-          const GroupHeader('CANLI'),
+          GroupHeader(L.t('CANLI', 'LIVE')),
           _LiveCard(state: state, preview: streaming ? preview : null, settings: settings),
           if (Platform.isIOS && streaming && (settings?.extraRegions.isNotEmpty ?? false)) ...[
             const SizedBox(height: 12),
@@ -314,7 +369,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     icon: readingExtra == i
                         ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(CupertinoIcons.crop, size: 16),
-                    label: Text(settings!.extraRegions[i]['name'] as String? ?? 'Alan ${i + 1}'),
+                    label: Text(settings!.extraRegions[i]['name'] as String? ?? L.t('Alan ${i + 1}', 'Area ${i + 1}')),
                   ),
               ],
             ),
@@ -327,31 +382,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 Cell(
                   icon: CupertinoIcons.clock_fill,
                   iconColor: Tokens.indigo,
-                  title: 'Altyazı geçmişi',
+                  title: L.t('Altyazı geçmişi', 'Subtitle history'),
                   chevron: true,
                   onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const HistoryPage())),
                 ),
-              Cell(icon: CupertinoIcons.captions_bubble_fill, iconColor: Tokens.indigo, title: 'TV\'ye deneme altyazısı gönder', onTap: sendTest),
-              Cell(icon: CupertinoIcons.crop, iconColor: Tokens.teal, title: 'Altyazı bölgesini ayarla', chevron: true, onTap: () => selectTab(2)),
+              Cell(icon: CupertinoIcons.captions_bubble_fill, iconColor: Tokens.indigo, title: L.t('TV\'ye deneme altyazısı gönder', 'Send a test subtitle to the TV'), onTap: sendTest),
+              Cell(icon: CupertinoIcons.crop, iconColor: Tokens.teal, title: L.t('Altyazı bölgesini ayarla', 'Adjust subtitle area'), chevron: true, onTap: () => selectTab(2)),
             ],
           ),
         ] else ...[
-          const GroupHeader('NASIL KULLANILIR'),
+          GroupHeader(L.t('NASIL KULLANILIR', 'HOW TO USE')),
           Group(
             inset: 60,
             children: [
-              const _HowStep(number: 1, text: 'Oyunda altyazıları aç.'),
-              const _HowStep(number: 2, text: 'Yukarıdaki düğmeyle çeviriyi başlat.'),
-              const _HowStep(number: 3, text: 'TV\'de GameTranslator\'ı aç; çeviri oyunun üstünde görünür.'),
+              _HowStep(number: 1, text: L.t('Oyunda altyazıları aç.', 'Turn on subtitles in the game.')),
+              _HowStep(number: 2, text: L.t('Yukarıdaki düğmeyle çeviriyi başlat.', 'Start translation with the button above.')),
+              _HowStep(number: 3, text: L.t('TV\'de GameTranslator\'ı aç; çeviri oyunun üstünde görünür.', 'Open GameTranslator on the TV; the translation appears over the game.')),
               Cell(
                 icon: CupertinoIcons.tv_fill,
                 iconColor: Tokens.purple,
-                title: 'TV uygulamasını kur',
-                subtitle: 'TV\'nde GameTranslator yoksa',
+                title: L.t('TV uygulamasını kur', 'Install the TV app'),
+                subtitle: L.t('TV\'nde GameTranslator yoksa', 'If your TV does not have GameTranslator'),
                 chevron: true,
                 onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const TvInstallPage())),
               ),
-              Cell(icon: CupertinoIcons.book_fill, iconColor: Tokens.warning, title: 'Ayrıntılı rehber', chevron: true, onTap: () => selectTab(1)),
+              Cell(icon: CupertinoIcons.book_fill, iconColor: Tokens.warning, title: L.t('Ayrıntılı rehber', 'Detailed guide'), chevron: true, onTap: () => selectTab(1)),
             ],
           ),
         ],
@@ -381,7 +436,7 @@ class _PowerButton extends StatelessWidget {
     final tone = idle ? (phase == 'failed' ? Tokens.danger : Tokens.accent) : color;
     return Semantics(
       button: true,
-      label: active ? 'Çeviriyi durdur' : 'Çeviriyi başlat',
+      label: active ? L.t('Çeviriyi durdur', 'Stop translation') : L.t('Çeviriyi başlat', 'Start translation'),
       child: AnimatedBuilder(
         animation: pulse,
         builder: (context, child) {
@@ -491,7 +546,7 @@ class _LiveCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (preview != null)
-            RegionPreview(image: preview!, settings: settings, subtitle: hasTranslation ? state.lastTranslation : null)
+            RegionPreview(image: preview!, settings: settings, subtitle: hasTranslation ? state.lastTranslation : null, autoRegion: state.autoRegion)
           else
             AspectRatio(
               aspectRatio: 16 / 9,
@@ -503,7 +558,7 @@ class _LiveCard extends StatelessWidget {
                   children: [
                     const CupertinoActivityIndicator(radius: 12),
                     const SizedBox(height: 12),
-                    Text(streaming ? 'Önizleme hazırlanıyor…' : 'PS5 görüntüsü bekleniyor…', style: Txt.footnote.copyWith(color: Tokens.textSecondary)),
+                    Text(streaming ? L.t('Önizleme hazırlanıyor…', 'Preparing preview…') : L.t('PS5 görüntüsü bekleniyor…', 'Waiting for the PS5 picture…'), style: Txt.footnote.copyWith(color: Tokens.textSecondary)),
                   ],
                 ),
               ),
@@ -515,8 +570,8 @@ class _LiveCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Expanded(child: Text('Son çeviri', style: Txt.headline)),
-                    if (streaming) Pill(text: '${state.translated} satır', color: Tokens.accent),
+                    Expanded(child: Text(L.t('Son çeviri', 'Latest translation'), style: Txt.headline)),
+                    if (streaming) Pill(text: L.t('${state.translated} satır', '${state.translated} lines'), color: Tokens.accent),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -531,11 +586,11 @@ class _LiveCard extends StatelessWidget {
                   Text(state.lastSource.replaceAll('\n', ' '), style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
                   if (state.packHits > 0 && state.packGame.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text('${state.packGame} paketi kullanılıyor · ${state.packHits} satır paketten',
+                    Text(L.t('${state.packGame} paketi kullanılıyor · ${state.packHits} satır paketten', 'Using the ${state.packGame} pack · ${state.packHits} lines from the pack'),
                         style: Txt.footnote.copyWith(color: Tokens.success)),
                   ],
                 ] else
-                  Text('Oyunda altyazı çıkınca çevirisi burada ve TV\'de görünür.', style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
+                  Text(L.t('Oyunda altyazı çıkınca çevirisi burada ve TV\'de görünür.', 'When a subtitle appears in the game, its translation shows here and on the TV.'), style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
                 if (streaming) ...[
                   const SizedBox(height: 14),
                   // Bölge doğru yerde mi ve yazı okunuyor mu, buradan anlaşılır.
@@ -546,10 +601,10 @@ class _LiveCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('ÇERÇEVEDE OKUNAN', style: Txt.caption.copyWith(color: Tokens.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
+                        Text(L.t('ÇERÇEVEDE OKUNAN', 'READ IN THE FRAME'), style: Txt.caption.copyWith(color: Tokens.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
                         const SizedBox(height: 3),
                         Text(
-                          state.lastRead.isEmpty ? 'Şu an yazı yok.' : state.lastRead.replaceAll('\n', ' '),
+                          state.lastRead.isEmpty ? L.t('Şu an yazı yok.', 'No text right now.') : state.lastRead.replaceAll('\n', ' '),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           style: Txt.footnote.copyWith(fontSize: 13.5),
@@ -569,15 +624,19 @@ class _LiveCard extends StatelessWidget {
 
 /// Oyun görüntüsü, üstünde altyazının arandığı bölgenin çerçevesi ve (verildiyse) TV'deki gibi çeviri.
 class RegionPreview extends StatelessWidget {
-  const RegionPreview({super.key, required this.image, required this.settings, this.subtitle});
+  const RegionPreview({super.key, required this.image, required this.settings, this.subtitle, this.autoRegion});
 
   final Uint8List image;
   final AppSettings? settings;
   final String? subtitle;
 
+  /// Otomatik bulunan altyazı alanı (0–1); yoksa null.
+  final ({double top, double bottom, double left, double right})? autoRegion;
+
   @override
   Widget build(BuildContext context) {
     final s = settings;
+    final auto = autoRegion;
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: LayoutBuilder(
@@ -599,11 +658,45 @@ class RegionPreview extends StatelessWidget {
                   ),
                 ),
               ),
+            if (auto != null) ..._autoBand(auto, constraints.maxWidth, constraints.maxHeight),
             if (subtitle != null) _subtitle(s, constraints.maxHeight),
           ],
         ),
       ),
     );
+  }
+
+  /// Otomatik bulunan altyazı bandı: yeşil çerçeve ve "Otomatik" etiketi (elle çizilen mavi çerçeveden ayrışır).
+  List<Widget> _autoBand(({double top, double bottom, double left, double right}) a, double width, double height) {
+    final top = a.top.clamp(0.0, 1.0).toDouble() * height;
+    final bottom = a.bottom.clamp(0.0, 1.0).toDouble() * height;
+    final left = a.left.clamp(0.0, 1.0).toDouble() * width;
+    final right = a.right.clamp(0.0, 1.0).toDouble() * width;
+    if (right <= left || bottom <= top) return const [];
+    return [
+      Positioned(
+        left: left,
+        top: top,
+        width: right - left,
+        height: bottom - top,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: Tokens.success, width: 1.5),
+            borderRadius: BorderRadius.circular(6),
+            color: Tokens.success.withValues(alpha: 0.12),
+          ),
+        ),
+      ),
+      Positioned(
+        left: left,
+        top: (top - 15).clamp(0.0, height).toDouble(),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(color: Tokens.success, borderRadius: BorderRadius.circular(4)),
+          child: Text(L.t('Otomatik', 'Auto'), style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w700)),
+        ),
+      ),
+    ];
   }
 
   /// TV'deki görünümün yaklaşık hâli: renk, kalınlık, boyut (1080p TV'ye göre ölçekli), zemin ve yer.

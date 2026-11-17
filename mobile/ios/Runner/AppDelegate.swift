@@ -11,6 +11,8 @@ import UIKit
     // deneme altyazısını gönderir (Android'deki gt_test_subtitle hata ayıklama isteğinin karşılığı; kayıt bilgisi taşımaz).
     // TV telefonu çeviri başlamadan da bulsun diye altyazı sunucusu uygulama açılınca açılır.
     // Çökme günlüğü en başta kurulur: önceki çalıştırmanın çöküşü okunur, bu çalıştırmanınki yakalanır.
+    // Yerel metinlerin dili her çağrıda ayardan okunur (değişince yeniden başlatma gerekmez).
+    Lang.provider = { Lang.effective(setting: Store.shared.settings.uiLanguage, preferred: Locale.preferredLanguages) }
     CrashLog.start()
     Engine.shared.openServer()
     if ProcessInfo.processInfo.arguments.contains("--gt-test-subtitle") {

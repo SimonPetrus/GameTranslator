@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
+import 'l10n.dart';
 import 'main.dart';
 import 'ui.dart';
 
@@ -42,13 +43,13 @@ class _HealthPageState extends State<HealthPage> {
     });
   }
 
-  static const engineNames = {'google': 'Google', 'deepl': 'DeepL', 'gemini': 'Gemini', 'mlkit': 'Cihazda'};
+  static Map<String, String> get engineNames => {'google': 'Google', 'deepl': 'DeepL', 'gemini': 'Gemini', 'mlkit': L.t('Cihazda', 'On device')};
 
   @override
   Widget build(BuildContext context) {
     final h = info;
     return GlassScaffold(
-      title: 'Sistem Durumu',
+      title: L.t('Sistem Durumu', 'System Status'),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
@@ -56,12 +57,12 @@ class _HealthPageState extends State<HealthPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 60, 24, 0),
               child: loaded
-                  ? Text('Durum bilgisi alınamadı.', textAlign: TextAlign.center, style: Txt.subhead.copyWith(color: Tokens.textSecondary))
+                  ? Text(L.t('Durum bilgisi alınamadı.', 'Status information is unavailable.'), textAlign: TextAlign.center, style: Txt.subhead.copyWith(color: Tokens.textSecondary))
                   : const Center(child: CupertinoActivityIndicator(radius: 14)),
             )
           else ...[
             Group(children: rows(h)),
-            const GroupFooter('Yeşil: sorun yok. Kırmızı: ilgilenmek gerekir. Gri: şu an kapalı ya da bekliyor.'),
+            GroupFooter(L.t('Yeşil: sorun yok. Kırmızı: ilgilenmek gerekir. Gri: şu an kapalı ya da bekliyor.', 'Green: no problem. Red: needs attention. Gray: off or waiting right now.')),
           ],
         ],
       ),
@@ -76,62 +77,62 @@ class _HealthPageState extends State<HealthPage> {
 
     final (Color, String) translator;
     if (!h.translatorLastOk) {
-      translator = (Tokens.danger, 'Son çeviri başarısız${h.translatorLastError.isEmpty ? '' : ': ${h.translatorLastError}'}');
+      translator = (Tokens.danger, '${L.t('Son çeviri başarısız', 'Last translation failed')}${h.translatorLastError.isEmpty ? '' : ': ${h.translatorLastError}'}');
     } else if (h.geminiPausedSeconds > 0) {
-      translator = (Tokens.warning, 'Gemini ${h.geminiPausedSeconds} sn bekliyor; bu sürede Google kullanılır');
+      translator = (Tokens.warning, L.t('Gemini ${h.geminiPausedSeconds} sn bekliyor; bu sürede Google kullanılır', 'Gemini is paused for ${h.geminiPausedSeconds} s; Google is used meanwhile'));
     } else {
-      translator = (streaming ? Tokens.success : Tokens.gray, 'Sorun yok');
+      translator = (streaming ? Tokens.success : Tokens.gray, L.t('Sorun yok', 'No problem'));
     }
 
     return [
       _StatusRow(
         color: h.network ? Tokens.success : Tokens.danger,
-        title: 'Ağ',
-        detail: h.network ? 'İnternet bağlantısı var' : 'Bağlantı yok',
+        title: L.t('Ağ', 'Network'),
+        detail: h.network ? L.t('İnternet bağlantısı var', 'Internet connection available') : L.t('Bağlantı yok', 'No connection'),
       ),
       _StatusRow(
         color: h.phoneAddress.isEmpty ? Tokens.danger : Tokens.success,
-        title: 'Telefon adresi',
-        detail: h.phoneAddress.isEmpty ? 'Wi-Fi adresi yok' : h.phoneAddress,
+        title: L.t('Telefon adresi', 'Phone address'),
+        detail: h.phoneAddress.isEmpty ? L.t('Wi-Fi adresi yok', 'No Wi-Fi address') : h.phoneAddress,
       ),
       _StatusRow(
         color: !h.consoleRegistered ? Tokens.danger : (streaming ? Tokens.success : Tokens.gray),
         title: 'PS5',
-        detail: !h.consoleRegistered ? 'Eşleşmemiş' : 'Eşleşti${consoleHost.isEmpty ? '' : ' · $consoleHost'}$consoleState',
+        detail: !h.consoleRegistered ? L.t('Eşleşmemiş', 'Not paired') : '${L.t('Eşleşti', 'Paired')}${consoleHost.isEmpty ? '' : ' · $consoleHost'}$consoleState',
       ),
       _StatusRow(
         color: streaming ? Tokens.success : Tokens.gray,
-        title: 'Görüntü',
-        detail: streaming ? 'Akıyor · ${h.fps.toStringAsFixed(1)} fps' : 'Kapalı',
+        title: L.t('Görüntü', 'Video'),
+        detail: streaming ? L.t('Akıyor · ${h.fps.toStringAsFixed(1)} fps', 'Streaming · ${h.fps.toStringAsFixed(1)} fps') : L.t('Kapalı', 'Off'),
       ),
       _StatusRow(
         color: !streaming ? Tokens.gray : (h.stuckRecoveries > 0 ? Tokens.warning : Tokens.success),
-        title: 'Yazı okuma',
+        title: L.t('Yazı okuma', 'Text reading'),
         detail: [
-          h.lastReadMs > 0 ? 'Son okuma ${h.lastReadMs} ms' : 'Henüz okuma yok',
+          h.lastReadMs > 0 ? L.t('Son okuma ${h.lastReadMs} ms', 'Last read ${h.lastReadMs} ms') : L.t('Henüz okuma yok', 'No reads yet'),
           if (h.readerLanguage.isNotEmpty) h.readerLanguage,
-          if (h.stuckRecoveries > 0) '${h.stuckRecoveries} toparlanma',
+          if (h.stuckRecoveries > 0) L.t('${h.stuckRecoveries} toparlanma', '${h.stuckRecoveries} recoveries'),
         ].join(' · '),
       ),
       _StatusRow(
         color: translator.$1,
-        title: 'Çeviri${engine.isEmpty ? '' : ' · $engine'}',
+        title: '${L.t('Çeviri', 'Translation')}${engine.isEmpty ? '' : ' · $engine'}',
         detail: translator.$2,
       ),
       _StatusRow(
         color: h.tvClients > 0 ? Tokens.success : (streaming ? Tokens.warning : Tokens.gray),
         title: 'TV',
-        detail: '${h.tvClients} TV bağlı${h.tvPort > 0 ? ' · port ${h.tvPort}' : ''}',
+        detail: '${L.t('${h.tvClients} TV bağlı', '${h.tvClients} TV connected')}${h.tvPort > 0 ? ' · port ${h.tvPort}' : ''}',
       ),
       _StatusRow(
         color: h.packsEnabled ? Tokens.success : Tokens.gray,
-        title: 'Oyun paketi',
-        detail: !h.packsEnabled ? 'Kapalı' : (h.packGame.isEmpty ? 'Açık · oyun bulunamadı' : h.packGame),
+        title: L.t('Oyun paketi', 'Game pack'),
+        detail: !h.packsEnabled ? L.t('Kapalı', 'Off') : (h.packGame.isEmpty ? L.t('Açık · oyun bulunamadı', 'On · no game found') : h.packGame),
       ),
       _StatusRow(
         color: h.cacheEntries > 0 ? Tokens.success : Tokens.gray,
-        title: 'Çeviri hafızası',
-        detail: '${h.cacheEntries} kayıt',
+        title: L.t('Çeviri hafızası', 'Translation memory'),
+        detail: L.t('${h.cacheEntries} kayıt', '${h.cacheEntries} entries'),
       ),
     ];
   }

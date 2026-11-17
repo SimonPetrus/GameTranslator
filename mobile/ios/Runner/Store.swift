@@ -50,6 +50,10 @@ struct Settings: Equatable {
   var packChoice = ""
   /// Ana bölgenin dışında, istek üzerine bir kez okunan ek alanlar (en çok 3; görev metni, eşya adı vb.).
   var extraRegions: [ExtraRegion] = []
+  /// Altyazı alanını okuyucu kendisi bulur (varsayılan kapalı); bulunana kadar elle seçilen bölge okunur.
+  var autoRegion = false
+  /// Arayüz dili: "auto" (cihaz dili Türkçeyse Türkçe, değilse İngilizce), "tr" ya da "en".
+  var uiLanguage = Lang.auto
 
   /// Sözlük metni çözülmüş hâliyle; boş ya da bozuksa boş sözlük (Android'deki parsedGlossary).
   func parsedGlossary() -> Glossary {
@@ -80,6 +84,8 @@ struct Settings: Equatable {
       "hideButtonHints": hideButtonHints,
       "packChoice": packChoice,
       "extraRegions": extraRegions.map { $0.toJson() },
+      "autoRegion": autoRegion,
+      "uiLanguage": uiLanguage,
       "style": [
         "fontSize": style.fontSize, "bottomPercent": style.bottomPercent, "placement": style.placement,
         "background": style.background, "bold": style.bold, "textColor": style.textColor,
@@ -119,6 +125,8 @@ struct Settings: Equatable {
     out.hideButtonHints = bool(json["hideButtonHints"], true)
     out.packChoice = string(json["packChoice"], "")
     out.extraRegions = ExtraRegion.parseList(json["extraRegions"])
+    out.autoRegion = bool(json["autoRegion"], false)
+    out.uiLanguage = Lang.normalize(string(json["uiLanguage"], Lang.auto))
     let ds = d.style
     out.style = SubtitleStyle(
       fontSize: int(s?["fontSize"], ds.fontSize),
@@ -141,17 +149,10 @@ struct Settings: Equatable {
 
   private static func clamp(_ value: Double, _ low: Double, _ high: Double) -> Double { min(max(value, low), high) }
 
-  private static func double(_ value: Any?, _ fallback: Double) -> Double {
-    if let n = value as? NSNumber, !(value is Bool) { let v = n.doubleValue; return v.isFinite ? v : fallback }
-    if let t = value as? String, let v = Double(t) { return v }
-    return fallback
-  }
+  // Gerçek JSON true/false'u 0/1 sayısından ayırır (JsonNumber).
+  private static func double(_ value: Any?, _ fallback: Double) -> Double { JsonNumber.double(value, fallback) }
 
-  private static func int(_ value: Any?, _ fallback: Int) -> Int {
-    if let n = value as? NSNumber, !(value is Bool) { return n.intValue }
-    if let t = value as? String, let v = Double(t) { return Int(v) }
-    return fallback
-  }
+  private static func int(_ value: Any?, _ fallback: Int) -> Int { JsonNumber.int(value, fallback) }
 
   private static func bool(_ value: Any?, _ fallback: Bool) -> Bool {
     if let b = value as? Bool { return b }

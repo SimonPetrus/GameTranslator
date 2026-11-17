@@ -7,6 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'bridge.dart';
 import 'guide_page.dart';
+import 'l10n.dart';
 import 'main.dart';
 import 'psn.dart';
 import 'ui.dart';
@@ -83,11 +84,11 @@ class _SetupPageState extends State<SetupPage> {
     final digits = pinController.text.replaceAll(RegExp(r'\D'), '');
     final pin = int.tryParse(digits);
     if (host.isEmpty) {
-      setState(() => error = 'Önce PS5\'i seç ya da IP adresini yaz.');
+      setState(() => error = L.t('Önce PS5\'i seç ya da IP adresini yaz.', 'First pick your PS5 or type its IP address.'));
       return;
     }
     if (pin == null || digits.length != 8) {
-      setState(() => error = 'PS5 ekranındaki 8 haneli kodu gir.');
+      setState(() => error = L.t('PS5 ekranındaki 8 haneli kodu gir.', 'Enter the 8-digit code shown on the PS5 screen.'));
       return;
     }
     FocusScope.of(context).unfocus();
@@ -99,7 +100,7 @@ class _SetupPageState extends State<SetupPage> {
     if (!mounted) return;
     setState(() {
       pairing = false;
-      error = result.ok ? null : (result.detail ?? 'Eşleştirme başarısız.');
+      error = result.ok ? null : (result.detail ?? L.t('Eşleştirme başarısız.', 'Pairing failed.'));
     });
     if (result.ok) await widget.onChanged();
   }
@@ -135,7 +136,7 @@ class _SetupPageState extends State<SetupPage> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: Tooltip(
-                    message: 'Rehber',
+                    message: L.t('Rehber', 'Guide'),
                     child: Material(
                       color: Tokens.surface,
                       shape: const CircleBorder(side: BorderSide(color: Tokens.border)),
@@ -150,10 +151,10 @@ class _SetupPageState extends State<SetupPage> {
               ],
             ),
             const SizedBox(height: 18),
-            const Text('Kurulum', textAlign: TextAlign.center, style: Txt.largeTitle),
+            Text(L.t('Kurulum', 'Setup'), textAlign: TextAlign.center, style: Txt.largeTitle),
             const SizedBox(height: 4),
             Text(
-              hasAccount ? 'PS5 ile bağlantıyı tamamla.' : 'Önce PlayStation hesabını bağla.',
+              hasAccount ? L.t('PS5 ile bağlantıyı tamamla.', 'Finish connecting to your PS5.') : L.t('Önce PlayStation hesabını bağla.', 'First link your PlayStation account.'),
               textAlign: TextAlign.center,
               style: const TextStyle(color: Tokens.textSecondary, fontSize: 16),
             ),
@@ -162,61 +163,74 @@ class _SetupPageState extends State<SetupPage> {
             const SizedBox(height: 22),
             _StepCard(
               icon: CupertinoIcons.person_fill,
-              title: 'PSN ile giriş yap',
-              subtitle: 'PlayStation Network hesabını bağla.',
+              title: L.t('PSN ile giriş yap', 'Sign in with PSN'),
+              subtitle: L.t('PlayStation Network hesabını bağla.', 'Link your PlayStation Network account.'),
               state: hasAccount ? _StepState.done : _StepState.active,
               doneChild: Row(
                 children: [
-                  const Expanded(
-                    child: Notice(icon: CupertinoIcons.checkmark_circle_fill, color: Tokens.success, text: 'PSN hesabı bağlandı.', compact: true),
+                  Expanded(
+                    child: Notice(icon: CupertinoIcons.checkmark_circle_fill, color: Tokens.success, text: L.t('PSN hesabı bağlandı.', 'PSN account linked.'), compact: true),
                   ),
                   const SizedBox(width: 4),
-                  TextButton(onPressed: signIn, child: const Text('Değiştir')),
+                  TextButton(onPressed: signIn, child: Text(L.t('Değiştir', 'Change'))),
                 ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'PS5\'teki ikinci kullanıcının (yan hesabın) PSN hesabıyla giriş yap. Böylece oyunu kendi hesabınla '
-                    'oynarken kumandan TV\'den kopmaz.',
-                    style: TextStyle(color: Tokens.textSecondary, height: 1.45),
+                  Text(
+                    L.t(
+                      'PS5\'teki ikinci kullanıcının (yan hesabın) PSN hesabıyla giriş yap. Böylece oyunu kendi hesabınla '
+                          'oynarken kumandan TV\'den kopmaz.',
+                      'Sign in with the PSN account of the second user (side account) on your PS5. That way your controller '
+                          'stays connected to the TV while you play on your own account.',
+                    ),
+                    style: const TextStyle(color: Tokens.textSecondary, height: 1.45),
                   ),
                   const SizedBox(height: 14),
-                  const Notice(
+                  Notice(
                     icon: CupertinoIcons.lock_fill,
-                    text: 'Giriş Sony\'nin kendi sayfasında yapılır. Şifren bu uygulamaya ya da başka bir yere kaydedilmez.',
+                    text: L.t(
+                      'Giriş Sony\'nin kendi sayfasında yapılır. Şifren bu uygulamaya ya da başka bir yere kaydedilmez.',
+                      'Sign-in happens on Sony\'s own page. Your password is not saved in this app or anywhere else.',
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  GlowButton(onPressed: signIn, icon: CupertinoIcons.arrow_right_circle_fill, label: 'PSN ile giriş yap'),
+                  GlowButton(onPressed: signIn, icon: CupertinoIcons.arrow_right_circle_fill, label: L.t('PSN ile giriş yap', 'Sign in with PSN')),
                 ],
               ),
             ),
             const SizedBox(height: 14),
             _StepCard(
               icon: CupertinoIcons.gamecontroller_fill,
-              title: 'PS5 ile eşleştir',
-              subtitle: 'Telefonu PS5\'inle eşleştir.',
+              title: L.t('PS5 ile eşleştir', 'Pair with PS5'),
+              subtitle: L.t('Telefonu PS5\'inle eşleştir.', 'Pair the phone with your PS5.'),
               state: hasAccount ? _StepState.active : _StepState.waiting,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const _Instruction(number: 'a', text: 'PS5\'te ikinci kullanıcıya geç.'),
-                  const _Instruction(
+                  _Instruction(number: 'a', text: L.t('PS5\'te ikinci kullanıcıya geç.', 'Switch to the second user on the PS5.')),
+                  _Instruction(
                     number: 'b',
-                    text: 'Ayarlar › Sistem › Uzaktan Oynatma\'da "Uzaktan Oynatmayı Etkinleştir"i aç.',
+                    text: L.t(
+                      'Ayarlar › Sistem › Uzaktan Oynatma\'da "Uzaktan Oynatmayı Etkinleştir"i aç.',
+                      'In Settings › System › Remote Play, turn on "Enable Remote Play".',
+                    ),
                   ),
-                  const _Instruction(number: 'c', text: '"Cihaz Eşleştir"e gir. Ekranda 8 haneli bir kod görünür.'),
+                  _Instruction(
+                    number: 'c',
+                    text: L.t('"Cihaz Eşleştir"e gir. Ekranda 8 haneli bir kod görünür.', 'Open "Link Device". An 8-digit code appears on the screen.'),
+                  ),
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      const Expanded(child: Text('Bulunan konsol', style: TextStyle(fontWeight: FontWeight.w600))),
+                      Expanded(child: Text(L.t('Bulunan konsol', 'Consoles found'), style: const TextStyle(fontWeight: FontWeight.w600))),
                       TextButton.icon(
                         onPressed: searching ? null : search,
                         icon: searching
                             ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(CupertinoIcons.arrow_clockwise, size: 18),
-                        label: Text(searching ? 'Aranıyor…' : 'Yenile'),
+                        label: Text(searching ? L.t('Aranıyor…', 'Searching…') : L.t('Yenile', 'Refresh')),
                       ),
                     ],
                   ),
@@ -227,13 +241,17 @@ class _SetupPageState extends State<SetupPage> {
                       onTap: () => setState(() => hostController.text = console.host),
                     ),
                   if (searched && !searching && consoles.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 10),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
                       child: Notice(
                         icon: CupertinoIcons.wifi_exclamationmark,
                         color: Tokens.warning,
-                        text: 'PS5 bulunamadı. Telefon ve PS5 aynı Wi-Fi ağında olmalı. PS5\'in IP adresini aşağıya elle de '
-                            'yazabilirsin (PS5\'te Ayarlar › Ağ › Bağlantı Durumu).',
+                        text: L.t(
+                          'PS5 bulunamadı. Telefon ve PS5 aynı Wi-Fi ağında olmalı. PS5\'in IP adresini aşağıya elle de '
+                              'yazabilirsin (PS5\'te Ayarlar › Ağ › Bağlantı Durumu).',
+                          'PS5 not found. The phone and the PS5 must be on the same Wi-Fi network. You can also type the '
+                              'PS5\'s IP address below (on the PS5: Settings › Network › Connection Status).',
+                        ),
                       ),
                     ),
                   if (showHostField)
@@ -242,7 +260,7 @@ class _SetupPageState extends State<SetupPage> {
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: ipAddressFormatters,
                       onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(labelText: 'PS5 IP adresi', hintText: '192.168.1.20'),
+                      decoration: InputDecoration(labelText: L.t('PS5 IP adresi', 'PS5 IP address'), hintText: '192.168.1.20'),
                     )
                   else
                     Align(
@@ -250,11 +268,11 @@ class _SetupPageState extends State<SetupPage> {
                       child: TextButton(
                         style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
                         onPressed: () => setState(() => manualHost = true),
-                        child: const Text('IP adresini elle yaz'),
+                        child: Text(L.t('IP adresini elle yaz', 'Enter IP address manually')),
                       ),
                     ),
                   const SizedBox(height: 14),
-                  const Text('Eşleştirme kodu', style: TextStyle(fontWeight: FontWeight.w600)),
+                  Text(L.t('Eşleştirme kodu', 'Pairing code'), style: const TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 10),
                   _PinBoxes(controller: pinController, focusNode: pinFocus, onChanged: () => setState(() {}), onSubmitted: pair),
                   if (error != null) ...[
@@ -262,7 +280,7 @@ class _SetupPageState extends State<SetupPage> {
                     Notice(icon: CupertinoIcons.exclamationmark_circle_fill, color: Tokens.danger, text: error!),
                   ],
                   const SizedBox(height: 18),
-                  GlowButton(onPressed: pairing ? null : pair, busy: pairing, label: pairing ? 'Eşleştiriliyor…' : 'Eşleştir'),
+                  GlowButton(onPressed: pairing ? null : pair, busy: pairing, label: pairing ? L.t('Eşleştiriliyor…', 'Pairing…') : L.t('Eşleştir', 'Pair')),
                 ],
               ),
             ),
@@ -301,7 +319,7 @@ class _Stepper extends StatelessWidget {
 
     Widget label(int number) => Expanded(
           child: Text(
-            'Adım $number / 2',
+            L.t('Adım $number / 2', 'Step $number / 2'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: number == step ? Tokens.accentText : Tokens.textSecondary,
@@ -407,7 +425,7 @@ class _StepCard extends StatelessWidget {
                     children: [
                       Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.2)),
                       Text(
-                        waiting ? 'Önce PSN girişini tamamla.' : subtitle,
+                        waiting ? L.t('Önce PSN girişini tamamla.', 'First finish the PSN sign-in.') : subtitle,
                         style: const TextStyle(color: Tokens.textSecondary, fontSize: 13.5, height: 1.3),
                       ),
                     ],
@@ -515,7 +533,7 @@ class _ConsoleTile extends StatelessWidget {
                           TextSpan(text: console.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                           TextSpan(text: '  ·  ${console.host}  ·  ', style: const TextStyle(color: Tokens.textSecondary)),
                           TextSpan(
-                            text: console.awake ? 'açık' : 'dinlenmede',
+                            text: console.awake ? L.t('açık', 'on') : L.t('dinlenmede', 'rest mode'),
                             style: TextStyle(color: console.awake ? Tokens.success : Tokens.warning, fontWeight: FontWeight.w600),
                           ),
                         ],
@@ -643,7 +661,7 @@ class _PsnLoginPageState extends State<PsnLoginPage> {
     if (exchanging) return;
     final code = PsnAccount.codeFromRedirect(redirect);
     if (code == null || code.isEmpty) {
-      setState(() => error = PsnAccount.errorFromRedirect(redirect) ?? 'Giriş tamamlanmadı.');
+      setState(() => error = PsnAccount.errorFromRedirect(redirect) ?? L.t('Giriş tamamlanmadı.', 'Sign-in was not completed.'));
       return;
     }
     setState(() {
@@ -669,22 +687,25 @@ class _PsnLoginPageState extends State<PsnLoginPage> {
     final text = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Hesap kimliğini elle gir'),
+        title: Text(L.t('Hesap kimliğini elle gir', 'Enter account ID manually')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Giriş sayfası açılmıyorsa, Chiaki gibi araçlardan aldığın PSN hesap kimliğini buraya yapıştırabilirsin.',
-              style: TextStyle(color: Tokens.textSecondary, fontSize: 13.5, height: 1.4),
+            Text(
+              L.t(
+                'Giriş sayfası açılmıyorsa, Chiaki gibi araçlardan aldığın PSN hesap kimliğini buraya yapıştırabilirsin.',
+                'If the sign-in page does not open, you can paste a PSN account ID you obtained elsewhere here.',
+              ),
+              style: const TextStyle(color: Tokens.textSecondary, fontSize: 13.5, height: 1.4),
             ),
             const SizedBox(height: 14),
-            TextField(controller: input, autocorrect: false, decoration: const InputDecoration(hintText: 'Base64 hesap kimliği')),
+            TextField(controller: input, autocorrect: false, decoration: InputDecoration(hintText: L.t('Base64 hesap kimliği', 'Base64 account ID'))),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Vazgeç')),
-          FilledButton(onPressed: () => Navigator.pop(context, input.text.trim()), child: const Text('Tamam')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(L.t('Vazgeç', 'Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(context, input.text.trim()), child: Text(L.t('Tamam', 'OK'))),
         ],
       ),
     );
@@ -694,7 +715,7 @@ class _PsnLoginPageState extends State<PsnLoginPage> {
       if (bytes.length != 8) throw const FormatException();
       Navigator.of(context).pop(Uint8List.fromList(bytes));
     } on FormatException {
-      setState(() => error = 'Hesap kimliği 8 baytlık base64 olmalı.');
+      setState(() => error = L.t('Hesap kimliği 8 baytlık base64 olmalı.', 'The account ID must be 8 bytes in base64.'));
     }
   }
 
@@ -703,14 +724,14 @@ class _PsnLoginPageState extends State<PsnLoginPage> {
     return GlassScaffold(
       appBar: GlassScaffold.navBar(
         context,
-        'PSN Girişi',
+        L.t('PSN Girişi', 'PSN Sign-in'),
         actions: [
           PopupMenuButton<String>(
             color: Tokens.sheet,
             onSelected: (value) => value == 'manual' ? enterManually() : controller.loadRequest(PsnAccount.authorizeUrl),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'reload', child: Text('Sayfayı yeniden yükle')),
-              PopupMenuItem(value: 'manual', child: Text('Hesap kimliğini elle gir')),
+            itemBuilder: (context) => [
+              PopupMenuItem(value: 'reload', child: Text(L.t('Sayfayı yeniden yükle', 'Reload page'))),
+              PopupMenuItem(value: 'manual', child: Text(L.t('Hesap kimliğini elle gir', 'Enter account ID manually'))),
             ],
           ),
         ],
@@ -730,13 +751,13 @@ class _PsnLoginPageState extends State<PsnLoginPage> {
             ),
           Expanded(
             child: exchanging
-                ? const Center(
+                ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Hesap bağlanıyor…', style: TextStyle(color: Tokens.textSecondary)),
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 16),
+                        Text(L.t('Hesap bağlanıyor…', 'Linking account…'), style: const TextStyle(color: Tokens.textSecondary)),
                       ],
                     ),
                   )

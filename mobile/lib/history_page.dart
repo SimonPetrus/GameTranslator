@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
+import 'l10n.dart';
 import 'main.dart';
 import 'ui.dart';
 
@@ -52,9 +53,9 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> clear() async {
     final confirmed = await confirmApple(
       context,
-      title: 'Geçmiş temizlensin mi?',
-      message: 'Kayıtlı bütün altyazı satırları silinir.',
-      action: 'Temizle',
+      title: L.t('Geçmiş temizlensin mi?', 'Clear the history?'),
+      message: L.t('Kayıtlı bütün altyazı satırları silinir.', 'All saved subtitle lines are deleted.'),
+      action: L.t('Temizle', 'Clear'),
       destructive: true,
     );
     if (!confirmed) return;
@@ -72,18 +73,18 @@ class _HistoryPageState extends State<HistoryPage> {
         ..writeln();
     }
     Clipboard.setData(ClipboardData(text: buffer.toString().trim()));
-    toast(context, 'Geçmiş kopyalandı.');
+    toast(context, L.t('Geçmiş kopyalandı.', 'History copied.'));
   }
 
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
-      title: 'Altyazı Geçmişi',
+      title: L.t('Altyazı Geçmişi', 'Subtitle History'),
       actions: [
-        TextButton(onPressed: entries.isEmpty ? null : copyAll, child: const Text('Kopyala')),
+        TextButton(onPressed: entries.isEmpty ? null : copyAll, child: Text(L.t('Kopyala', 'Copy'))),
         TextButton(
           onPressed: entries.isEmpty ? null : clear,
-          child: Text('Temizle', style: TextStyle(color: entries.isEmpty ? null : Tokens.danger)),
+          child: Text(L.t('Temizle', 'Clear'), style: TextStyle(color: entries.isEmpty ? null : Tokens.danger)),
         ),
       ],
       body: RefreshIndicator(
@@ -98,7 +99,10 @@ class _HistoryPageState extends State<HistoryPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 60, 24, 0),
                 child: Text(
-                  'Henüz çevrilmiş altyazı yok. Çeviri açıkken ya da deneme çalışırken satırlar burada birikir.',
+                  L.t(
+                    'Henüz çevrilmiş altyazı yok. Çeviri açıkken ya da deneme çalışırken satırlar burada birikir.',
+                    'No translated subtitles yet. Lines collect here while translation or the trial is running.',
+                  ),
                   textAlign: TextAlign.center,
                   style: Txt.subhead.copyWith(color: Tokens.textSecondary),
                 ),

@@ -53,17 +53,21 @@ final class Packs {
   func updateCommunityPatches(log: @escaping (Int, String) -> Void) -> (Bool, String) {
     do {
       guard let result = try CommunityPatches.shared.update(force: true, log: log) else {
-        return (true, "Güncelleme zaten sürüyor.")
+        return (true, Lang.t("Güncelleme zaten sürüyor.", "An update is already in progress."))
       }
       if result.changed { library.reload() }
       var parts: [String] = []
-      if !result.added.isEmpty { parts.append("\(result.added.count) yeni") }
-      if !result.updated.isEmpty { parts.append("\(result.updated.count) güncellendi") }
-      if !result.removed.isEmpty { parts.append("\(result.removed.count) kaldırıldı") }
-      if !result.failed.isEmpty { return (false, "\(result.failed.count) yama inemedi. İnternet bağlantını kontrol edip yeniden dene.") }
-      return (true, parts.isEmpty ? "Yamalar güncel." : "Yamalar: " + parts.joined(separator: ", ") + ".")
+      if !result.added.isEmpty { parts.append(Lang.t("\(result.added.count) yeni", "\(result.added.count) new")) }
+      if !result.updated.isEmpty { parts.append(Lang.t("\(result.updated.count) güncellendi", "\(result.updated.count) updated")) }
+      if !result.removed.isEmpty { parts.append(Lang.t("\(result.removed.count) kaldırıldı", "\(result.removed.count) removed")) }
+      if !result.failed.isEmpty {
+        return (false, Lang.t("\(result.failed.count) yama inemedi. İnternet bağlantını kontrol edip yeniden dene.",
+                              "\(result.failed.count) patches could not be downloaded. Check your internet connection and try again."))
+      }
+      return (true, parts.isEmpty ? Lang.t("Yamalar güncel.", "Patches are up to date.")
+                                  : Lang.t("Yamalar: ", "Patches: ") + parts.joined(separator: ", ") + ".")
     } catch {
-      return (false, "Yama listesine ulaşılamadı. İnternet bağlantını kontrol et.")
+      return (false, Lang.t("Yama listesine ulaşılamadı. İnternet bağlantını kontrol et.", "Could not reach the patch list. Check your internet connection."))
     }
   }
 }

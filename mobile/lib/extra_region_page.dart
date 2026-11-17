@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
 import 'home_page.dart';
+import 'l10n.dart';
 import 'main.dart';
 import 'ui.dart';
 
@@ -22,7 +23,12 @@ class ExtraRegionPage extends StatefulWidget {
 }
 
 class _ExtraRegionPageState extends State<ExtraRegionPage> {
-  static const edges = {'top': 'Üst', 'bottom': 'Alt', 'left': 'Sol', 'right': 'Sağ'};
+  static Map<String, String> get edges => {
+        'top': L.t('Üst', 'Top'),
+        'bottom': L.t('Alt', 'Bottom'),
+        'left': L.t('Sol', 'Left'),
+        'right': L.t('Sağ', 'Right'),
+      };
 
   late final Map<String, dynamic> region = Map<String, dynamic>.from(widget.initial);
   late final TextEditingController nameController = TextEditingController(text: widget.initial['name'] as String? ?? '');
@@ -57,16 +63,16 @@ class _ExtraRegionPageState extends State<ExtraRegionPage> {
 
   void save() {
     final name = nameController.text.trim();
-    region['name'] = name.isEmpty ? 'Alan' : name;
+    region['name'] = name.isEmpty ? L.t('Alan', 'Area') : name;
     Navigator.of(context).pop(region);
   }
 
   Future<void> remove() async {
     final confirmed = await confirmApple(
       context,
-      title: 'Alan silinsin mi?',
-      message: 'Bu ek okuma alanı kaldırılır.',
-      action: 'Sil',
+      title: L.t('Alan silinsin mi?', 'Delete this area?'),
+      message: L.t('Bu ek okuma alanı kaldırılır.', 'This extra reading area is removed.'),
+      action: L.t('Sil', 'Delete'),
       destructive: true,
     );
     if (!confirmed || !mounted) return;
@@ -77,9 +83,9 @@ class _ExtraRegionPageState extends State<ExtraRegionPage> {
   Widget build(BuildContext context) {
     final preview = AppSettings({'region': region, 'style': <String, dynamic>{}});
     return GlassScaffold(
-      title: 'Ek Okuma Alanı',
+      title: L.t('Ek Okuma Alanı', 'Extra Reading Area'),
       actions: [
-        TextButton(onPressed: save, child: const Text('Kaydet', style: TextStyle(fontWeight: FontWeight.w600))),
+        TextButton(onPressed: save, child: Text(L.t('Kaydet', 'Save'), style: const TextStyle(fontWeight: FontWeight.w600))),
       ],
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
@@ -91,11 +97,11 @@ class _ExtraRegionPageState extends State<ExtraRegionPage> {
               child: TextField(
                 controller: nameController,
                 maxLength: 24,
-                decoration: const InputDecoration(hintText: 'Alan adı (ör. Görev notu)', counterText: ''),
+                decoration: InputDecoration(hintText: L.t('Alan adı (ör. Görev notu)', 'Area name (e.g. Quest note)'), counterText: ''),
               ),
             ),
           ),
-          const GroupHeader('ALAN'),
+          GroupHeader(L.t('ALAN', 'AREA')),
           Glass(
             clip: true,
             child: Column(
@@ -139,9 +145,9 @@ class _ExtraRegionPageState extends State<ExtraRegionPage> {
               ],
             ),
           ),
-          const GroupFooter('Çeviri açıkken oyun görüntüsü görünür. Ana ekrandaki düğmeye basınca bu alandaki yazı bir kez okunup çevrilir.'),
+          GroupFooter(L.t('Çeviri açıkken oyun görüntüsü görünür. Ana ekrandaki düğmeye basınca bu alandaki yazı bir kez okunup çevrilir.', 'The game picture is shown while translation is on. Pressing the button on the home screen reads and translates the text in this area once.')),
           const SizedBox(height: 14),
-          Group(children: [Cell(title: 'Alanı Sil', titleColor: Tokens.danger, onTap: remove)]),
+          Group(children: [Cell(title: L.t('Alanı Sil', 'Delete Area'), titleColor: Tokens.danger, onTap: remove)]),
         ],
       ),
     );

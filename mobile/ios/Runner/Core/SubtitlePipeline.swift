@@ -119,8 +119,8 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// Paketten gösterilen satır (kaynak, paket).
   var onPackHit: ((String, PackMatch) -> Void)?
   /// Bir satır gösterildiğinde (kaynak, çeviri, çeviriyi yapan: "pack", "stock", "cache", "google", "deepl",
-  /// "gemini", "apple" ya da bilinmiyorsa ""); altyazı geçmişi içindir.
-  var onShown: ((String, String, String) -> Void)?
+  /// "gemini", "apple" ya da bilinmiyorsa "", önceki satırın düzeltilmiş hâli mi); altyazı geçmişi içindir.
+  var onShown: ((String, String, String, Bool) -> Void)?
   /// Paketten gösterilen satır sayısı.
   var packHits: Int { lock.lock(); defer { lock.unlock() }; return _packHits }
   private var _packHits = 0
@@ -339,7 +339,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     lastShownAt = contextClock()
     sink.show(translated, durationMs: duration, box: box, replaces: replaces)
     onPair?(source, translated)
-    onShown?(source, translated, origin)
+    onShown?(source, translated, origin, replaces)
   }
 
   private func key(_ source: String) -> UTF16Text { KotlinText.units(TextMatch.normalize(source)) }

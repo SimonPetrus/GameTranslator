@@ -34,10 +34,15 @@ struct HistoryRing {
 
   var count: Int { oldestFirst.count }
 
-  /// Eklendiyse true; son satırla aynı çeviri ise eklenmez.
+  /// Eklendiyse ya da son satır güncellendiyse true; son satırla aynı çeviri ise değişmez.
+  /// [replacingLast]: bu satır öncekinin düzeltilmiş hâli (altyazı yazı tanımayla tamamlandı); varsa son satırın yerine geçer.
   @discardableResult
-  mutating func add(_ entry: HistoryEntry) -> Bool {
+  mutating func add(_ entry: HistoryEntry, replacingLast: Bool = false) -> Bool {
     if let last = oldestFirst.last, last.text == entry.text { return false }
+    if replacingLast, !oldestFirst.isEmpty {
+      oldestFirst[oldestFirst.count - 1] = entry
+      return true
+    }
     oldestFirst.append(entry)
     if oldestFirst.count > capacity { oldestFirst.removeFirst(oldestFirst.count - capacity) }
     return true
@@ -104,12 +109,14 @@ final class SubtitleHistoryLog: @unchecked Sendable {
   }
 
   /// Gösterilen bir satırı kaydeder (boş çeviri ve art arda aynı çeviri atlanır).
-  func record(source: String, text: String, engine: String) {
+  /// [replacesLast]: satır öncekinin düzeltilmiş hâli; son kayıt güncellenir, yeni satır eklenmez.
+  func record(source: String, text: String, engine: String, replacesLast: Bool = false) {
     let clean = String(text.prefix(Self.maxTextLength))
     if clean.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
     lock.lock()
     loadIfNeeded()
-    let added = ring.add(HistoryEntry(at: now(), source: String(source.prefix(Self.maxTextLength)), text: clean, engine: engine))
+    let added = ring.add(HistoryEntry(at: now(), source: String(source.prefix(Self.maxTextLength)), text: clean, engine: engine),
+                         replacingLast: replacesLast)
     if added { dirty = true }
     let schedule = added && takeSaveSlot()
     lock.unlock()

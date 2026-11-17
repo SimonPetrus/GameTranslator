@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'l10n.dart';
+
 class PsnException implements Exception {
   PsnException(this.message);
 
@@ -68,19 +70,19 @@ class PsnAccount {
       final tokenJson = _object(token.body);
       final accessToken = tokenJson?['access_token'];
       if (token.statusCode != 200 || accessToken is! String) {
-        throw PsnException('Sony girişi kabul etmedi (HTTP ${token.statusCode})${_sonyError(tokenJson)}');
+        throw PsnException(L.t('Sony girişi kabul etmedi (HTTP ${token.statusCode})${_sonyError(tokenJson)}', 'Sony did not accept the sign-in (HTTP ${token.statusCode})${_sonyError(tokenJson)}'));
       }
       final info = await c
           .get(Uri.parse('$tokenUrl/${Uri.encodeComponent(accessToken)}'), headers: {'Authorization': auth})
           .timeout(const Duration(seconds: 30));
       final userId = _object(info.body)?['user_id'];
       final bytes = userId == null ? null : accountIdBytes('$userId');
-      if (info.statusCode != 200 || bytes == null) throw PsnException('Hesap kimliği alınamadı (HTTP ${info.statusCode})');
+      if (info.statusCode != 200 || bytes == null) throw PsnException(L.t('Hesap kimliği alınamadı (HTTP ${info.statusCode})', 'Could not get the account ID (HTTP ${info.statusCode})'));
       return bytes;
     } on PsnException {
       rethrow;
     } catch (error) {
-      throw PsnException('Sony\'ye ulaşılamadı: $error');
+      throw PsnException(L.t('Sony\'ye ulaşılamadı: $error', 'Could not reach Sony: $error'));
     } finally {
       if (own) c.close();
     }

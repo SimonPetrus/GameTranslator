@@ -108,9 +108,9 @@ final class GeminiTranslator: TextTranslator {
   static func check(key: String, model: String? = nil) -> (Bool, String) {
     let model = GeminiModels.resolve(model ?? Store.shared.settings.geminiModel)
     let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
-    if key.isEmpty { return (false, "Önce anahtarı yapıştır.") }
+    if key.isEmpty { return (false, Lang.t("Önce anahtarı yapıştır.", "Paste the key first.")) }
     guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
-      return (false, "Gemini adresi kurulamadı.")
+      return (false, Lang.t("Gemini adresi kurulamadı.", "Could not build the Gemini address."))
     }
     var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
     request.httpMethod = "POST"
@@ -133,22 +133,22 @@ final class GeminiTranslator: TextTranslator {
     task.resume()
     if semaphore.wait(timeout: .now() + 12) == .timedOut {
       task.cancel()
-      return (false, "Gemini yanıt vermedi. İnternet bağlantını kontrol et.")
+      return (false, Lang.t("Gemini yanıt vermedi. İnternet bağlantını kontrol et.", "Gemini did not respond. Check your internet connection."))
     }
     switch status {
     case 200:
       if let data, let reply = replyText(data), let text = translations(reply, count: 1)?.first, !text.isEmpty {
-        return (true, "Anahtar çalışıyor. Deneme çevirisi: \(text)")
+        return (true, Lang.t("Anahtar çalışıyor. Deneme çevirisi: \(text)", "The key works. Test translation: \(text)"))
       }
-      return (false, "Gemini yanıt verdi ama çeviri okunamadı. Yeniden dene.")
+      return (false, Lang.t("Gemini yanıt verdi ama çeviri okunamadı. Yeniden dene.", "Gemini replied but the translation could not be read. Try again."))
     case 400, 401, 403:
-      return (false, "Anahtar kabul edilmedi. Anahtarı eksiksiz kopyaladığından emin ol.")
+      return (false, Lang.t("Anahtar kabul edilmedi. Anahtarı eksiksiz kopyaladığından emin ol.", "The key was not accepted. Make sure you copied the whole key."))
     case 429:
-      return (true, "Anahtar doğru, ama şu an sınır dolu. Bir dakika sonra çeviride kullanılır.")
+      return (true, Lang.t("Anahtar doğru, ama şu an sınır dolu. Bir dakika sonra çeviride kullanılır.", "The key is valid, but the rate limit is full right now. It will be used for translation in a minute."))
     case 0:
-      return (false, "Gemini'ye ulaşılamadı. İnternet bağlantını kontrol et.")
+      return (false, Lang.t("Gemini'ye ulaşılamadı. İnternet bağlantını kontrol et.", "Could not reach Gemini. Check your internet connection."))
     default:
-      return (false, "Gemini hata verdi (HTTP \(status)). Biraz sonra yeniden dene.")
+      return (false, Lang.t("Gemini hata verdi (HTTP \(status)). Biraz sonra yeniden dene.", "Gemini returned an error (HTTP \(status)). Try again shortly."))
     }
   }
 

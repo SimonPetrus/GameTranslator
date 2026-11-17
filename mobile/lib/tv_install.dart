@@ -2,6 +2,8 @@
 // Telefondan TV uygulaması kurma: Android tarafındaki tvinstall/TvInstallChannel ile konuşan köprü ve hata metinleri.
 import 'package:flutter/services.dart';
 
+import 'l10n.dart';
+
 enum TvKind { lg, samsung, android }
 
 extension TvKindText on TvKind {
@@ -138,69 +140,113 @@ class TvBridge {
   return switch (error) {
     'UNREACHABLE' => android
         ? (
-            title: 'TV yanıt vermedi',
-            fix: 'TV açık mı ve telefonla aynı Wi-Fi ağında mı? Geliştirici seçeneklerinde "USB hata ayıklama" açık olmalı. '
-                'Bazı TV\'lerde bu ayar TV yeniden başlayınca kapanır; açıp yeniden dene.',
+            title: L.t('TV yanıt vermedi', 'The TV did not respond'),
+            fix: L.t(
+              'TV açık mı ve telefonla aynı Wi-Fi ağında mı? Geliştirici seçeneklerinde "USB hata ayıklama" açık olmalı. '
+                  'Bazı TV\'lerde bu ayar TV yeniden başlayınca kapanır; açıp yeniden dene.',
+              'Is the TV on and on the same Wi-Fi network as your phone? "USB debugging" must be enabled in Developer options. '
+                  'On some TVs this setting turns off when the TV restarts; turn it on again and retry.',
+            ),
           )
         : (
-            title: 'TV yanıt vermedi',
-            fix: 'TV açık mı ve telefonla aynı Wi-Fi ağında mı? Developer Mode uygulamasında "Dev Mode Status" açık olmalı; '
-                'açtıktan sonra TV yeniden başlar, açılmasını bekle.',
+            title: L.t('TV yanıt vermedi', 'The TV did not respond'),
+            fix: L.t(
+              'TV açık mı ve telefonla aynı Wi-Fi ağında mı? Developer Mode uygulamasında "Dev Mode Status" açık olmalı; '
+                  'açtıktan sonra TV yeniden başlar, açılmasını bekle.',
+              'Is the TV on and on the same Wi-Fi network as your phone? "Dev Mode Status" must be on in the Developer Mode app; '
+                  'the TV restarts after you turn it on, so wait for it to come back.',
+            ),
           ),
     'KEY_SERVER_OFF' => (
-        title: 'Key Server kapalı',
-        fix: 'TV\'de Developer Mode uygulamasını aç, "Key Server"ı aç ve uygulamayı ekranda bırak. Sonra yeniden dene.',
+        title: L.t('Key Server kapalı', 'Key Server is off'),
+        fix: L.t(
+          'TV\'de Developer Mode uygulamasını aç, "Key Server"ı aç ve uygulamayı ekranda bırak. Sonra yeniden dene.',
+          'Open the Developer Mode app on the TV, turn on "Key Server" and leave the app on screen. Then retry.',
+        ),
       ),
     'WRONG_PASSPHRASE' => (
-        title: 'Parola doğru değil',
-        fix: 'TV ekranında Developer Mode uygulamasının sol altındaki 6 karakterlik "Passphrase"i yeniden yaz. '
-            '0 (sıfır) ile O harfi, 1 ile I harfi karışabilir.',
+        title: L.t('Parola doğru değil', 'Wrong passphrase'),
+        fix: L.t(
+          'TV ekranında Developer Mode uygulamasının sol altındaki 6 karakterlik "Passphrase"i yeniden yaz. '
+              '0 (sıfır) ile O harfi, 1 ile I harfi karışabilir.',
+          'Type the 6-character "Passphrase" shown at the bottom left of the Developer Mode app on the TV again. '
+              'The digit 0 and the letter O, or the digit 1 and the letter I, are easy to mix up.',
+        ),
       ),
     'KEY_REFUSED' => (
-        title: 'TV anahtarı kabul etmedi',
-        fix: 'Geliştirici modu kapatılıp açıldıysa TV yeni bir anahtar üretir. Key Server\'ı açıp parolayı yeniden yaz.',
+        title: L.t('TV anahtarı kabul etmedi', 'The TV rejected the key'),
+        fix: L.t(
+          'Geliştirici modu kapatılıp açıldıysa TV yeni bir anahtar üretir. Key Server\'ı açıp parolayı yeniden yaz.',
+          'If Developer Mode was turned off and on, the TV generates a new key. Turn on Key Server and enter the passphrase again.',
+        ),
       ),
     'NOT_APPROVED' => (
-        title: 'TV\'de izin verilmedi',
-        fix: 'Yeniden dene. TV\'de "USB hata ayıklamaya izin verilsin mi?" sorusu çıkınca "Bu bilgisayardan her zaman izin ver"i '
-            'işaretleyip "İzin ver"i seç. Soru TV ekranında yaklaşık bir buçuk dakika bekler.',
+        title: L.t('TV\'de izin verilmedi', 'Not allowed on the TV'),
+        fix: L.t(
+          'Yeniden dene. TV\'de "USB hata ayıklamaya izin verilsin mi?" sorusu çıkınca "Bu bilgisayardan her zaman izin ver"i '
+              'işaretleyip "İzin ver"i seç. Soru TV ekranında yaklaşık bir buçuk dakika bekler.',
+          'Retry. When the TV asks "Allow USB debugging?", tick "Always allow from this computer" '
+              'and choose "Allow". The prompt stays on the TV screen for about a minute and a half.',
+        ),
       ),
     'NOT_ENOUGH_SPACE' => (
-        title: 'TV\'de yer kalmamış',
-        fix: 'TV\'den kullanmadığın bir uygulamayı kaldır ve yeniden dene.',
+        title: L.t('TV\'de yer kalmamış', 'The TV is out of space'),
+        fix: L.t(
+          'TV\'den kullanmadığın bir uygulamayı kaldır ve yeniden dene.',
+          'Remove an app you do not use from the TV and retry.',
+        ),
       ),
     'CONNECTION_LOST' => (
-        title: 'Bağlantı koptu',
-        fix: 'Kurulum sırasında TV ile bağlantı kesildi. Telefonun ekranı açık ve Wi-Fi\'ye bağlı kalsın; yeniden dene.',
+        title: L.t('Bağlantı koptu', 'Connection lost'),
+        fix: L.t(
+          'Kurulum sırasında TV ile bağlantı kesildi. Telefonun ekranı açık ve Wi-Fi\'ye bağlı kalsın; yeniden dene.',
+          'The connection to the TV dropped during installation. Keep your phone screen on and connected to Wi-Fi, then retry.',
+        ),
       ),
     'TOO_OLD' => (
-        title: 'Bu TV çok eski',
-        fix: 'GameTranslator TV uygulaması bu TV\'nin yazılımında çalışmıyor.',
+        title: L.t('Bu TV çok eski', 'This TV is too old'),
+        fix: L.t(
+          'GameTranslator TV uygulaması bu TV\'nin yazılımında çalışmıyor.',
+          'The GameTranslator TV app does not work on this TV\'s software.',
+        ),
       ),
     'PACKAGE_MISSING' => (
-        title: 'TV paketi bulunamadı',
-        fix: 'Bu telefon uygulamasının içinde TV paketi yok. Uygulamanın son sürümünü kur.',
+        title: L.t('TV paketi bulunamadı', 'TV package not found'),
+        fix: L.t(
+          'Bu telefon uygulamasının içinde TV paketi yok. Uygulamanın son sürümünü kur.',
+          'This phone app does not include the TV package. Install the latest version of the app.',
+        ),
       ),
-    'CANCELLED' => (title: 'Kurulum durduruldu', fix: 'Hazır olduğunda yeniden başlatabilirsin.'),
+    'CANCELLED' => (
+        title: L.t('Kurulum durduruldu', 'Installation stopped'),
+        fix: L.t('Hazır olduğunda yeniden başlatabilirsin.', 'You can start it again when you are ready.'),
+      ),
     _ => (
-        title: 'TV uygulaması kurulamadı',
-        fix: 'Yeniden dene. TV\'yi kapatıp açmak yarım kalan kurulumların çoğunu düzeltir. Yine olmazsa aşağıdaki "TV\'nin söylediği" '
-            'yazısıyla birlikte bize bildir.',
+        title: L.t('TV uygulaması kurulamadı', 'Could not install the TV app'),
+        fix: L.t(
+          'Yeniden dene. TV\'yi kapatıp açmak yarım kalan kurulumların çoğunu düzeltir. Yine olmazsa aşağıdaki "TV\'nin söylediği" '
+              'yazısıyla birlikte bize bildir.',
+          'Retry. Turning the TV off and on fixes most interrupted installs. If it still fails, report it to us '
+              'together with the "What the TV said" text below.',
+        ),
       ),
   };
 }
 
-/// Kurulum aşamasının Türkçe adı.
+/// Kurulum aşamasının adı.
 String tvStageText(String stage) {
-  if (stage.startsWith('uploading:')) return 'Uygulama TV\'ye gönderiliyor… %${stage.substring(10)}';
+  if (stage.startsWith('uploading:')) {
+    final percent = stage.substring(10);
+    return L.t('Uygulama TV\'ye gönderiliyor… %$percent', 'Sending the app to the TV… $percent%');
+  }
   return switch (stage) {
-    'connecting' => 'TV\'ye bağlanılıyor…',
-    'approve' => 'TV\'de izin bekleniyor…',
-    'checking' => 'TV\'deki sürüme bakılıyor…',
-    'key' => 'TV\'den anahtar alınıyor…',
-    'installing' => 'TV\'ye kuruluyor…',
-    'verifying' => 'Kurulum doğrulanıyor…',
-    'launching' => 'TV\'de açılıyor…',
-    _ => 'Hazırlanıyor…',
+    'connecting' => L.t('TV\'ye bağlanılıyor…', 'Connecting to the TV…'),
+    'approve' => L.t('TV\'de izin bekleniyor…', 'Waiting for approval on the TV…'),
+    'checking' => L.t('TV\'deki sürüme bakılıyor…', 'Checking the version on the TV…'),
+    'key' => L.t('TV\'den anahtar alınıyor…', 'Getting the key from the TV…'),
+    'installing' => L.t('TV\'ye kuruluyor…', 'Installing on the TV…'),
+    'verifying' => L.t('Kurulum doğrulanıyor…', 'Verifying the installation…'),
+    'launching' => L.t('TV\'de açılıyor…', 'Opening on the TV…'),
+    _ => L.t('Hazırlanıyor…', 'Preparing…'),
   };
 }

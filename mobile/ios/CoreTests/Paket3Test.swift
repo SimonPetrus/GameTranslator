@@ -286,7 +286,7 @@ enum PipelineOriginTest {
       options.engineId = "gemini"
       p.options = options
       var shown: [[String]] = []
-      p.onShown = { source, text, origin in shown.append([source, text, origin]) }
+      p.onShown = { source, text, origin, _ in shown.append([source, text, origin]) }
       p.onRead(["Get in the car."], nil)
       assertEquals([["Get in the car.", "Arabaya bin.", "gemini"]], shown)
 

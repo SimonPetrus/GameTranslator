@@ -172,6 +172,8 @@ final class Engine: Native.Listener {
       "packGame": packGame,
       "nativeAvailable": Native.available,
       "demo": demoActive,
+      // Otomatik alan kilitliyse bulunan şerit (0–1 oranlar); değilse nil.
+      "autoRegion": reader?.autoRegion.map { ["top": $0.top, "bottom": $0.bottom, "left": $0.left, "right": $0.right] as [String: Double] },
     ]
   }
 
@@ -233,11 +235,16 @@ final class Engine: Native.Listener {
     logLock.unlock()
   }
 
-  private func setPhase(_ value: String, _ text: String = "") {
+  private func setPhase(_ value: String, _ text: String = "", logText: String? = nil) {
     phase = value
     message = text
-    log(value == "failed" ? 0 : 2, "durum: \(value) \(text)".trimmingCharacters(in: .whitespaces))
+    log(value == "failed" ? 0 : 2, "durum: \(value) \(logText ?? text)".trimmingCharacters(in: .whitespaces))
     notifyChanged()
+  }
+
+  /// Arayüzde görünen durum metni dile göre seçilir; günlüğe her zaman Türkçesi yazılır.
+  private func setPhase(_ value: String, tr: String, en: String) {
+    setPhase(value, Lang.t(tr, en), logText: tr)
   }
 
   /// Arayüze en çok ~10 Hz bildirim: kare sayacı her karede değişir.
@@ -273,9 +280,9 @@ final class Engine: Native.Listener {
       if self.running { return }
       let store = Store.shared
       self.settings = store.settings
-      if !Native.available { return self.setPhase("failed", "Yerel kütüphane yüklenemedi") }
+      if !Native.available { return self.setPhase("failed", tr: "Yerel kütüphane yüklenemedi", en: "Native library could not be loaded") }
       if store.accountId == nil || store.console == nil {
-        return self.setPhase("failed", "Önce PSN girişi ve PS5 eşleştirmesi gerekli")
+        return self.setPhase("failed", tr: "Önce PSN girişi ve PS5 eşleştirmesi gerekli", en: "Sign in to PSN and pair your PS5 first")
       }
       // Gerçek akış başlarken demo durur.
       if self.demoTimer != nil { self.stopDemoLocked() }
@@ -333,7 +340,8 @@ final class Engine: Native.Listener {
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled
         || now.packChoice != before.packChoice {
         self.reader?.rebuild(settings: now)
-      } else if now.region != before.region || now.hideButtonHints != before.hideButtonHints {
+      } else if now.region != before.region || now.hideButtonHints != before.hideButtonHints
+        || now.autoRegion != before.autoRegion {
         self.reader?.reset()
       }
     }
@@ -349,7 +357,7 @@ final class Engine: Native.Listener {
       }
       self.server.sendStyle(self.settings.style)
       let r = self.settings.region
-      self.server.sendSubtitle("Bu bir deneme altyazısıdır. Oyunun üstünde görüyor musunuz?", durationMs: 8000,
+      self.server.sendSubtitle(Lang.t("Bu bir deneme altyazısıdır. Oyunun üstünde görüyor musunuz?", "This is a test subtitle. Can you see it over the game?"), durationMs: 8000,
                                box: TextBox(left: 0.3, top: r.bottom - 0.1, right: 0.7, bottom: r.bottom - 0.03))
     }
   }
@@ -370,6 +378,7 @@ final class Engine: Native.Listener {
   private func startDemoLocked() {
     if running {
       log(1, "demo: akış sürerken başlatılamaz")
+      notifyChanged()
       return
     }
     if demoTimer != nil { return }
@@ -416,10 +425,10 @@ final class Engine: Native.Listener {
   /// Ek alanı son karede bir kez okuyup çevirir ve TV'ye gönderir (bloklar; arka plan iş parçacığında çağrılır).
   func readExtra(index: Int) -> [String: Any] {
     func failure(_ message: String) -> [String: Any] { ["ok": false, "source": "", "text": "", "error": message] }
-    guard running, phase == "streaming", let reader = reader else { return failure("Akış çalışmıyor; önce çeviriyi başlatın.") }
+    guard running, phase == "streaming", let reader = reader else { return failure(Lang.t("Akış çalışmıyor; önce çeviriyi başlatın.", "The stream is not running; start translation first.")) }
     let regions = Store.shared.settings.extraRegions
-    guard index >= 0, index < regions.count else { return failure("Geçersiz okuma alanı.") }
-    guard let frame = currentFrame() else { return failure("Henüz görüntü gelmedi; biraz bekleyin.") }
+    guard index >= 0, index < regions.count else { return failure(Lang.t("Geçersiz okuma alanı.", "Invalid reading area.")) }
+    guard let frame = currentFrame() else { return failure(Lang.t("Henüz görüntü gelmedi; biraz bekleyin.", "No image has arrived yet; wait a moment.")) }
     let outcome = reader.readExtra(frame, region: regions[index])
     return ["ok": outcome.ok, "source": outcome.source, "text": outcome.text, "error": outcome.error]
   }
@@ -430,8 +439,8 @@ final class Engine: Native.Listener {
   private func connect(relocated: Bool = false) {
     guard running else { return }
     let store = Store.shared
-    guard let console = store.console else { return setPhase("failed", "PS5 eşleştirmesi yok") }
-    guard let account = store.accountId else { return setPhase("failed", "PSN hesabı yok") }
+    guard let console = store.console else { return setPhase("failed", tr: "PS5 eşleştirmesi yok", en: "No PS5 is paired") }
+    guard let account = store.accountId else { return setPhase("failed", tr: "PSN hesabı yok", en: "No PSN account") }
     setPhase("connecting", console.host)
 
     // PS5 açık mı? Kapalıysa (dinlenme modu) ayara göre uyandırılır.
@@ -440,7 +449,7 @@ final class Engine: Native.Listener {
       break
     case false?:
       guard settings.autoWake, let credential = console.wakeCredential else {
-        setPhase("failed", "PS5 dinlenme modunda")
+        setPhase("failed", tr: "PS5 dinlenme modunda", en: "The PS5 is in rest mode")
         return scheduleRetry()
       }
       setPhase("waking", console.host)
@@ -450,7 +459,7 @@ final class Engine: Native.Listener {
       while !stopRequested && !awake && Date() < deadline { awake = probe(console.host) == true }
       if stopRequested { return }
       if !awake {
-        setPhase("failed", "PS5 uyanmadı")
+        setPhase("failed", tr: "PS5 uyanmadı", en: "The PS5 did not wake up")
         return scheduleRetry()
       }
       setPhase("connecting", console.host)
@@ -463,7 +472,7 @@ final class Engine: Native.Listener {
         store.console = Console(host: moved, name: console.name, registKey: console.registKey, morning: console.morning)
         return connect(relocated: true)
       }
-      setPhase("failed", "PS5 ağda bulunamadı (\(console.host))")
+      setPhase("failed", tr: "PS5 ağda bulunamadı (\(console.host))", en: "PS5 not found on the network (\(console.host))")
       return scheduleRetry()
     }
 
@@ -471,7 +480,7 @@ final class Engine: Native.Listener {
     session = Native.startSession(host: console.host, registKey: console.registKey, morning: console.morning,
                                   accountId: account, maxFps: Self.maxFps, listener: self)
     if session == nil {
-      setPhase("failed", "Oturum başlatılamadı")
+      setPhase("failed", tr: "Oturum başlatılamadı", en: "Could not start the session")
       scheduleRetry()
     }
   }
@@ -537,7 +546,7 @@ final class Engine: Native.Listener {
       onControl {
         self.closeSession()
         self.running = false
-        self.setPhase("failed", "PS5 kullanıcısının giriş şifresi var; şifresiz bir kullanıcı kullanın")
+        self.setPhase("failed", tr: "PS5 kullanıcısının giriş şifresi var; şifresiz bir kullanıcı kullanın", en: "This PS5 user has a login passcode; use a user without one")
       }
     case Native.eventQuit:
       onControl {
@@ -548,13 +557,13 @@ final class Engine: Native.Listener {
         case Native.quitStopped:
           break
         case Native.quitInUse:
-          self.setPhase("failed", "Remote Play başka bir cihazda kullanılıyor")
+          self.setPhase("failed", tr: "Remote Play başka bir cihazda kullanılıyor", en: "Remote Play is in use on another device")
           self.scheduleRetry(.inUse)
         case Native.quitRefused:
           self.running = false
-          self.setPhase("failed", "PS5 bağlantıyı reddetti; yeniden eşleştirin")
+          self.setPhase("failed", tr: "PS5 bağlantıyı reddetti; yeniden eşleştirin", en: "The PS5 refused the connection; pair again")
         default:
-          self.setPhase("reconnecting", reasonText ?? "bağlantı koptu")
+          self.setPhase("reconnecting", tr: reasonText ?? "bağlantı koptu", en: reasonText ?? "connection lost")
           self.scheduleRetry()
         }
       }
@@ -636,8 +645,8 @@ final class Engine: Native.Listener {
   /// PS5'in "Cihaz Eşleştir" koduyla kayıt (bloklar, en çok ~30 sn). Başarılıysa kaydı saklar.
   func register(host: String, pin: Int) -> [String: Any] {
     let store = Store.shared
-    guard let account = store.accountId else { return ["ok": false, "detail": "Önce PSN girişi gerekli"] }
-    guard Native.available else { return ["ok": false, "detail": "Yerel kütüphane yüklenemedi"] }
+    guard let account = store.accountId else { return ["ok": false, "detail": Lang.t("Önce PSN girişi gerekli", "Sign in to PSN first")] }
+    guard Native.available else { return ["ok": false, "detail": Lang.t("Yerel kütüphane yüklenemedi", "Native library could not be loaded")] }
     let errorLock = NSLock()
     var errors: [String] = []
     log(2, "PS5 kaydı başlıyor: \(host)")
@@ -652,16 +661,16 @@ final class Engine: Native.Listener {
       errorLock.unlock()
       let detail: String
       if code == 0x80108b02 {
-        detail = "PS5 bu PSN hesabını tanımadı. PS5'te oturum açık olan kullanıcıyla aynı hesapla giriş yapın."
+        detail = Lang.t("PS5 bu PSN hesabını tanımadı. PS5'te oturum açık olan kullanıcıyla aynı hesapla giriş yapın.", "The PS5 did not recognise this PSN account. Sign in with the same account as the user signed in on the PS5.")
       } else if code == 0x80108b09 || code == 0x80108b12 {
-        detail = "Kod yanlış ya da süresi dolmuş. PS5'te Cihaz Eşleştir'i yeniden açıp yeni kodu girin."
+        detail = Lang.t("Kod yanlış ya da süresi dolmuş. PS5'te Cihaz Eşleştir'i yeniden açıp yeni kodu girin.", "The code is wrong or has expired. Reopen Add Device on the PS5 and enter the new code.")
       } else if outcome.result == 2 {
-        detail = "İptal edildi"
+        detail = Lang.t("İptal edildi", "Cancelled")
       } else if seen.contains(where: { $0.range(of: "search", options: .caseInsensitive) != nil }) {
         // PS5 "Cihaz Eşleştir" ekranında değilken kayıt aramasını reddeder ya da hiç yanıtlamaz.
-        detail = "PS5 eşleştirmeye hazır değil. PS5'te Ayarlar › Sistem › Uzaktan Oynatma › Cihaz Eşleştir ekranını açık tutup yeniden deneyin."
+        detail = Lang.t("PS5 eşleştirmeye hazır değil. PS5'te Ayarlar › Sistem › Uzaktan Oynatma › Cihaz Eşleştir ekranını açık tutup yeniden deneyin.", "The PS5 is not ready to pair. Keep Settings › System › Remote Play › Link Device open on the PS5 and try again.")
       } else {
-        detail = seen.first ?? "PS5 yanıt vermedi. Konsolun açık ve Cihaz Eşleştir ekranında olduğunu kontrol edin."
+        detail = seen.first ?? Lang.t("PS5 yanıt vermedi. Konsolun açık ve Cihaz Eşleştir ekranında olduğunu kontrol edin.", "The PS5 did not respond. Check that the console is on and showing the Link Device screen.")
       }
       log(0, "PS5 kaydı başarısız: \(detail)")
       return ["ok": false, "reason": Int(Int32(bitPattern: code)), "detail": detail]
@@ -703,6 +712,8 @@ protocol FrameReader: AnyObject {
   func readExtra(_ frame: Frame, region: ExtraRegion) -> ExtraReadResult
   /// Sağlık ekranı için okuyucu sayaçları.
   var health: ReaderHealth { get }
+  /// Otomatik altyazı alanı kilitliyse bulunan şerit; değilse nil.
+  var autoRegion: AutoRegionBand? { get }
 }
 
 /// Ek alan okumasının sonucu.
