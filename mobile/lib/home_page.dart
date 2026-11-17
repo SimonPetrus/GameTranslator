@@ -85,15 +85,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (mounted) setState(() => settings = loaded);
   }
 
-  /// Başlıktaki küre düğmesi: dili Türkçe ile İngilizce arasında değiştirir ve ayara yazar.
+  /// Başlıktaki küre düğmesi (yalnız iOS): dili Türkçe ile İngilizce arasında değiştirir ve ayara yazar.
+  /// Ayarlar sekmesiyle aynı ortak ayar nesnesi değiştirilir; o sekmenin bekleyen değişiklikleri de korunur.
   Future<void> toggleLanguage() async {
     final next = L.en ? 'tr' : 'en';
     L.apply(next);
     try {
-      final fresh = await Bridge.settings();
-      fresh.json['uiLanguage'] = next;
-      await Bridge.saveSettings(fresh);
-      if (mounted) setState(() => settings = fresh);
+      final shared = await Bridge.settings();
+      shared.json['uiLanguage'] = next;
+      await Bridge.saveSettings(shared);
+      if (mounted) setState(() => settings = shared);
     } catch (_) {
       // Ayar yazılamadı: dil bu oturumda değişmiş kalır.
     }
@@ -271,19 +272,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final tvOn = state.tvClients > 0;
     return LargeTitleList(
       title: 'GameTranslator',
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GlassIconButton(
-            icon: CupertinoIcons.globe,
-            size: 34,
-            tooltip: L.t('Uygulama dili', 'App language'),
-            onTap: toggleLanguage,
-          ),
-          const SizedBox(width: 8),
-          const GtLogo(size: 34, glow: false),
-        ],
-      ),
+      // Dil düğmesi yalnız iOS'ta; Android'de başlık bu paketten önceki gibi yalnız logodur.
+      trailing: Platform.isIOS
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GlassIconButton(
+                  icon: CupertinoIcons.globe,
+                  size: 34,
+                  tooltip: L.t('Uygulama dili', 'App language'),
+                  onTap: toggleLanguage,
+                ),
+                const SizedBox(width: 8),
+                const GtLogo(size: 34, glow: false),
+              ],
+            )
+          : const GtLogo(size: 38, glow: false),
       children: [
         const SizedBox(height: 22),
         Center(

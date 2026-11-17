@@ -16,6 +16,8 @@ final class Engine: Native.Listener {
   /// idle, starting, waking, connecting, streaming, reconnecting, stopping, failed
   private(set) var phase = "idle"
   private(set) var message = ""
+  /// Son durum metninin (Türkçe, İngilizce) çifti; arayüz dili değişince mesaj yeniden üretilir.
+  private var messagePair: (tr: String, en: String)?
   private(set) var running = false
   var lastSource = ""
   var lastTranslation = ""
@@ -238,6 +240,7 @@ final class Engine: Native.Listener {
   private func setPhase(_ value: String, _ text: String = "", logText: String? = nil) {
     phase = value
     message = text
+    messagePair = nil
     log(value == "failed" ? 0 : 2, "durum: \(value) \(logText ?? text)".trimmingCharacters(in: .whitespaces))
     notifyChanged()
   }
@@ -245,6 +248,7 @@ final class Engine: Native.Listener {
   /// Arayüzde görünen durum metni dile göre seçilir; günlüğe her zaman Türkçesi yazılır.
   private func setPhase(_ value: String, tr: String, en: String) {
     setPhase(value, Lang.t(tr, en), logText: tr)
+    messagePair = (tr, en)
   }
 
   /// Arayüze en çok ~10 Hz bildirim: kare sayacı her karede değişir.
@@ -334,6 +338,10 @@ final class Engine: Native.Listener {
       let before = self.settings
       let now = Store.shared.settings
       self.settings = now
+      if now.uiLanguage != before.uiLanguage, let pair = self.messagePair {
+        self.message = Lang.t(pair.tr, pair.en)
+        self.notifyChanged()
+      }
       if now.style != before.style, self.server.isStarted { self.server.sendStyle(now.style) }
       guard self.running || self.demoTimer != nil else { return }
       if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.sourceLanguage != before.sourceLanguage
@@ -660,19 +668,28 @@ final class Engine: Native.Listener {
       let seen = errors
       errorLock.unlock()
       let detail: String
+      let logDetail: String  // Destek günlüğü arayüz dilinden bağımsız Türkçe kalır.
       if code == 0x80108b02 {
-        detail = Lang.t("PS5 bu PSN hesabını tanımadı. PS5'te oturum açık olan kullanıcıyla aynı hesapla giriş yapın.", "The PS5 did not recognise this PSN account. Sign in with the same account as the user signed in on the PS5.")
+        logDetail = "PS5 bu PSN hesabını tanımadı. PS5'te oturum açık olan kullanıcıyla aynı hesapla giriş yapın."
+        detail = Lang.t(logDetail, "The PS5 did not recognise this PSN account. Sign in with the same account as the user signed in on the PS5.")
       } else if code == 0x80108b09 || code == 0x80108b12 {
-        detail = Lang.t("Kod yanlış ya da süresi dolmuş. PS5'te Cihaz Eşleştir'i yeniden açıp yeni kodu girin.", "The code is wrong or has expired. Reopen Add Device on the PS5 and enter the new code.")
+        logDetail = "Kod yanlış ya da süresi dolmuş. PS5'te Cihaz Eşleştir'i yeniden açıp yeni kodu girin."
+        detail = Lang.t(logDetail, "The code is wrong or has expired. Reopen Add Device on the PS5 and enter the new code.")
       } else if outcome.result == 2 {
-        detail = Lang.t("İptal edildi", "Cancelled")
+        logDetail = "İptal edildi"
+        detail = Lang.t(logDetail, "Cancelled")
       } else if seen.contains(where: { $0.range(of: "search", options: .caseInsensitive) != nil }) {
         // PS5 "Cihaz Eşleştir" ekranında değilken kayıt aramasını reddeder ya da hiç yanıtlamaz.
-        detail = Lang.t("PS5 eşleştirmeye hazır değil. PS5'te Ayarlar › Sistem › Uzaktan Oynatma › Cihaz Eşleştir ekranını açık tutup yeniden deneyin.", "The PS5 is not ready to pair. Keep Settings › System › Remote Play › Link Device open on the PS5 and try again.")
+        logDetail = "PS5 eşleştirmeye hazır değil. PS5'te Ayarlar › Sistem › Uzaktan Oynatma › Cihaz Eşleştir ekranını açık tutup yeniden deneyin."
+        detail = Lang.t(logDetail, "The PS5 is not ready to pair. Keep Settings › System › Remote Play › Link Device open on the PS5 and try again.")
+      } else if let first = seen.first {
+        logDetail = first
+        detail = first
       } else {
-        detail = seen.first ?? Lang.t("PS5 yanıt vermedi. Konsolun açık ve Cihaz Eşleştir ekranında olduğunu kontrol edin.", "The PS5 did not respond. Check that the console is on and showing the Link Device screen.")
+        logDetail = "PS5 yanıt vermedi. Konsolun açık ve Cihaz Eşleştir ekranında olduğunu kontrol edin."
+        detail = Lang.t(logDetail, "The PS5 did not respond. Check that the console is on and showing the Link Device screen.")
       }
-      log(0, "PS5 kaydı başarısız: \(detail)")
+      log(0, "PS5 kaydı başarısız: \(logDetail)")
       return ["ok": false, "reason": Int(Int32(bitPattern: code)), "detail": detail]
     }
     let name = registered.name.trimmingCharacters(in: .whitespaces).isEmpty ? "PS5" : registered.name

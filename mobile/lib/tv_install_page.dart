@@ -156,7 +156,7 @@ List<_GuideStep> get _lgSteps => [
         different: L.t(
           '"Dev Mode Status" gri ve seçilemiyorsa önce giriş yapılmamıştır. Giriş "Login failed" diyorsa hesabının '
               'e-postasını doğruladığından emin ol.',
-          'If "Dev Mode Status" is grey and cannot be selected, you have not signed in yet. If sign-in says "Login failed", make sure you have verified '
+          'If "Dev Mode Status" is gray and cannot be selected, you have not signed in yet. If sign-in says "Login failed", make sure you have verified '
               'your account\'s email.',
         ),
         check: _Check.ready,

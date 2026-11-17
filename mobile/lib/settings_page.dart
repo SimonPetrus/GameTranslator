@@ -632,21 +632,23 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
           const SizedBox(height: 4),
         ],
-        // ---------------------------------------------------------------- Genel
-        GroupHeader(L.t('GENEL', 'GENERAL')),
-        Group(
-          inset: 60,
-          children: [
-            Cell(
-              icon: CupertinoIcons.globe,
-              iconColor: Tokens.teal,
-              title: L.t('Uygulama dili', 'App language'),
-              value: uiLanguageLabel,
-              chevron: true,
-              onTap: pickUiLanguage,
-            ),
-          ],
-        ),
+        // ---------------------------------------------------------------- Genel (yalnız iOS: Android'de arayüz Türkçedir)
+        if (Platform.isIOS) ...[
+          GroupHeader(L.t('GENEL', 'GENERAL')),
+          Group(
+            inset: 60,
+            children: [
+              Cell(
+                icon: CupertinoIcons.globe,
+                iconColor: Tokens.teal,
+                title: L.t('Uygulama dili', 'App language'),
+                value: uiLanguageLabel,
+                chevron: true,
+                onTap: pickUiLanguage,
+              ),
+            ],
+          ),
+        ],
         // ---------------------------------------------------------------- Çeviri
         GroupHeader(L.t('ÇEVİRİ', 'TRANSLATION')),
         Group(
@@ -825,24 +827,27 @@ class _SettingsTabState extends State<SettingsTab> {
 
         // ---------------------------------------------------------------- Altyazı bölgesi
         GroupHeader(L.t('ALTYAZI BÖLGESİ', 'SUBTITLE AREA')),
-        Group(
-          inset: 16,
-          children: [
-            Cell(
-              title: L.t('Altyazı alanını otomatik bul', 'Find subtitle area automatically'),
-              subtitle: L.t(
-                'Bütün ekranı tarar, biraz daha fazla pil harcar; altyazıyı bulana kadar elle ayarlanan alan kullanılır.',
-                'Searches the whole screen and uses a bit more battery; until it finds the subtitle, the area you set by hand is used.',
+        // Otomatik bulma yalnız iOS'ta var.
+        if (Platform.isIOS) ...[
+          Group(
+            inset: 16,
+            children: [
+              Cell(
+                title: L.t('Altyazı alanını otomatik bul', 'Find subtitle area automatically'),
+                subtitle: L.t(
+                  'Bütün ekranı tarar, biraz daha fazla pil harcar; altyazıyı bulana kadar elle ayarlanan alan kullanılır.',
+                  'Searches the whole screen and uses a bit more battery; until it finds the subtitle, the area you set by hand is used.',
+                ),
+                trailing: CupertinoSwitch(
+                  value: s.autoRegion,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => change((s) => s.json['autoRegion'] = value),
+                ),
               ),
-              trailing: CupertinoSwitch(
-                value: s.autoRegion,
-                activeTrackColor: Tokens.success,
-                onChanged: (value) => change((s) => s.json['autoRegion'] = value),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
         Glass(
           clip: true,
           child: Column(
@@ -909,7 +914,7 @@ class _SettingsTabState extends State<SettingsTab> {
           'Mavi çerçeveyi oyunun altyazısının çıktığı yere getir. Çerçeve dar olursa cümlenin başı ya da sonu kesilir.',
           'Move the blue frame over where the game\'s subtitle appears. If the frame is too narrow, the start or end of a sentence is cut off.',
         )),
-        if (s.autoRegion)
+        if (Platform.isIOS && s.autoRegion)
           GroupFooter(L.t(
             'Otomatik bulma açıkken bu alan yedek olarak kullanılır: altyazı bulunana kadar yalnız buradaki çerçeve okunur.',
             'While automatic finding is on, this area is the fallback: only this frame is read until the subtitle is found.',
@@ -957,7 +962,7 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
             ),
             _ControlRow(
-              title: L.t('Yazı rengi', 'Text colour'),
+              title: L.t('Yazı rengi', 'Text color'),
               child: _Segmented(
                 value: style['textColor'] as String,
                 items: {'white': L.t('Beyaz', 'White'), 'yellow': L.t('Sarı', 'Yellow')},
@@ -1029,7 +1034,7 @@ class _SettingsTabState extends State<SettingsTab> {
             // Bilgisayar sürümündeki "Konuşmacı adı renkli"; TV uygulaması adı ("ENZO:") ayrı renkte yazar.
             if (Platform.isIOS)
               Cell(
-                title: L.t('Konuşmacı adı renkli', 'Coloured speaker name'),
+                title: L.t('Konuşmacı adı renkli', 'Colored speaker name'),
                 subtitle: L.t('Konuşanın adı (ör. ENZO:) sarı, sarı yazıda açık mavi', 'The speaker\'s name (e.g. ENZO:) is yellow, or light blue on yellow text'),
                 trailing: CupertinoSwitch(
                   value: style['speakerColor'] as bool? ?? false,

@@ -217,6 +217,7 @@ final class Store {
     var fresh = Settings()
     fresh.deepLKey = old.deepLKey
     fresh.geminiKey = old.geminiKey
+    fresh.uiLanguage = old.uiLanguage
     settings = fresh
     return fresh
   }

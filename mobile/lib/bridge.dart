@@ -282,10 +282,23 @@ class Bridge {
     );
   }
 
-  static Future<AppSettings> settings() async =>
-      AppSettings(jsonDecode((await _channel.invokeMethod<String>('getSettings'))!) as Map<String, dynamic>);
+  /// Ayarların uygulamadaki tek ortak kopyası. Bütün ekranlar aynı nesneyi okur ve değiştirir, her kayıt bu nesnenin
+  /// tamamını yazar; böylece bir ekranın elindeki eski kopya başka bir ekranın yaptığı değişikliği silemez.
+  /// Yerel taraf ayarları kendiliğinden değiştirmez (yalnız setSettings ve resetSettings), bu yüzden bir kez okumak yeter.
+  static AppSettings? _settings;
 
-  static Future<void> saveSettings(AppSettings settings) => _channel.invokeMethod('setSettings', jsonEncode(settings.json));
+  static Future<AppSettings> settings() async {
+    final cached = _settings;
+    if (cached != null) return cached;
+    final loaded = AppSettings(jsonDecode((await _channel.invokeMethod<String>('getSettings'))!) as Map<String, dynamic>);
+    // Aynı anda iki okuma olduysa ilk gelen ortak kopya olur; ikinci de onu döndürür.
+    return _settings ??= loaded;
+  }
+
+  static Future<void> saveSettings(AppSettings settings) {
+    _settings = settings;
+    return _channel.invokeMethod('setSettings', jsonEncode(settings.json));
+  }
 
   /// [accountId]: 8 baytlık hesap kimliği.
   static Future<void> setAccountId(Uint8List accountId) => _channel.invokeMethod('setAccountId', base64Encode(accountId));
@@ -392,7 +405,7 @@ class Bridge {
     try {
       final text = await _channel.invokeMethod<String>('resetSettings');
       if (text == null) return null;
-      return AppSettings(jsonDecode(text) as Map<String, dynamic>);
+      return _settings = AppSettings(jsonDecode(text) as Map<String, dynamic>);
     } on MissingPluginException {
       return null;
     } on PlatformException {

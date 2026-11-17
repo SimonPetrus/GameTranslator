@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -9,7 +11,7 @@ import 'l10n.dart';
 import 'setup_page.dart';
 import 'ui.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -19,7 +21,17 @@ void main() {
     systemNavigationBarContrastEnforced: false,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+  // Kayıtlı arayüz dili ilk kareden önce uygulanır (dil değişip ekran yanıp sönmesin). Ayar okunamazsa ya da
+  // gecikirse telefonun dili kullanılır; geç gelen ayar açılışta RootPage tarafından yine uygulanır.
   L.apply('auto');
+  if (Platform.isIOS) {
+    try {
+      final settings = await Bridge.settings().timeout(const Duration(milliseconds: 300));
+      L.apply(settings.uiLanguage);
+    } catch (_) {
+      // Ayar okunamadı: 'auto' geçerli kalır.
+    }
+  }
   runApp(const GameTranslatorApp());
 }
 
@@ -218,14 +230,20 @@ class _LanguageHostState extends State<_LanguageHost> {
     super.dispose();
   }
 
-  void _markDirty(Element element) {
+  /// Öğeyi ve altındaki bütün öğeleri (yalnız ağaçta olanları) yeniden kurulacak diye işaretler.
+  static void _markDirty(Element element) {
+    if (!element.mounted) return;
     element.markNeedsBuild();
     element.visitChildren(_markDirty);
   }
 
+  /// Dil değişimi bir kurulumun ortasına denk gelse bile işaretleme kurulum bittikten sonra yapılır:
+  /// mikro görev, o anki (eşzamanlı) kare işi tamamlanınca çalışır.
   void _languageChanged() {
-    if (!mounted) return;
-    context.visitChildElements(_markDirty);
+    Future<void>.microtask(() {
+      if (!mounted) return;
+      context.visitChildElements(_markDirty);
+    });
   }
 
   @override
@@ -275,7 +293,8 @@ class _RootPageState extends State<RootPage> {
     super.dispose();
   }
 
-  /// Kayıtlı arayüz dili ayarını uygular (okunamazsa mevcut dil kalır).
+  /// Kayıtlı arayüz dili ayarını uygular (okunamazsa mevcut dil kalır). Android'de L.apply hep Türkçe uygular.
+  /// Uygulamaya dönüldüğünde de çalışır: "Otomatik" seçiliyken telefonun dili değişmiş olabilir.
   Future<void> loadLanguage() async {
     try {
       final settings = await Bridge.settings();
@@ -286,9 +305,10 @@ class _RootPageState extends State<RootPage> {
   }
 
   Future<void> reload() async {
+    // Dil, kurulum bilgisinin okunmasını beklemez; o okuma hata verse bile uygulanır.
+    loadLanguage();
     final info = await Bridge.setup();
     if (mounted) setState(() => setup = info);
-    await loadLanguage();
   }
 
   Future<void> finishIntro() async {
