@@ -251,6 +251,7 @@ final class SubtitlePipeline: @unchecked Sendable {
 
   /// Motor çağrısı ve (İngilizce→Türkçe ise) çevrilmeden önce/sonra adımlar: deyim sadeleştirme, ad koruması, kısa satır
   /// bağlamı, Türkçe son düzeltme, satır içi sen/siz tutarlılığı. Çevrilemezse nil.
+  // [gemini]: PipelineOptions.engineId zaten etkin motordur (Engine: anahtarsız ya da hedef Türkçe değilse "google"); tek kaynak.
   private func translateEngine(_ line: String, natural: Bool, gemini: Bool, context: String?,
                                options: PipelineOptions) -> String? {
     if !natural {

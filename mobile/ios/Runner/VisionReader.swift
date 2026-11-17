@@ -37,13 +37,23 @@ final class VisionReader: FrameReader {
 
   // MARK: - FrameReader
 
-  private func currentQueue() -> DispatchQueue {
+  private func currentQueue() -> (queue: DispatchQueue, token: Int) {
     busyLock.lock(); defer { busyLock.unlock() }
-    return queue
+    return (queue, generation)
+  }
+
+  /// [body]'yi, [token] hâlâ güncel nesilse busyLock altında çalıştırır; eski (takılmış) okuma ortak duruma dokunamaz.
+  /// [body] içinde kilit alan ya da günlük yazan çağrı yapılmamalı.
+  private func whenCurrent<T>(_ token: Int, _ body: () -> T) -> T? {
+    busyLock.lock(); defer { busyLock.unlock() }
+    return token == generation ? body() : nil
   }
 
   func rebuild(settings s: Settings) {
-    currentQueue().async {
+    let target = currentQueue()
+    target.queue.async {
+      // Takılan kuyruğa atılmış eski kurulum, kurtarmadan sonra geç çalışırsa yenisini ezmesin.
+      guard self.isCurrent(target.token) else { return }
       self.pipeline?.reset()
       self.region = s.region
       self.language = s.sourceLanguage
@@ -120,10 +130,12 @@ final class VisionReader: FrameReader {
   }
 
   func reset() {
-    currentQueue().async {
+    let target = currentQueue()
+    target.queue.async {
+      guard self.isCurrent(target.token) else { return }
       self.region = Store.shared.settings.region
       self.scheduler.reset()
-      self.retryLimiter.reset()
+      _ = self.whenCurrent(target.token) { self.retryLimiter.reset() }
       self.pipeline?.reset()
     }
   }
@@ -153,7 +165,7 @@ final class VisionReader: FrameReader {
       // (bölge, dil, hat). Ardından oku işi aynı seri kuyrukta sıraya girer.
       rebuild(settings: Store.shared.settings)
       target.async {
-        self.retryLimiter.reset()
+        _ = self.whenCurrent(token) { self.retryLimiter.reset() }
         self.lastSubtitleAt = nil
       }
     }
@@ -212,13 +224,16 @@ final class VisionReader: FrameReader {
     let h = min(max(Int((r.bottom - r.top) * Double(fullHeight)), 1), fullHeight - cropY)
     guard let crop = image.cropping(to: CGRect(x: cropX, y: cropY, width: w, height: h)) else { return }
 
-    if let signature = Self.signature(crop), scheduler.canReuse(signature) {
-      if isCurrent(token) { pipeline.onRead(lastLines, lastBox) }
-      return
+    if let signature = Self.signature(crop) {
+      guard let reuse = whenCurrent(token, { scheduler.canReuse(signature) }) else { return }
+      if reuse {
+        if isCurrent(token) { pipeline.onRead(lastLines, lastBox) }
+        return
+      }
     }
 
     // İlk okuma tüm bölgede; sonuç yoksa ya da güvensizse sınırlı sıklıkta, ortalanmış bandı büyüterek bir kez daha.
-    guard let first = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: true) else { return }
+    guard let first = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: true, token: token) else { return }
     guard isCurrent(token) else { return }
     var selected = ReadingSelector.select(first, width: w, height: h)
     let clock = SubtitleStabilizer.monotonicMillis()
@@ -226,10 +241,10 @@ final class VisionReader: FrameReader {
     // Boş ekranda yeniden okuma yok; büyütme genişliği sınırlı (çok geniş bölgede küçülür ya da atlanır).
     if ReadingSelector.shouldRetry(rawCount: first.count, selected: selected, lastSubtitleAt: lastSubtitleAt, now: clock),
        let scale = ReadingSelector.retryScale(bandWidth: band.width),
-       retryLimiter.allow(at: clock) {
+       whenCurrent(token, { retryLimiter.allow(at: clock) }) == true {
       if let part = image.cropping(to: CGRect(x: cropX + band.x, y: cropY + band.y, width: band.width, height: band.height)),
          let big = Self.upscaled(part, factor: scale),
-         let again = recognize(big, offsetX: band.x, offsetY: band.y, scale: scale, timed: false) {
+         let again = recognize(big, offsetX: band.x, offsetY: band.y, scale: scale, timed: false, token: token) {
         guard isCurrent(token) else { return }
         let retried = ReadingSelector.select(again, width: w, height: h)
         if ReadingSelector.isBetter(retried, than: selected) { selected = retried }
@@ -258,7 +273,7 @@ final class VisionReader: FrameReader {
 
   /// Görüntüyü okur; her çağrıda taze bir istek kurulur. Parçalar bölge pikselinde (sol üstten) döner;
   /// [offsetX]/[offsetY]/[scale] büyütülmüş bir alt bandın bölgedeki yerini belirtir. Okuma hatasında nil.
-  private func recognize(_ image: CGImage, offsetX: Int, offsetY: Int, scale: Double, timed: Bool) -> [TextObservation]? {
+  private func recognize(_ image: CGImage, offsetX: Int, offsetY: Int, scale: Double, timed: Bool, token: Int) -> [TextObservation]? {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     request.usesLanguageCorrection = true
@@ -267,12 +282,16 @@ final class VisionReader: FrameReader {
       let started = DispatchTime.now().uptimeNanoseconds
       try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
       if timed {
-        ocrTimes.append(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
-        if ocrTimes.count >= 100 {
+        // ocrTimes yalnız güncel nesilde ve kilit altında değişir; günlük kilit dışında yazılır.
+        let elapsed = Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
+        let report: String? = whenCurrent(token) { () -> String? in
+          ocrTimes.append(elapsed)
+          guard ocrTimes.count >= 100 else { return nil }
           let sorted = ocrTimes.sorted()
-          engine.log(2, "ölçüm: yazı tanıma \(image.width)x\(image.height) ortanca \(sorted[sorted.count / 2]) ms, en çok \(sorted.last!) ms")
           ocrTimes.removeAll()
-        }
+          return "ölçüm: yazı tanıma \(image.width)x\(image.height) ortanca \(sorted[sorted.count / 2]) ms, en çok \(sorted.last!) ms"
+        } ?? nil
+        if let report { engine.log(2, report) }
       }
     } catch {
       engine.log(1, "yazı tanıma başarısız: \(error.localizedDescription)")

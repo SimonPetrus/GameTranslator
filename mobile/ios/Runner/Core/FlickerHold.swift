@@ -37,6 +37,9 @@ struct FlickerHold {
   }
 
   /// Gösterilen satır tam okundu ya da yeni satır geldi: kısalmış okuma sayacı sıfırlanır.
+  /// Boş (okunamayan) kare: kısalmış okumanın kesintisizliği bozulur.
+  mutating func noteEmpty() { clearShorter() }
+
   mutating func clearShorter() {
     shorterText = ""
     shorterSince = 0

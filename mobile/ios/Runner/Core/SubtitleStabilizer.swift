@@ -98,6 +98,7 @@ final class SubtitleStabilizer {
     if text.utf16.count < 3 {
       candidate = ""
       candidateCount = 0
+      hold.noteEmpty()
       let since: Int64
       if let existing = emptySince {
         since = existing

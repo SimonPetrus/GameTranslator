@@ -90,6 +90,23 @@ enum FlickerHoldTest {
       assertTrue(h.holdsFlicker("a b c", at: 1600))
       assertTrue(h.holdsFlicker("x y z", at: 3000), "farklı okuma sayacı yeniler")
     }
+    TestRun.test("FlickerHoldTest.emptyReadingBreaksShorterStability") {
+      let c = FakeClock()
+      let s = stabilizer(c)
+      _ = s.feed("Get in the car now.")
+      c.now += 250; assertEquals(StabilizerAction.None, s.feed("Get in the car."))
+      c.now += 250; assertEquals(StabilizerAction.None, s.feed(""))
+      // Boşluktan sonra kısa okuma yeniden sayılır: 1.5 sn dolmadan geçmemeli.
+      c.now += 250; assertEquals(StabilizerAction.None, s.feed("Get in the car."))
+      c.now += 1000; assertEquals(StabilizerAction.None, s.feed("Get in the car."))
+      c.now += 600; assertEquals(StabilizerAction.translate("Get in the car."), s.feed("Get in the car."))
+    }
+    TestRun.test("FlickerHoldTest.noteEmptyClearsTracker") {
+      var h = FlickerHold()
+      assertTrue(h.holdsFlicker("a b c", at: 0))
+      h.noteEmpty()
+      assertTrue(h.holdsFlicker("a b c", at: 1600))
+    }
     TestRun.test("FlickerHoldTest.quietBackgroundStillClearsAfterNormalDelay") {
       let c = FakeClock()
       let s = stabilizer(c)

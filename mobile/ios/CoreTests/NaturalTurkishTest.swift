@@ -44,7 +44,7 @@ enum StockLinesTest {
       assertEquals("Temiz!", StockLines.lookup("Clear!"))
       assertEquals("Anlaşıldı.", StockLines.lookup("Copy that."))
       assertEquals("Anlaşıldı.", StockLines.lookup("Roger."))
-      assertEquals("Yürü!", StockLines.lookup("Move!"))
+      assertEquals("Dur!", StockLines.lookup("Stop!"))
       assertEquals("Şarjör değiştir!", StockLines.lookup("Reload!"))
       assertEquals("Teşekkürler.", StockLines.lookup("Thanks."))
       assertEquals("Merhaba?", StockLines.lookup("Hello?"))
@@ -60,7 +60,8 @@ enum StockLinesTest {
       for line in ["Where are you going?", "Clear the room!", "Clear?", "Sure.", "Fine.", "Left.", "Move! Now!",
                    "Clear, please.", "\"Clear!\"", "Roger that, sir.", "Wait?", "Sorry?", "",
                    // Bağlama göre değişen tek sözcükler tabloda yok.
-                   "Go!", "Help!", "Medic!", "Man down!", "Fire!", "Cover!", "Incoming!", "On your left!"] {
+                   "Go!", "Help!", "Medic!", "Man down!", "Fire!", "Cover!", "Incoming!", "On your left!", "Move!", "Now!",
+                   "Back off!", "Get out of here!", "We're here.", "I got him."] {
         assertNull(StockLines.lookup(line), line)
       }
     }
@@ -435,7 +436,7 @@ enum NaturalPipelineTest {
     TestRun.test("NaturalPipelineTest.oldOrGeminiOrLongLineGetsNoContext" + suffix) {
       var contexts: [String?] = []
       let f = fixture(mode, options()) { _ in contexts.append(TranslationContext.current); return "Tamam." }
-      f.onRead(["Someone saw Tomas near the pier."], nil)
+      f.onRead(["Someone saw it near the pier."], nil)
       read(f, "Which one?", after: 20_000)
       assertNil(contexts[1], "önceki satır 15 sn'den eski")
       read(f, "That one.")
@@ -445,7 +446,7 @@ enum NaturalPipelineTest {
 
       var geminiContexts: [String?] = []
       let g = fixture(mode, options(engine: "gemini")) { _ in geminiContexts.append(TranslationContext.current); return "Tamam." }
-      g.onRead(["Someone saw Tomas near the pier."], nil)
+      g.onRead(["Someone saw it near the pier."], nil)
       read(g, "Which one?")
       assertNil(geminiContexts[1], "Gemini kendi bağlamını alır")
     }
