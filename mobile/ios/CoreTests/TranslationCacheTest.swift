@@ -150,17 +150,22 @@ enum TranslationCacheTest {
       g.onRead(["Where are you going?"], nil)
       assertEquals(1, shared.count)
     }
-    TestRun.test("TranslationCacheTest.readDuringFlushSchedulesAnotherSave") {
+    TestRun.test("TranslationCacheTest.setDuringFlushSchedulesAnotherSaveButGetDoesNot") {
       let storage = MemoryCacheStorage()
       let q = DispatchQueue(label: "CoreTests.cache-save")
       let c = DiskTranslationCache(storage: storage, capacity: 10, saveDelay: 0, now: { 1_000_000 }, queue: q)
-      storage.onWrite = { _ = c.get("k") }   // yazma sürerken okuma: kayıt yeniden dirty olur
+      storage.onWrite = { c.set("k2", "v2") }   // yazma sürerken yeni kayıt: yeni bir kayıt turu gerekir
       c.set("k", "v")
       // Zamanlanan kayıtlar kuyrukta zamanlayıcıyla çalışır; en çok 3 sn beklenir.
       var waited = 0
       while storage.writes < 2 && waited < 300 { usleep(10_000); waited += 1 }
       q.sync {}
-      assertEquals(2, storage.writes, "yazma sırasında kirlenen kayıt yeniden zamanlanmalı")
+      assertEquals(2, storage.writes, "yazma sırasında eklenen kayıt yeniden zamanlanmalı")
+      // Yalnız okuma (isabet) yeni yazma tetiklemez.
+      for _ in 0..<5 { _ = c.get("k") }
+      usleep(200_000)
+      q.sync {}
+      assertEquals(2, storage.writes, "get tek başına yazma tetiklememeli")
     }
     TestRun.test("TranslationCacheTest.packTranslationsAreNotCached") {
       let shared = cache(MemoryCacheStorage())

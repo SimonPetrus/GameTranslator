@@ -89,17 +89,14 @@ final class DiskTranslationCache: @unchecked Sendable {
   }
 
   func get(_ key: String) -> String? {
-    lock.lock()
+    lock.lock(); defer { lock.unlock() }
     loadIfNeeded()
-    guard var entry = entries[key] else { lock.unlock(); return nil }
+    guard var entry = entries[key] else { return nil }
+    // Yalnız bellekteki sıra ve zaman güncellenir; diske bir sonraki set ya da flush ile gider (her isabette yazılmaz).
     entry.seq = nextSeq
     nextSeq += 1
     entry.time = now()
     entries[key] = entry
-    dirty = true
-    let schedule = takeSaveSlot()
-    lock.unlock()
-    if schedule { scheduleSave() }
     return entry.value
   }
 
