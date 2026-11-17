@@ -15,7 +15,7 @@ enum TranslationContext {
   static var current: String? { Thread.current.threadDictionary[key] as? String }
 }
 
-/// Kısa satır ("Not you.", "Do it.", "Him?") tek başına belirsizdir; önceki gösterilen satır bağlam olur.
+/// Üç sözcüğe kadar satır ("Which one?", "Over there.") tek başına belirsizdir; önceki gösterilen satır bağlam olur.
 enum ShortLineContext {
   /// En çok bu kadar sözcüklü satırlar kısa sayılır.
   static let maxWords = 3

@@ -18,7 +18,7 @@
 		AA0200000000000000000006 /* NameProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000006 /* NameProtection.swift */; };
 		AA0200000000000000000005 /* ShortLineContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000005 /* ShortLineContext.swift */; };
 		AA0200000000000000000004 /* AddressForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000004 /* AddressForm.swift */; };
-		AA0200000000000000000003 /* TurkishPostEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000003 /* TurkishPostEdit.swift */; };
+		AA0200000000000000000003 /* TurkishPolish.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000003 /* TurkishPolish.swift */; };
 		AA0200000000000000000002 /* StockLines.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000002 /* StockLines.swift */; };
 		AA0200000000000000000001 /* IdiomNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000001 /* IdiomNormalizer.swift */; };
 		AA0200000000000000000009 /* ReadingSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000009 /* ReadingSelector.swift */; };
@@ -111,7 +111,7 @@
 		AB0200000000000000000006 /* NameProtection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NameProtection.swift; sourceTree = "<group>"; };
 		AB0200000000000000000005 /* ShortLineContext.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShortLineContext.swift; sourceTree = "<group>"; };
 		AB0200000000000000000004 /* AddressForm.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AddressForm.swift; sourceTree = "<group>"; };
-		AB0200000000000000000003 /* TurkishPostEdit.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TurkishPostEdit.swift; sourceTree = "<group>"; };
+		AB0200000000000000000003 /* TurkishPolish.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TurkishPolish.swift; sourceTree = "<group>"; };
 		AB0200000000000000000002 /* StockLines.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StockLines.swift; sourceTree = "<group>"; };
 		AB0200000000000000000001 /* IdiomNormalizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IdiomNormalizer.swift; sourceTree = "<group>"; };
 		AB0200000000000000000009 /* ReadingSelector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReadingSelector.swift; sourceTree = "<group>"; };
@@ -177,7 +177,7 @@
 				AB0200000000000000000006 /* NameProtection.swift */,
 				AB0200000000000000000005 /* ShortLineContext.swift */,
 				AB0200000000000000000004 /* AddressForm.swift */,
-				AB0200000000000000000003 /* TurkishPostEdit.swift */,
+				AB0200000000000000000003 /* TurkishPolish.swift */,
 				AB0200000000000000000002 /* StockLines.swift */,
 				AB0200000000000000000001 /* IdiomNormalizer.swift */,
 				AB0200000000000000000009 /* ReadingSelector.swift */,
@@ -479,7 +479,7 @@
 				AA0200000000000000000006 /* NameProtection.swift in Sources */,
 				AA0200000000000000000005 /* ShortLineContext.swift in Sources */,
 				AA0200000000000000000004 /* AddressForm.swift in Sources */,
-				AA0200000000000000000003 /* TurkishPostEdit.swift in Sources */,
+				AA0200000000000000000003 /* TurkishPolish.swift in Sources */,
 				AA0200000000000000000002 /* StockLines.swift in Sources */,
 				AA0200000000000000000001 /* IdiomNormalizer.swift in Sources */,
 				AA0200000000000000000009 /* ReadingSelector.swift in Sources */,

@@ -15,10 +15,10 @@ enum AddressForm {
 
   // MARK: - Belirtiler
 
-  private static let senWords: Set<String> = [
+  private static let singularCues: Set<String> = [
     "sen", "seni", "sana", "senin", "sende", "senden", "seninle", "senle", "sensiz", "kendin",
   ]
-  private static let sizWords: Set<String> = [
+  private static let pluralCues: Set<String> = [
     "siz", "sizi", "size", "sizin", "sizde", "sizden", "sizinle", "sizle", "sizler", "sizleri", "sizlere",
     "sizlerin", "sizlerle", "hepiniz", "hepinizi", "hepinize", "hepinizin", "ikiniz", "ikinizi", "ikinize",
     "hanginiz", "kendiniz", "kendinizi", "kendinize",
@@ -31,8 +31,8 @@ enum AddressForm {
     var result = Evidence()
     for token in tokens(text) {
       let word = token.lower
-      if senWords.contains(word) { result.sen = true }
-      if sizWords.contains(word) { result.siz = true }
+      if singularCues.contains(word) { result.sen = true }
+      if pluralCues.contains(word) { result.siz = true }
       if word.count >= 7 && sizEndings.contains(where: { word.hasSuffix($0) }) { result.siz = true }
     }
     return result
@@ -43,9 +43,9 @@ enum AddressForm {
   /// "çoğul:tekil" çiftleri (emir kipi, olumlu). Olumsuzları aşağıda üretilir.
   private static let pairs: [(String, String)] = [
     ("bekleyin", "bekle"), ("durun", "dur"), ("gelin", "gel"), ("koşun", "koş"), ("bakın", "bak"),
-    ("dinleyin", "dinle"), ("gidin", "git"), ("kaçın", "kaç"), ("çıkın", "çık"), ("girin", "gir"),
-    ("geçin", "geç"), ("bırakın", "bırak"), ("söyleyin", "söyle"), ("gösterin", "göster"), ("verin", "ver"),
-    ("getirin", "getir"), ("götürün", "götür"), ("yapın", "yap"), ("edin", "et"), ("olun", "ol"),
+    ("dinleyin", "dinle"), ("gidin", "git"), ("kaçın", "kaç"), ("girin", "gir"),
+    ("geçin", "geç"), ("bırakın", "bırak"), ("söyleyin", "söyle"), ("gösterin", "göster"), 
+    ("getirin", "getir"), ("götürün", "götür"), ("edin", "et"), ("olun", "ol"),
     ("kalkın", "kalk"), ("oturun", "otur"), ("susun", "sus"), ("atlayın", "atla"), ("tırmanın", "tırman"),
     ("saklanın", "saklan"), ("çekilin", "çekil"), ("toplanın", "toplan"), ("hazırlanın", "hazırlan"),
     ("saldırın", "saldır"), ("vurun", "vur"), ("öldürün", "öldür"), ("ateşleyin", "ateşle"),
@@ -53,8 +53,8 @@ enum AddressForm {
     ("durdurun", "durdur"), ("kapatın", "kapat"), ("kaldırın", "kaldır"), ("toplayın", "topla"),
     ("taşıyın", "taşı"), ("çağırın", "çağır"), ("arayın", "ara"), ("bulun", "bul"), ("anlatın", "anlat"),
     ("açıklayın", "açıkla"), ("izleyin", "izle"), ("yürüyün", "yürü"), ("dönün", "dön"), ("inanın", "inan"),
-    ("bilin", "bil"), ("uyanın", "uyan"), ("uyuyun", "uyu"), ("yükleyin", "yükle"), ("çekin", "çek"),
-    ("başlayın", "başla"), ("bağırın", "bağır"), ("ilerleyin", "ilerle"), ("yaklaşın", "yaklaş"),
+    ("uyanın", "uyan"), ("uyuyun", "uyu"), ("yükleyin", "yükle"), 
+    ("başlayın", "başla"), ("ilerleyin", "ilerle"), ("yaklaşın", "yaklaş"),
     ("uzaklaşın", "uzaklaş"), ("dağılın", "dağıl"), ("birleşin", "birleş"), ("hızlanın", "hızlan"),
     ("yavaşlayın", "yavaşla"), ("deneyin", "dene"), ("düşünün", "düşün"), ("hatırlayın", "hatırla"),
     ("unutun", "unut"), ("çalışın", "çalış"), ("kullanın", "kullan"), ("seçin", "seç"), ("bitirin", "bitir"),

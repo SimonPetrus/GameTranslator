@@ -133,12 +133,14 @@ final class SubtitleStabilizer {
     if isSame(text, sent) {
       // Boşluktan dönüş ya da farklı okunmuş aynı satır: arka plan titriyor demektir.
       if hadGap || text != flatSent { hold.note(time) }
+      hold.clearShorter()
       return StabilizerAction.None
     }
     // Parlak arka planda sözcük düşüren ya da birkaç harfi yanlış okuyan okuma da yeni satır değildir.
+    // Aynı kısa okuma uzun süre kararlı kalırsa gerçekten yeni satırdır ve geçer.
     if !sent.isEmpty && FlickerHold.isFlicker(text, flatSent) {
       hold.note(time)
-      return StabilizerAction.None
+      if hold.holdsFlicker(text, at: time) { return StabilizerAction.None }
     }
     if !ready { return StabilizerAction.None }
     // Aynı cümlenin daha iyi olmayan okuması da yeni satır değildir.
@@ -158,6 +160,7 @@ final class SubtitleStabilizer {
     if !forgotten.isEmpty && time < retryAt && isSame(text, forgotten) { return StabilizerAction.None }
 
     leaveScreen(time)
+    hold.clearShorter()
     forgotten = ""
     sentRaw = KotlinText.trim(rawText)
     sent = TextMatch.normalizeRows(sentRaw)

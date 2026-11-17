@@ -22,7 +22,13 @@ enum ReadingSelector {
   /// Yeniden okumada bölgenin yatay/dikey kenarlarından kırpılan oran ve büyütme katı.
   static let RETRY_INSET_X = 0.08
   static let RETRY_INSET_Y = 0.10
-  static let RETRY_SCALE = 2
+  static let RETRY_SCALE = 2.0
+  /// Büyütülmüş görüntünün en çok genişliği (piksel); bant zaten bu kadar genişse büyütme küçülür ya da atlanır.
+  static let RETRY_MAX_WIDTH = 2000
+  /// Büyütme katı bundan küçük kalacaksa yeniden okuma atlanır (fayda yok, maliyet var).
+  static let RETRY_MIN_SCALE = 1.25
+  /// İlk okuma hiçbir şey bulmadıysa yeniden okuma yalnız son altyazıdan bu kadar ms içinde denenir.
+  static let RETRY_RECENT_MS: Int64 = 3000
   /// Yeniden okumalar arasında en az bu kadar ms geçer (işlemci yükünü sınırlar).
   static let RETRY_MIN_INTERVAL_MS: Int64 = 2000
   /// Bölge kenarına bu orandan yakın dokunan parça kesik sayılır (en az 2 piksel).
@@ -48,11 +54,13 @@ enum ReadingSelector {
   /// İki kenara birden dokunan çok geniş parça korunur (gerçek bir uzun satır olabilir).
   static func dropEdgeCut(_ input: [TextObservation], width: Int) -> [TextObservation] {
     let margin = max(2, Int((Double(width) * EDGE_MARGIN_RATIO).rounded()))
-    return input.filter { o in
+    let kept = input.filter { o in
       let touchesLeft = o.left <= margin
       let touchesRight = o.right >= width - margin
       return touchesLeft == touchesRight
     }
+    // Hepsi kesik görünüyorsa (dar bölge) tek gerçek satır yitirilmesin.
+    return kept.isEmpty ? input : kept
   }
 
   /// Parçaları dikey yakınlığa göre bloklara ayırır (üstten alta).
@@ -122,6 +130,24 @@ enum ReadingSelector {
     return best < RETRY_BELOW_CONFIDENCE
   }
 
+  /// Yeniden okuma yapılsın mı. [rawCount]: ilk okumanın (süzmeden önceki) parça sayısı; [lastSubtitleAt]: son
+  /// altyazı görülen an. Hiçbir şey bulunmadıysa yalnız altyazı az önce görülmüşse denenir (boş ekranda sürekli değil).
+  static func shouldRetry(rawCount: Int, selected: [TextObservation], lastSubtitleAt: Int64?, now: Int64) -> Bool {
+    if rawCount == 0 {
+      guard let last = lastSubtitleAt, now >= last else { return false }
+      return now - last <= RETRY_RECENT_MS
+    }
+    return needsRetry(selected)
+  }
+
+  /// Bant için büyütme katı: [RETRY_SCALE], ama büyütülmüş genişlik [RETRY_MAX_WIDTH]'i aşmasın.
+  /// Kat [RETRY_MIN_SCALE]'in altında kalacaksa nil (yeniden okuma atlanır).
+  static func retryScale(bandWidth: Int) -> Double? {
+    guard bandWidth > 0 else { return nil }
+    let scale = min(RETRY_SCALE, Double(RETRY_MAX_WIDTH) / Double(bandWidth))
+    return scale >= RETRY_MIN_SCALE ? scale : nil
+  }
+
   /// Yeniden okuma sonucu ilkinden daha iyiyse (ilk boşsa ya da ortalama güveni daha yüksekse) onu kullan.
   static func isBetter(_ retry: [TextObservation], than first: [TextObservation]) -> Bool {
     if retry.isEmpty { return false }
@@ -143,9 +169,9 @@ enum ReadingSelector {
   /// Vision'ın 0–1 (sol alttan) kutusunu, [imageWidth]×[imageHeight] görüntü içinde piksele (sol üstten) çevirir;
   /// [offsetX]/[offsetY]/[scale] görüntünün bölgedeki yeri ve büyütme katıdır (yeniden okuma için).
   static func pixels(minX: Double, minY: Double, maxX: Double, maxY: Double,
-                     imageWidth: Int, imageHeight: Int, offsetX: Int = 0, offsetY: Int = 0, scale: Int = 1)
+                     imageWidth: Int, imageHeight: Int, offsetX: Int = 0, offsetY: Int = 0, scale: Double = 1)
     -> (left: Int, top: Int, right: Int, bottom: Int) {
-    let s = Double(max(scale, 1))
+    let s = max(scale, 1)
     let left = Int((minX * Double(imageWidth) / s).rounded()) + offsetX
     let right = Int((maxX * Double(imageWidth) / s).rounded()) + offsetX
     let top = Int(((1 - maxY) * Double(imageHeight) / s).rounded()) + offsetY

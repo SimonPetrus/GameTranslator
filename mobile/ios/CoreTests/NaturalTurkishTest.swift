@@ -8,24 +8,27 @@ enum IdiomNormalizerTest {
       assertTrue(IdiomNormalizer.count >= 100, "kural sayısı \(IdiomNormalizer.count)")
     }
     TestRun.test("IdiomNormalizerTest.idiomsAreReplacedKeepingCaseAndPunctuation") {
-      assertEquals("I've got your back.", IdiomNormalizer.apply("I've got your six."))
-      assertEquals("Enemies are coming!", IdiomNormalizer.apply("We've got company!"))
-      assertEquals("Enemies are coming!", IdiomNormalizer.apply("We’ve got company!"))
-      assertEquals("Retreat!", IdiomNormalizer.apply("Fall back!"))
-      assertEquals("STAY ALERT!", IdiomNormalizer.apply("STAY FROSTY!"))
-      assertEquals("Stay alert, rookie.", IdiomNormalizer.apply("Stay frosty, rookie."))
-      assertEquals("Protect me!", IdiomNormalizer.apply("Cover me!"))
-      assertEquals("They are easy targets.", IdiomNormalizer.apply("They are sitting ducks."))
-      assertEquals("You took a long time.", IdiomNormalizer.apply("Took you long enough."))
-      assertEquals("Finally!", IdiomNormalizer.apply("About time!"))
-      assertEquals("Okay, retreat!", IdiomNormalizer.apply("Okay, fall back!"))
-      assertEquals("Wait for it. When I say so.", IdiomNormalizer.apply("Wait for it. On my mark."))
+      assertEquals("I will protect you.", IdiomNormalizer.apply("I've got your six."))
+      assertEquals("Hostiles are approaching!", IdiomNormalizer.apply("We've got company!"))
+      assertEquals("Hostiles are approaching!", IdiomNormalizer.apply("We’ve got company!"))
+      assertEquals("Withdraw!", IdiomNormalizer.apply("Fall back!"))
+      assertEquals("STAY FOCUSED!", IdiomNormalizer.apply("STAY FROSTY!"))
+      assertEquals("Stay focused, rookie.", IdiomNormalizer.apply("Stay frosty, rookie."))
+      assertEquals("Guard me!", IdiomNormalizer.apply("Cover me!"))
+      assertEquals("They are defenseless targets.", IdiomNormalizer.apply("They are sitting ducks."))
+      assertEquals("That took you a while.", IdiomNormalizer.apply("Took you long enough."))
+      assertEquals("At last!", IdiomNormalizer.apply("About time!"))
+      assertEquals("Okay, withdraw!", IdiomNormalizer.apply("Okay, fall back!"))
+      assertEquals("Wait for it. At my signal.", IdiomNormalizer.apply("Wait for it. On my mark."))
+      assertEquals("We are being shot at!", IdiomNormalizer.apply("We're taking fire!"))
     }
     TestRun.test("IdiomNormalizerTest.ordinaryTextIsLeftAlone") {
       for line in ["Where are you going?", "I will fall back on my training.", "He will fall back asleep.",
                    "We have company tonight.", "Cover me with a blanket.", "It is about time to leave.",
                    "Stay frostbitten.", "Okay, fall back to the bridge.", "Hold the line, please.",
-                   "The heads up display is broken.", "Get down from there."] {
+                   "The heads up display is broken.", "Get down from there.",
+                   "We are taking fire from the left.", "The coast is clear today.", "He hit the road early.",
+                   "Let them have it back."] {
         assertEquals(line, IdiomNormalizer.apply(line), line)
       }
     }
@@ -55,58 +58,61 @@ enum StockLinesTest {
     }
     TestRun.test("StockLinesTest.otherLinesGoToTheEngine") {
       for line in ["Where are you going?", "Clear the room!", "Clear?", "Sure.", "Fine.", "Left.", "Move! Now!",
-                   "Clear, please.", "\"Clear!\"", "Roger that, sir.", "Wait?", "Sorry?", ""] {
+                   "Clear, please.", "\"Clear!\"", "Roger that, sir.", "Wait?", "Sorry?", "",
+                   // Bağlama göre değişen tek sözcükler tabloda yok.
+                   "Go!", "Help!", "Medic!", "Man down!", "Fire!", "Cover!", "Incoming!", "On your left!"] {
         assertNull(StockLines.lookup(line), line)
       }
     }
   }
 }
 
-enum TurkishPostEditTest {
+enum TurkishPolishTest {
   static func run() {
-    TestRun.test("TurkishPostEditTest.spacesAndPunctuation") {
-      assertEquals("Dur!", TurkishPostEdit.apply("Dur !", source: "Stop!"))
-      assertEquals("Gel buraya.", TurkishPostEdit.apply("Gel   buraya  .", source: "Come here."))
-      assertEquals("Bekle…", TurkishPostEdit.apply("Bekle …", source: "Wait…"))
-      assertEquals("Evet, tamam.", TurkishPostEdit.apply("Evet , tamam .", source: "Yes, okay."))
+    TestRun.test("TurkishPolishTest.spacesAndPunctuation") {
+      assertEquals("Eşyaları topla!", TurkishPolish.apply("Eşyaları topla !", source: "Gather the supplies!"))
+      assertEquals("Burada kal.", TurkishPolish.apply("Burada   kal  .", source: "Stay in this room."))
+      assertEquals("Işığı söndür…", TurkishPolish.apply("Işığı söndür …", source: "Turn off the light…"))
+      assertEquals("Hayır, olmaz.", TurkishPolish.apply("Hayır , olmaz .", source: "No, never."))
     }
-    TestRun.test("TurkishPostEditTest.sourceEndMarkIsKept") {
-      assertEquals("Koş!", TurkishPostEdit.apply("Koş.", source: "Run!"))
-      assertEquals("Gerçekten?", TurkishPostEdit.apply("Gerçekten.", source: "Really?"))
-      assertEquals("Neden?!", TurkishPostEdit.apply("Neden.", source: "Why?!"))
-      assertEquals("Bekle...", TurkishPostEdit.apply("Bekle.", source: "Wait..."))
-      assertEquals("Bekle!", TurkishPostEdit.apply("Bekle", source: "Wait!"))
-      assertEquals("\"Koş!\"", TurkishPostEdit.apply("\"Koş.\"", source: "\"Run!\""))
-      assertEquals("Şimdi. Koş!", TurkishPostEdit.apply("Şimdi. Koş.", source: "Now. Run!"))
+    TestRun.test("TurkishPolishTest.sourceEndMarkIsKept") {
+      assertEquals("Saklan!", TurkishPolish.apply("Saklan.", source: "Hide!"))
+      assertEquals("Emin misin?", TurkishPolish.apply("Emin misin.", source: "Are you sure?"))
+      assertEquals("Ne yaptın?!", TurkishPolish.apply("Ne yaptın.", source: "What have you done?!"))
+      assertEquals("Hala buradayım...", TurkishPolish.apply("Hala buradayım.", source: "I am still here..."))
+      assertEquals("Anahtarı ver!", TurkishPolish.apply("Anahtarı ver", source: "Hand over the key!"))
+      assertEquals("\"Atla!\"", TurkishPolish.apply("\"Atla.\"", source: "\"Jump!\""))
+      assertEquals("Kapıyı kapat. Hemen aç!",
+                   TurkishPolish.apply("Kapıyı kapat. Hemen aç.", source: "Close the door. Open it now!"))
     }
-    TestRun.test("TurkishPostEditTest.endMarkIsNotForced") {
+    TestRun.test("TurkishPolishTest.endMarkIsNotForced") {
       // Kaynak düz noktaysa ya da çeviri başka güçlü işaretle bitiyorsa dokunulmaz.
-      assertEquals("Koş!", TurkishPostEdit.apply("Koş!", source: "Run."))
-      assertEquals("Gerçekten?", TurkishPostEdit.apply("Gerçekten?", source: "Really!"))
-      assertEquals("Koş", TurkishPostEdit.apply("Koş", source: "Run"))
-      assertEquals("Dur,", TurkishPostEdit.apply("Dur,", source: "Stop!"))
-      assertEquals("Nereye gidiyorsun?", TurkishPostEdit.apply("Nereye gidiyorsun?", source: "Where are you going?"))
+      assertEquals("Atla!", TurkishPolish.apply("Atla!", source: "Jump."))
+      assertEquals("Gerçek mi?", TurkishPolish.apply("Gerçek mi?", source: "It is real!"))
+      assertEquals("Sakin ol", TurkishPolish.apply("Sakin ol", source: "Calm down"))
+      assertEquals("Dönme,", TurkishPolish.apply("Dönme,", source: "Don't turn!"))
+      assertEquals("Anahtar nerede?", TurkishPolish.apply("Anahtar nerede?", source: "Where is the key?"))
     }
-    TestRun.test("TurkishPostEditTest.quotesFollowTheSource") {
-      assertEquals("“Koş!”", TurkishPostEdit.apply("\"Koş!\"", source: "“Run!”"))
-      assertEquals("\"Koş!\"", TurkishPostEdit.apply("“Koş!”", source: "\"Run!\""))
-      assertEquals("Kratos'u gör.", TurkishPostEdit.apply("Kratos’u gör.", source: "See Kratos's axe."))
-      assertEquals("Kratos’u gör.", TurkishPostEdit.apply("Kratos'u gör.", source: "See Kratos’s axe."))
+    TestRun.test("TurkishPolishTest.quotesFollowTheSource") {
+      assertEquals("“Atla!”", TurkishPolish.apply("\"Atla!\"", source: "“Jump!”"))
+      assertEquals("\"Atla!\"", TurkishPolish.apply("“Atla!”", source: "\"Jump!\""))
+      assertEquals("Ayşe'nin evi.", TurkishPolish.apply("Ayşe’nin evi.", source: "Ayse's house."))
+      assertEquals("Ayşe’nin evi.", TurkishPolish.apply("Ayşe'nin evi.", source: "Ayse’s house."))
       // Tek (eşleşmeyen) düz tırnak kıvrığa çevrilmez.
-      assertEquals("Dedi ki \"koş.", TurkishPostEdit.apply("Dedi ki \"koş.", source: "He said “run."))
+      assertEquals("Dedi ki \"atla.", TurkishPolish.apply("Dedi ki \"atla.", source: "He said “jump."))
     }
-    TestRun.test("TurkishPostEditTest.capitalization") {
-      assertEquals("Koş!", TurkishPostEdit.apply("koş!", source: "Run!"))
-      assertEquals("İyi misin?", TurkishPostEdit.apply("iyi misin?", source: "Are you okay?"))
-      assertEquals("- Gel buraya.", TurkishPostEdit.apply("- gel buraya.", source: "- Come here."))
-      assertEquals("ENZO: Gel.", TurkishPostEdit.apply("ENZO: gel.", source: "ENZO: Come."))
+    TestRun.test("TurkishPolishTest.capitalization") {
+      assertEquals("Atla!", TurkishPolish.apply("atla!", source: "Jump!"))
+      assertEquals("Işığı söndür.", TurkishPolish.apply("ışığı söndür.", source: "Turn off the light."))
+      assertEquals("- Kapıyı aç.", TurkishPolish.apply("- kapıyı aç.", source: "- Open the door."))
+      assertEquals("MARA: Sakin ol.", TurkishPolish.apply("MARA: sakin ol.", source: "MARA: Calm down."))
       // Kaynak küçük harfle başlıyorsa cümlenin devamıdır; rakamla başlayan metne dokunulmaz.
-      assertEquals("ve sonra", TurkishPostEdit.apply("ve sonra", source: "and then"))
-      assertEquals("3 adam geldi.", TurkishPostEdit.apply("3 adam geldi.", source: "Three men came."))
+      assertEquals("ve sonra", TurkishPolish.apply("ve sonra", source: "and later"))
+      assertEquals("2 kişi vardı.", TurkishPolish.apply("2 kişi vardı.", source: "Two people were there."))
     }
-    TestRun.test("TurkishPostEditTest.emptyAndPlainTextAreStable") {
-      assertEquals("", TurkishPostEdit.apply("   ", source: "Run!"))
-      assertEquals("Merhaba.", TurkishPostEdit.apply("Merhaba.", source: "Hello."))
+    TestRun.test("TurkishPolishTest.emptyAndPlainTextAreStable") {
+      assertEquals("", TurkishPolish.apply("   ", source: "Jump!"))
+      assertEquals("Merhaba.", TurkishPolish.apply("Merhaba.", source: "Hello."))
     }
   }
 }
@@ -144,6 +150,7 @@ enum AddressFormTest {
       for line in ["Sen ve siz bekleyin.", "Beyler, sana söylüyorum, bekleyin.", "Bekleyin.", "Sizi gördüm, bekleyin.",
                    // Başka anlamı olan sözcükler listede yok.
                    "Sana bir şey söyleyeceğim. Alın.", "Sana yazın.", "Seni kazın.", "Sen kesin.", "Sana koyun.",
+                   "Sana verin.", "Seni bilin.", "Senin için yapın.", "Sana çekin.", "Seni çıkın.",
                    // Emir konumunda değil: sözcükten sonra noktalama yok.
                    "Sen bekleyin burada.",
                    // "gelin" cümlecik başında değil: gelin (evli kadın) olabilir.
@@ -193,26 +200,25 @@ enum AddressFormTest {
 enum ShortLineContextTest {
   static func run() {
     TestRun.test("ShortLineContextTest.shortLines") {
-      assertTrue(ShortLineContext.isShort("Not you."))
-      assertTrue(ShortLineContext.isShort("Do it."))
-      assertTrue(ShortLineContext.isShort("Him?"))
-      assertTrue(ShortLineContext.isShort("ENZO: Him?"))
-      assertTrue(ShortLineContext.isShort("It is him."))
-      assertFalse(ShortLineContext.isShort("Where are you going?"))
+      assertTrue(ShortLineContext.isShort("Which one?"))
+      assertTrue(ShortLineContext.isShort("Over there."))
+      assertTrue(ShortLineContext.isShort("It was her."))
+      assertTrue(ShortLineContext.isShort("MARA: Which one?"))
+      assertFalse(ShortLineContext.isShort("Where did it happen?"))
       assertFalse(ShortLineContext.isShort("..."))
       assertFalse(ShortLineContext.isShort(""))
     }
     TestRun.test("ShortLineContextTest.contextSelection") {
-      assertEquals("I think Marcus took it.", ShortLineContext.context(for: "Not you.", previous: "I think Marcus took it."))
-      assertEquals("Who took it?", ShortLineContext.context(for: "Him?", previous: "ENZO: Who took it?"))
-      // Uzun satırın bağlamı yok, önceki satır yok, aynı/uzamış satır bağlam değil.
-      assertNull(ShortLineContext.context(for: "Where are you going?", previous: "I think Marcus took it."))
-      assertNull(ShortLineContext.context(for: "Not you.", previous: nil))
-      assertNull(ShortLineContext.context(for: "Not you.", previous: "  "))
-      assertNull(ShortLineContext.context(for: "Not you.", previous: "Not you!"))
-      assertNull(ShortLineContext.context(for: "Not you at all.", previous: "Not you."))
+      assertEquals("Someone saw Tomas near the pier.",
+                   ShortLineContext.context(for: "Which one?", previous: "Someone saw Tomas near the pier."))
+      assertEquals("Where is the boat?", ShortLineContext.context(for: "Over there.", previous: "MARA: Where is the boat?"))
+      // Uzun satırın bağlamı yok, önceki satır yok, aynı satır bağlam değil.
+      assertNull(ShortLineContext.context(for: "Where did it happen?", previous: "Someone saw Tomas near the pier."))
+      assertNull(ShortLineContext.context(for: "Which one?", previous: nil))
+      assertNull(ShortLineContext.context(for: "Which one?", previous: "  "))
+      assertNull(ShortLineContext.context(for: "Which one?", previous: "Which one!"))
       let long = String(repeating: "word ", count: 80)
-      let cut = ShortLineContext.context(for: "Not you.", previous: long)
+      let cut = ShortLineContext.context(for: "Which one?", previous: long)
       assertNotNull(cut)
       assertTrue((cut ?? "").utf16.count <= ShortLineContext.maxContextLength)
     }
@@ -224,40 +230,41 @@ enum ShortLineContextTest {
       assertNull(TranslationContext.current)
     }
     TestRun.test("ShortLineContextTest.separatorProtocol") {
-      assertEquals("I think Marcus took it. ### Not you.", ContextSplit.combine(context: "I think Marcus took it.", text: "Not you."))
-      assertEquals("Wait. ### Hey?", ContextSplit.combine(context: "Wait", text: "Hey?"))
-      assertEquals("Sen değil.", ContextSplit.extract("Sanırım Marcus aldı. ### Sen değil.", original: "Not you."))
-      assertNull(ContextSplit.extract("Sanırım Marcus aldı. Sen değil.", original: "Not you."))
-      assertNull(ContextSplit.extract("A ### B ### C", original: "Not you."))
-      assertNull(ContextSplit.extract("Sanırım Marcus aldı. ###", original: "Not you."))
-      assertNull(ContextSplit.extract("### Sen değil.", original: "Not you."))
-      assertNull(ContextSplit.extract("Önceki. ### " + String(repeating: "a ", count: 12), original: "Not you."))
+      assertEquals("Someone saw Tomas near the pier. ### Which one?",
+                   ContextSplit.combine(context: "Someone saw Tomas near the pier.", text: "Which one?"))
+      assertEquals("Hold. ### Why?", ContextSplit.combine(context: "Hold", text: "Why?"))
+      assertEquals("Hangisi?", ContextSplit.extract("Biri iskelede gördü. ### Hangisi?", original: "Which one?"))
+      assertNull(ContextSplit.extract("Biri iskelede gördü. Hangisi?", original: "Which one?"))
+      assertNull(ContextSplit.extract("A ### B ### C", original: "Which one?"))
+      assertNull(ContextSplit.extract("Biri iskelede gördü. ###", original: "Which one?"))
+      assertNull(ContextSplit.extract("### Hangisi?", original: "Which one?"))
+      assertNull(ContextSplit.extract("Önceki. ### " + String(repeating: "a ", count: 12), original: "Which one?"))
     }
     TestRun.test("ShortLineContextTest.splitTranslate") {
       var calls: [String] = []
       // Ayraç korunur: kısa satırın çevirisi alınır.
-      let ok = ContextSplit.translate("Hi", context: "A.") { text in
+      let ok = ContextSplit.translate("Why?", context: "A.") { text in
         calls.append(text)
-        return text == "A. ### Hi" ? "Bir. ### Selam" : nil
+        return text == "A. ### Why?" ? "Bir. ### Neden?" : nil
       }
-      assertEquals("Selam", ok)
-      assertEquals(["A. ### Hi"], calls)
+      assertEquals("Neden?", ok)
+      assertEquals(["A. ### Why?"], calls)
       // Ayraç kayıp: kısa satır tek başına çevrilir.
       calls = []
-      let lost = ContextSplit.translate("Hi", context: "A.") { text in
+      let lost = ContextSplit.translate("Why?", context: "A.") { text in
         calls.append(text)
-        return text == "Hi" ? "Selam" : "Bir selam"
+        return text == "Why?" ? "Neden?" : "Bir neden"
       }
-      assertEquals("Selam", lost)
-      assertEquals(["A. ### Hi", "Hi"], calls)
+      assertEquals("Neden?", lost)
+      assertEquals(["A. ### Why?", "Why?"], calls)
       // Ağ yok: tek istek, ikinci deneme yok.
       calls = []
-      assertNull(ContextSplit.translate("Hi", context: "A.") { text in calls.append(text); return nil })
+      assertNull(ContextSplit.translate("Why?", context: "A.") { text in calls.append(text); return nil })
       assertEquals(1, calls.count)
       // Bağlam yok ya da metinde ayraç var: doğrudan.
       calls = []
-      assertEquals("x", ContextSplit.translate("Hi", context: nil) { text in calls.append(text); return "x" })
-      assertEquals(["Hi"], calls)
+      assertEquals("x", ContextSplit.translate("Why?", context: nil) { text in calls.append(text); return "x" })
+      assertEquals(["Why?"], calls)
       calls = []
       _ = ContextSplit.translate("a ### b", context: "A.") { text in calls.append(text); return "x" }
       assertEquals(["a ### b"], calls)
@@ -268,32 +275,59 @@ enum ShortLineContextTest {
 enum NameProtectionTest {
   static func run() {
     TestRun.test("NameProtectionTest.midSentenceNamesAreFound") {
-      assertEquals(["Marcus", "Black", "Gate"],
-                   NameProtection.candidates("Where is Marcus going with the Black Gate key?"))
-      assertEquals(["Marcus"], NameProtection.candidates("I told Marcus. Then Marcus left."))
-      assertEquals(["Marcus"], NameProtection.candidates("I'm Marcus's friend."))
-      assertEquals(["Marcus"], NameProtection.candidates("Wait, Marcus!"))
+      assertEquals(["Tomas"], NameProtection.candidates("Where is Tomas going with the key?"))
+      assertEquals(["Tomas"], NameProtection.candidates("She told Tomas that Tomas left early."))
+      assertEquals(["Tomas"], NameProtection.candidates("I'm Tomas's friend."))
+      assertEquals(["Elsa"], NameProtection.candidates("Tell Elsa to wait, Elsa."))
     }
     TestRun.test("NameProtectionTest.ordinaryCapitalsAreIgnored") {
-      for line in ["Marcus is here.", "Yes, Captain.", "THEY KILLED MARCUS!", "He lives in Spring, not in spring.",
+      for line in ["Tomas is here.", "Yes, Captain.", "THEY SAW TOMAS!", "He lives in Spring, not in spring.",
                    "See you on Monday.", "Why, Doesn't it work?", "She said, \"Run.\" Then she left.",
-                   "He spoke English.", "Hello there.", "Look: Marcus", "- Marcus"] {
+                   "He spoke English.", "Hello there.", "Look: Tomas", "- Tomas"] {
         assertEquals([], NameProtection.candidates(line), line)
       }
+    }
+    TestRun.test("NameProtectionTest.vocativesAndTitlesAreNotProtected") {
+      for line in ["Run, Boy!", "Easy, Kid.", "Thank you, Mother.", "Yes, Sir.", "Careful, Rookie!", "Go on, Doc.",
+                   "Move it, Sarge.", "As you wish, Majesty."] {
+        assertEquals([], NameProtection.candidates(line), line)
+      }
+      // Virgülden sonra cümle sonundaki ad: oturumda görülmediyse korunmaz, görüldüyse korunur.
+      assertEquals([], NameProtection.candidates("Keep going, Elsa."))
+      assertEquals(["Elsa"], NameProtection.candidates("Keep going, Elsa.", known: ["elsa"]))
+      assertEquals([], NameProtection.candidates("Elsa saw it. Keep going, Elsa."))
+      // Aynı satırda hitap olmayan konumda da geçiyorsa korunur.
+      assertEquals(["Elsa"], NameProtection.candidates("Tell Elsa to wait, Elsa."))
+    }
+    TestRun.test("NameProtectionTest.titleCaseLinesAreNotProtected") {
+      assertTrue(NameProtection.isTitleCase("Welcome To The Black Gate"))
+      assertEquals([], NameProtection.candidates("Welcome To The Black Gate"))
+      assertEquals([], NameProtection.candidates("Chapter One The Old Harbor Town"))
+      assertFalse(NameProtection.isTitleCase("Where is Tomas going with the key?"))
+      assertFalse(NameProtection.isTitleCase("Hello"))
+    }
+    TestRun.test("NameProtectionTest.nameMemory") {
+      let memory = NameMemory()
+      assertTrue(memory.snapshot.isEmpty)
+      memory.remember(["Elsa", "Tomas"])
+      assertTrue(memory.snapshot.contains("elsa"))
+      assertTrue(memory.snapshot.contains("tomas"))
+      memory.reset()
+      assertTrue(memory.snapshot.isEmpty)
     }
     TestRun.test("NameProtectionTest.userGlossaryTermsAreSkipped") {
       let glossary = Glossary.of(["Kratos": "Kratos"])
       assertEquals([], NameProtection.candidates("Call Kratos now.", glossary: glossary))
-      assertEquals(["Marcus"], NameProtection.candidates("Call Marcus and Kratos now.", glossary: glossary))
+      assertEquals(["Tomas"], NameProtection.candidates("Call Tomas and Kratos now.", glossary: glossary))
     }
     TestRun.test("NameProtectionTest.nameRoundTripKeepsNameAndSuffix") {
       var seen: [String] = []
-      let translator = GlossaryTranslator(NameProtection.glossary(for: ["Marcus"]), FunctionTranslator { text in
+      let translator = GlossaryTranslator(NameProtection.glossary(for: ["Tomas"]), FunctionTranslator { text in
         seen.append(text)
-        return "Sanırım Zarmon'u gördü."
+        return "Biri Zarmon'u gördü."
       })
-      assertEquals("Sanırım Marcus'u gördü.", translator.translate("I think Marcus saw him."))
-      assertEquals(["I think Zarmon saw him."], seen)
+      assertEquals("Biri Tomas'ı gördü.", translator.translate("Someone saw Tomas near the pier."))
+      assertEquals(["Someone saw Zarmon near the pier."], seen)
     }
   }
 }
@@ -353,24 +387,24 @@ enum NaturalPipelineTest {
       assertEquals([], calls)
       assertEquals(["Temiz!"], texts(f))
     }
-    TestRun.test("NaturalPipelineTest.idiomIsNormalizedBeforeTheEngineAndResultIsPostEdited" + suffix) {
+    TestRun.test("NaturalPipelineTest.idiomIsNormalizedBeforeTheEngineAndResultIsPolished" + suffix) {
       var calls: [String] = []
-      let f = fixture(mode, options()) { text in calls.append(text); return "düşmanlar geliyor !" }
+      let f = fixture(mode, options()) { text in calls.append(text); return "düşmanlar yaklaşıyor !" }
       f.onRead(["We've got company!"], nil)
-      assertEquals(["Enemies are coming!"], calls)
-      assertEquals(["Düşmanlar geliyor!"], texts(f))
+      assertEquals(["Hostiles are approaching!"], calls)
+      assertEquals(["Düşmanlar yaklaşıyor!"], texts(f))
     }
-    TestRun.test("NaturalPipelineTest.geminiKeepsItsOwnInputButIsPostEdited" + suffix) {
+    TestRun.test("NaturalPipelineTest.geminiKeepsItsOwnInputButIsPolished" + suffix) {
       var calls: [String] = []
-      let f = fixture(mode, options(engine: "gemini")) { text in calls.append(text); return "düşmanlar geliyor !" }
+      let f = fixture(mode, options(engine: "gemini")) { text in calls.append(text); return "düşmanlar yaklaşıyor !" }
       f.onRead(["We've got company!"], nil)
       assertEquals(["We've got company!"], calls)
-      assertEquals(["Düşmanlar geliyor!"], texts(f))
+      assertEquals(["Düşmanlar yaklaşıyor!"], texts(f))
     }
     TestRun.test("NaturalPipelineTest.engineEndMarkIsRestored" + suffix) {
-      let f = fixture(mode, options()) { _ in "Koş." }
-      f.onRead(["Run for the exit!"], nil)
-      assertEquals(["Koş!"], texts(f))
+      let f = fixture(mode, options()) { _ in "Tekneye acele et." }
+      f.onRead(["Hurry to the boat!"], nil)
+      assertEquals(["Tekneye acele et!"], texts(f))
     }
     TestRun.test("NaturalPipelineTest.shortLineGetsContextAndNamesStayStable" + suffix) {
       var calls: [String] = []
@@ -378,41 +412,41 @@ enum NaturalPipelineTest {
       let f = fixture(mode, options()) { text in
         calls.append(text)
         contexts.append(TranslationContext.current)
-        if text.contains("Zarmon") { return "Sanırım Zarmon aldı." }
-        return text == "Not you." ? "Sen değil ." : "Nereye gidiyorsun?"
+        if text.contains("Zarmon") { return "Biri Zarmon'u iskelenin yanında gördü." }
+        return text == "Which one?" ? "Hangisi ?" : "Nerede oldu?"
       }
-      f.onRead(["I think Marcus took it."], nil)
-      // Ad yer tutucuyla gitti, geri konuldu; ilk satırın bağlamı yok.
-      assertEquals(["I think Zarmon took it."], calls)
-      assertEquals("Sanırım Marcus aldı.", texts(f).last)
+      f.onRead(["Someone saw Tomas near the pier."], nil)
+      // Ad yer tutucuyla gitti, geri konuldu (ek ada göre kuruldu); ilk satırın bağlamı yok.
+      assertEquals(["Someone saw Zarmon near the pier."], calls)
+      assertEquals("Biri Tomas'ı iskelenin yanında gördü.", texts(f).last)
       assertNil(contexts[0])
       // Kısa satır: önceki gösterilen satır bağlam; çeviri son düzeltilir.
-      read(f, "Not you.")
-      assertEquals("Not you.", calls[1])
-      assertEquals("I think Marcus took it.", contexts[1])
-      assertEquals("Sen değil.", texts(f).last)
+      read(f, "Which one?")
+      assertEquals("Which one?", calls[1])
+      assertEquals("Someone saw Tomas near the pier.", contexts[1])
+      assertEquals("Hangisi?", texts(f).last)
       assertNil(TranslationContext.current, "bağlam iş parçacığında kalmamalı")
       // Bağlamla çevrilen satır önbelleğe girmez: aynı satır başka bağlamla yeniden çevrilir.
-      read(f, "Where are you going?")
-      read(f, "Not you.")
+      read(f, "Where did it happen?")
+      read(f, "Which one?")
       assertEquals(4, calls.count)
-      assertEquals("Where are you going?", contexts[3])
+      assertEquals("Where did it happen?", contexts[3])
     }
     TestRun.test("NaturalPipelineTest.oldOrGeminiOrLongLineGetsNoContext" + suffix) {
       var contexts: [String?] = []
       let f = fixture(mode, options()) { _ in contexts.append(TranslationContext.current); return "Tamam." }
-      f.onRead(["I think Marcus took it."], nil)
-      read(f, "Not you.", after: 20_000)
+      f.onRead(["Someone saw Tomas near the pier."], nil)
+      read(f, "Which one?", after: 20_000)
       assertNil(contexts[1], "önceki satır 15 sn'den eski")
-      read(f, "Not me.")
-      assertEquals("Not you.", contexts[2])
-      read(f, "Where are you going with that?")
+      read(f, "That one.")
+      assertEquals("Which one?", contexts[2])
+      read(f, "Where did it happen near the old pier?")
       assertNil(contexts[3], "uzun satır")
 
       var geminiContexts: [String?] = []
       let g = fixture(mode, options(engine: "gemini")) { _ in geminiContexts.append(TranslationContext.current); return "Tamam." }
-      g.onRead(["I think Marcus took it."], nil)
-      read(g, "Not you.")
+      g.onRead(["Someone saw Tomas near the pier."], nil)
+      read(g, "Which one?")
       assertNil(geminiContexts[1], "Gemini kendi bağlamını alır")
     }
     TestRun.test("NaturalPipelineTest.speakerSenMemoryAcrossLines" + suffix) {

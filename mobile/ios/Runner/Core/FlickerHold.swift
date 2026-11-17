@@ -17,9 +17,30 @@ struct FlickerHold {
   static let MIN_EVENTS = 2
   /// Gürültülü arka planda boş okuma satırı en çok bu kadar ekranda tutar.
   static let EXTENDED_CLEAR_MS = 4000
+  /// Aynı kısalmış okuma bu kadar ms boyunca kararlı kalırsa titreme değil, yeni (daha kısa) satırdır.
+  static let STABLE_SHORTER_MS = 1500
   private static let MAX_EVENTS = 16
 
   private var events: [Int64] = []
+  private var shorterText = ""
+  private var shorterSince: Int64 = 0
+
+  /// Titreme sayılan [reading] hâlâ tutulmalı mı. Aynı okuma [STABLE_SHORTER_MS] boyunca kesintisiz sürerse
+  /// false verir: gerçekten yeni bir satırdır ve geçmesine izin verilir.
+  mutating func holdsFlicker(_ reading: String, at time: Int64) -> Bool {
+    if shorterText.isEmpty || !TextMatch.isSimilar(reading, shorterText, 0.9) {
+      shorterText = reading
+      shorterSince = time
+      return true
+    }
+    return time - shorterSince < Int64(FlickerHold.STABLE_SHORTER_MS)
+  }
+
+  /// Gösterilen satır tam okundu ya da yeni satır geldi: kısalmış okuma sayacı sıfırlanır.
+  mutating func clearShorter() {
+    shorterText = ""
+    shorterSince = 0
+  }
 
   /// [reading] (sadeleştirilmiş), gösterilen [shown] (sadeleştirilmiş) satırın titremiş okuması mı.
   /// Satırdan uzun (büyüyen) okuma hiçbir zaman titreme değildir; yeni satır olabilir.
@@ -56,5 +77,8 @@ struct FlickerHold {
     isNoisy(time) ? max(base, FlickerHold.EXTENDED_CLEAR_MS) : base
   }
 
-  mutating func reset() { events.removeAll() }
+  mutating func reset() {
+    events.removeAll()
+    clearShorter()
+  }
 }

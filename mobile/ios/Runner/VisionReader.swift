@@ -16,6 +16,8 @@ final class VisionReader: FrameReader {
   private var generation = 0
   private var stuck = StuckDetector()
   private var retryLimiter = RetryLimiter()
+  /// Son altyazının görüldüğü an (yalnız okuma kuyruğunda); boş ekranda gereksiz yeniden okumayı önler.
+  private var lastSubtitleAt: Int64?
   private let scheduler = ReadScheduler()
   private var pipeline: SubtitlePipeline?
   private var region = Region()
@@ -128,9 +130,8 @@ final class VisionReader: FrameReader {
 
   func offer(_ frame: Frame) {
     let now = SubtitleStabilizer.monotonicMillis()
-    let hash = frame.pixels.withUnsafeBytes { StuckDetector.hash(of: $0) }
     busyLock.lock()
-    stuck.frame(at: now, hash: hash)
+    stuck.frame(at: now)
     var recovered: StuckDetector.Reason?
     if let reason = stuck.check(at: now) {
       // Takılan okuma bırakılır: yeni kuyruk, boş durum; eski okuma dönerse yeni durumu bozmaz (generation).
@@ -148,10 +149,12 @@ final class VisionReader: FrameReader {
     busyLock.unlock()
     reportRecovery(recovered)
     if recovered != nil {
+      // Takılan kuyruğa atılmış ayar yeniden kurulumu hiç çalışmayabilir: güncel ayarlarla yeni kuyrukta yeniden kurulur
+      // (bölge, dil, hat). Ardından oku işi aynı seri kuyrukta sıraya girer.
+      rebuild(settings: Store.shared.settings)
       target.async {
-        self.scheduler.reset()
         self.retryLimiter.reset()
-        self.pipeline?.reset()
+        self.lastSubtitleAt = nil
       }
     }
     target.async {
@@ -163,7 +166,7 @@ final class VisionReader: FrameReader {
         }
         self.busyLock.unlock()
       }
-      self.read(frame)
+      self.read(frame, token: token)
     }
   }
 
@@ -173,7 +176,6 @@ final class VisionReader: FrameReader {
     switch reason {
     case .busyTooLong: text = "okuyucu takıldı (okuma çok uzun sürdü); sıfırlandı"
     case .noResult: text = "okuyucu takıldı (karelere sonuç gelmiyor); sıfırlandı"
-    case .frozenFrame: text = "okuyucu takıldı (aynı kare tekrarlanıyor); sıfırlandı"
     }
     engine.log(1, text)
   }
@@ -193,7 +195,14 @@ final class VisionReader: FrameReader {
 
   // MARK: - Okuma
 
-  private func read(_ frame: Frame) {
+  /// Takılma kurtarmasından sonra eski bir okumanın sonucu atılır (kilit altında kontrol edilir).
+  private func isCurrent(_ token: Int) -> Bool {
+    busyLock.lock(); defer { busyLock.unlock() }
+    return token == generation
+  }
+
+  private func read(_ frame: Frame, token: Int) {
+    guard isCurrent(token) else { return }
     guard let pipeline, let image = frame.cgImage() else { return }
     let r = region
     let fullWidth = frame.width, fullHeight = frame.height
@@ -204,19 +213,24 @@ final class VisionReader: FrameReader {
     guard let crop = image.cropping(to: CGRect(x: cropX, y: cropY, width: w, height: h)) else { return }
 
     if let signature = Self.signature(crop), scheduler.canReuse(signature) {
-      pipeline.onRead(lastLines, lastBox)
+      if isCurrent(token) { pipeline.onRead(lastLines, lastBox) }
       return
     }
 
     // İlk okuma tüm bölgede; sonuç yoksa ya da güvensizse sınırlı sıklıkta, ortalanmış bandı büyüterek bir kez daha.
     guard let first = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: true) else { return }
+    guard isCurrent(token) else { return }
     var selected = ReadingSelector.select(first, width: w, height: h)
-    if ReadingSelector.needsRetry(selected), retryLimiter.allow(at: SubtitleStabilizer.monotonicMillis()) {
-      let band = ReadingSelector.retryBand(width: w, height: h)
-      let scale = ReadingSelector.RETRY_SCALE
+    let clock = SubtitleStabilizer.monotonicMillis()
+    let band = ReadingSelector.retryBand(width: w, height: h)
+    // Boş ekranda yeniden okuma yok; büyütme genişliği sınırlı (çok geniş bölgede küçülür ya da atlanır).
+    if ReadingSelector.shouldRetry(rawCount: first.count, selected: selected, lastSubtitleAt: lastSubtitleAt, now: clock),
+       let scale = ReadingSelector.retryScale(bandWidth: band.width),
+       retryLimiter.allow(at: clock) {
       if let part = image.cropping(to: CGRect(x: cropX + band.x, y: cropY + band.y, width: band.width, height: band.height)),
          let big = Self.upscaled(part, factor: scale),
          let again = recognize(big, offsetX: band.x, offsetY: band.y, scale: scale, timed: false) {
+        guard isCurrent(token) else { return }
         let retried = ReadingSelector.select(again, width: w, height: h)
         if ReadingSelector.isBetter(retried, than: selected) { selected = retried }
       }
@@ -234,6 +248,9 @@ final class VisionReader: FrameReader {
       sink.remember(box, line: Double(heights[heights.count / 2]) / Double(fullHeight),
                     characters: lines.reduce(0) { $0 + $1.count })
     }
+    // Kurtarmadan önce başlamış eski okumanın bayat satırları hatta ve ortak duruma gitmez.
+    guard isCurrent(token) else { return }
+    if !lines.isEmpty { lastSubtitleAt = clock }
     lastLines = lines
     lastBox = box
     pipeline.onRead(lines, box)
@@ -241,7 +258,7 @@ final class VisionReader: FrameReader {
 
   /// Görüntüyü okur; her çağrıda taze bir istek kurulur. Parçalar bölge pikselinde (sol üstten) döner;
   /// [offsetX]/[offsetY]/[scale] büyütülmüş bir alt bandın bölgedeki yerini belirtir. Okuma hatasında nil.
-  private func recognize(_ image: CGImage, offsetX: Int, offsetY: Int, scale: Int, timed: Bool) -> [TextObservation]? {
+  private func recognize(_ image: CGImage, offsetX: Int, offsetY: Int, scale: Double, timed: Bool) -> [TextObservation]? {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     request.usesLanguageCorrection = true
@@ -276,8 +293,9 @@ final class VisionReader: FrameReader {
   }
 
   /// Görüntüyü [factor] kat büyütür (küçük yazı için yeniden okuma).
-  static func upscaled(_ image: CGImage, factor: Int) -> CGImage? {
-    let width = image.width * factor, height = image.height * factor
+  static func upscaled(_ image: CGImage, factor: Double) -> CGImage? {
+    let width = Int((Double(image.width) * factor).rounded()), height = Int((Double(image.height) * factor).rounded())
+    guard width > 0, height > 0 else { return nil }
     guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }

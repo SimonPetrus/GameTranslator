@@ -88,6 +88,7 @@ final class SubtitlePipeline: @unchecked Sendable {
   private var lastShownAt: Double?
   /// Doğal Türkçe adımlarının (sen/siz belleği) oturum durumu; oyun/paket değişince ve [reset]te sıfırlanır.
   private let address: AddressMemory
+  private let nameMemory = NameMemory()
   private var lastPackId: String?
   /// Kısa satır bağlamının zaman ölçüsü (saniye); testte sahte saat verilir.
   var contextClock: () -> Double = { ProcessInfo.processInfo.systemUptime }
@@ -233,6 +234,7 @@ final class SubtitlePipeline: @unchecked Sendable {
         // Oyun/paket değişti: konuşmacıların sen/siz belleği geçerli değil.
         if let id = packed.packId, id != lastPackId {
           address.reset()
+          nameMemory.reset()
           lastPackId = id
         }
         onPackHit?(source, packed)
@@ -258,13 +260,14 @@ final class SubtitlePipeline: @unchecked Sendable {
     var engine: TextTranslator = translator
     if !gemini {
       input = IdiomNormalizer.apply(input)
-      let names = NameProtection.candidates(input, glossary: options.glossary)
+      let names = NameProtection.candidates(input, glossary: options.glossary, known: nameMemory.snapshot)
+      nameMemory.remember(names)
       if !names.isEmpty { engine = GlossaryTranslator(NameProtection.glossary(for: names), translator) }
     }
     TranslationContext.set(context)
     defer { TranslationContext.set(nil) }
     guard let raw = engine.translate(input).map({ KotlinText.trim($0) }), !raw.isEmpty else { return nil }
-    let edited = TurkishPostEdit.apply(raw, source: line)
+    let edited = TurkishPolish.apply(raw, source: line)
     return AddressForm.harmonizeLine(edited)
   }
 
@@ -296,6 +299,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     lastShownAt = nil
     lastPackId = nil
     address.reset()
+    nameMemory.reset()
     if stabilizer.reset().kind == .clear { sink.clear() }
   }
 }

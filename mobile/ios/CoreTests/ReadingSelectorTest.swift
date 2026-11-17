@@ -26,6 +26,14 @@ enum ReadingSelectorTest {
       let kept = ReadingSelector.dropEdgeCut(list, width: w).map(\.text)
       assertEquals(["proper subtitle line", "a very very wide line"], kept)
     }
+    TestRun.test("ReadingSelectorTest.edgeCutKeepsOriginalsWhenNothingElseSurvives") {
+      let only = [obs("narrow region subtitle", 0.9, 0, 150, 1000, 180)]
+      let left = [obs("touches left only", 0.9, 0, 150, 600, 180)]
+      assertEquals(1, ReadingSelector.dropEdgeCut(only, width: w).count)
+      assertEquals(1, ReadingSelector.dropEdgeCut(left, width: w).count, "tek parça kesik görünse de korunur")
+      let mixed = left + [obs("fine line here", 0.9, 250, 100, 750, 130)]
+      assertEquals(["fine line here"], ReadingSelector.dropEdgeCut(mixed, width: w).map(\.text))
+    }
     TestRun.test("ReadingSelectorTest.blocksSplitOnLargeGap") {
       let list = [obs("one", 0.9, 300, 140, 700, 165), obs("two", 0.9, 300, 168, 700, 193), obs("far", 0.9, 300, 10, 400, 35)]
       let blocks = ReadingSelector.blocks(list)
@@ -64,6 +72,24 @@ enum ReadingSelectorTest {
       assertTrue(ReadingSelector.isBetter(weak, than: []))
       assertFalse(ReadingSelector.isBetter([], than: weak))
       assertFalse(ReadingSelector.isBetter(weak, than: strong))
+    }
+    TestRun.test("ReadingSelectorTest.emptyScreenDoesNotRetryUnlessSubtitleWasJustSeen") {
+      let weak = [obs("weak", 0.4, 300, 150, 700, 180)]
+      assertFalse(ReadingSelector.shouldRetry(rawCount: 0, selected: [], lastSubtitleAt: nil, now: 10_000))
+      assertFalse(ReadingSelector.shouldRetry(rawCount: 0, selected: [], lastSubtitleAt: 1000, now: 10_000))
+      assertTrue(ReadingSelector.shouldRetry(rawCount: 0, selected: [], lastSubtitleAt: 8000, now: 10_000))
+      assertTrue(ReadingSelector.shouldRetry(rawCount: 0, selected: [], lastSubtitleAt: 7000, now: 10_000))
+      assertFalse(ReadingSelector.shouldRetry(rawCount: 0, selected: [], lastSubtitleAt: 6999, now: 10_000))
+      // Parçalar var ama güvensiz ya da süzülüp boşalmış: eskisi gibi yeniden okunur.
+      assertTrue(ReadingSelector.shouldRetry(rawCount: 2, selected: weak, lastSubtitleAt: nil, now: 10_000))
+      assertTrue(ReadingSelector.shouldRetry(rawCount: 2, selected: [], lastSubtitleAt: nil, now: 10_000))
+      assertFalse(ReadingSelector.shouldRetry(rawCount: 1, selected: [obs("ok", 0.9, 300, 150, 700, 180)], lastSubtitleAt: nil, now: 10_000))
+    }
+    TestRun.test("ReadingSelectorTest.retryScaleIsCapped") {
+      assertEquals(2.0, ReadingSelector.retryScale(bandWidth: 800)!, accuracy: 0.0001)
+      assertEquals(2000.0 / 1161.0, ReadingSelector.retryScale(bandWidth: 1161)!, accuracy: 0.0001)
+      assertNull(ReadingSelector.retryScale(bandWidth: 1800))
+      assertNull(ReadingSelector.retryScale(bandWidth: 0))
     }
     TestRun.test("ReadingSelectorTest.retryBandIsCentredInsideRegion") {
       let band = ReadingSelector.retryBand(width: 1000, height: 200)
