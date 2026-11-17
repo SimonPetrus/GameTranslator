@@ -48,6 +48,8 @@ struct Settings: Equatable {
   var hideButtonHints = true
   /// Elle seçilen oyunun paketi (bilgisayar sürümündeki "Oyun" seçimi); boş: otomatik.
   var packChoice = ""
+  /// Ana bölgenin dışında, istek üzerine bir kez okunan ek alanlar (en çok 3; görev metni, eşya adı vb.).
+  var extraRegions: [ExtraRegion] = []
 
   /// Sözlük metni çözülmüş hâliyle; boş ya da bozuksa boş sözlük (Android'deki parsedGlossary).
   func parsedGlossary() -> Glossary {
@@ -77,6 +79,7 @@ struct Settings: Equatable {
       "packsEnabled": packsEnabled,
       "hideButtonHints": hideButtonHints,
       "packChoice": packChoice,
+      "extraRegions": extraRegions.map { $0.toJson() },
       "style": [
         "fontSize": style.fontSize, "bottomPercent": style.bottomPercent, "placement": style.placement,
         "background": style.background, "bold": style.bold, "textColor": style.textColor,
@@ -115,6 +118,7 @@ struct Settings: Equatable {
     out.packsEnabled = bool(json["packsEnabled"], true)
     out.hideButtonHints = bool(json["hideButtonHints"], true)
     out.packChoice = string(json["packChoice"], "")
+    out.extraRegions = ExtraRegion.parseList(json["extraRegions"])
     let ds = d.style
     out.style = SubtitleStyle(
       fontSize: int(s?["fontSize"], ds.fontSize),
@@ -202,6 +206,18 @@ final class Store {
   var settings: Settings {
     get { Settings.fromJsonString(defaults.string(forKey: "settings")) ?? Settings() }
     set { defaults.set(newValue.toJsonString(), forKey: "settings") }
+  }
+
+  /// Ayarları varsayılana döndürür; kimlik ve gizli bilgiler (PSN hesabı, PS5 kaydı, DeepL ve Gemini anahtarı) ile
+  /// tanıtımın görüldüğü bilgisi korunur. Yeni ayarları döner.
+  @discardableResult
+  func resetSettings() -> Settings {
+    let old = settings
+    var fresh = Settings()
+    fresh.deepLKey = old.deepLKey
+    fresh.geminiKey = old.geminiKey
+    settings = fresh
+    return fresh
   }
 
   // MARK: - Anahtar Zinciri

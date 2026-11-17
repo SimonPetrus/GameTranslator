@@ -118,6 +118,9 @@ final class SubtitlePipeline: @unchecked Sendable {
   private var _packLookup: ((String) throws -> PackMatch?)?
   /// Paketten gösterilen satır (kaynak, paket).
   var onPackHit: ((String, PackMatch) -> Void)?
+  /// Bir satır gösterildiğinde (kaynak, çeviri, çeviriyi yapan: "pack", "stock", "cache", "google", "deepl",
+  /// "gemini", "apple" ya da bilinmiyorsa ""); altyazı geçmişi içindir.
+  var onShown: ((String, String, String) -> Void)?
   /// Paketten gösterilen satır sayısı.
   var packHits: Int { lock.lock(); defer { lock.unlock() }; return _packHits }
   private var _packHits = 0
@@ -162,7 +165,7 @@ final class SubtitlePipeline: @unchecked Sendable {
       let number = latest
       onScreen = number
       if let cached = cache.get(key(source)) {
-        show(source, cached, box, SubtitlePipeline.ON_SCREEN_MS, replaces: false)
+        show(source, cached, box, SubtitlePipeline.ON_SCREEN_MS, replaces: false, origin: "cache")
       } else {
         request(number, source, box)
       }
@@ -171,7 +174,7 @@ final class SubtitlePipeline: @unchecked Sendable {
       latest += 1
       let number = latest
       onScreen = number
-      if let cached = cache.get(key(source)) { deliver(number, source, cached, box) } else { request(number, source, box) }
+      if let cached = cache.get(key(source)) { deliver(number, source, cached, box, origin: "cache") } else { request(number, source, box) }
     }
   }
 
@@ -186,7 +189,7 @@ final class SubtitlePipeline: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         _skipped += 1
-        deliver(number, source, source, box)
+        deliver(number, source, source, box, origin: "")
         return
       }
       let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
@@ -208,16 +211,21 @@ final class SubtitlePipeline: @unchecked Sendable {
       FallbackSignal.reset()
       var translated: String?
       var memoryStep = false
+      var origin = ""
       if let packed {
         translated = KotlinText.trim(packed.text)
+        origin = "pack"
       } else if let stock {
         translated = stock
+        origin = "stock"
       } else if let stored {
         translated = stored
         memoryStep = natural
+        origin = "cache"
       } else {
         translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: context, options: options)
         memoryStep = natural
+        origin = SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: FallbackSignal.marked)
       }
       // Yedek motorun çevirisi gösterilir ama asıl motorun anahtarıyla diske yazılmaz.
       if packed == nil, stored == nil, !FallbackSignal.marked, let diskKey, let translated, !translated.isEmpty {
@@ -245,8 +253,52 @@ final class SubtitlePipeline: @unchecked Sendable {
         return
       }
       if context == nil { cache.set(key(source), translated) }
-      deliver(number, source, translated, box)
+      deliver(number, source, translated, box, origin: origin)
     }
+  }
+
+  /// Çeviriyi hangi kaynağın verdiği (en iyi tahmin): yedek motor cevap verdiyse Gemini/DeepL'in yerine Google,
+  /// Google'ın yerine cihaz üstü (Apple) yazılır; ayrımı yapılamayan durumda tahmin edilir.
+  static func engineOrigin(_ engineId: String, fallbackAnswered: Bool) -> String {
+    switch engineId {
+    case "mlkit": return "apple"
+    case "gemini", "deepl": return fallbackAnswered ? "google" : engineId
+    case "google": return fallbackAnswered ? "apple" : "google"
+    default: return engineId
+    }
+  }
+
+  /// Tek seferlik çeviri (ek okuma alanı): kararlılık, ekran sırası, TV'ye gönderim ve konuşmacı belleği yok; oyun paketi,
+  /// hazır cevap, önbellek ve motor ana hatla aynı yoldan gider. Çeviri iş parçacığında çalışır; çağıran bloklanır.
+  /// Çevrilemezse ya da süre dolarsa metin nil.
+  func translateOnce(_ source: String, timeoutSeconds: Double = 15) -> (text: String?, origin: String) {
+    let semaphore = DispatchSemaphore(value: 0)
+    let box = OnceResult()
+    translateExecutor { [self] in
+      box.value = performOnce(source)
+      semaphore.signal()
+    }
+    if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut { return (nil, "") }
+    return box.value
+  }
+
+  private func performOnce(_ source: String) -> (text: String?, origin: String) {
+    let options = self.options
+    if options.skipTurkishSource && TurkishDetect.isTurkish(source) { return (source, "") }
+    let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
+    if let packed { return (KotlinText.trim(packed.text), "pack") }
+    let oneLine = KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })
+    let natural = options.sourceLanguage == "en" && options.targetLanguage == "tr"
+    if natural, let stock = StockLines.lookup(oneLine) { return (stock, "stock") }
+    let diskKey: String? = options.cache != nil ? options.cacheKey(oneLine) : nil
+    if let diskKey, let stored = options.cache?.get(diskKey) { return (stored, "cache") }
+    FallbackSignal.reset()
+    let gemini = options.engineId == "gemini"
+    guard let translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: nil, options: options),
+          !translated.isEmpty else { return (nil, "") }
+    let fallback = FallbackSignal.marked
+    if !fallback, let diskKey { options.cache?.set(diskKey, translated) }
+    return (translated, SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: fallback))
   }
 
   /// Motor çağrısı ve (İngilizce→Türkçe ise) çevrilmeden önce/sonra adımlar: deyim sadeleştirme, ad koruması, kısa satır
@@ -273,20 +325,21 @@ final class SubtitlePipeline: @unchecked Sendable {
   }
 
   /// Kilit altında çağrılır. Yerine yenisi gelmiş satırın geç kalan çevirisi gösterilmez.
-  private func deliver(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?) {
+  private func deliver(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?, origin: String) {
     if number != latest { return }
     // Çeviri kaynağıyla neredeyse aynıysa metin zaten hedef dildedir.
     if !stabilizer.shouldSend(source, translated) { return }
     let duration = number == onScreen ? SubtitlePipeline.ON_SCREEN_MS : SubtitlePipeline.readingTime(translated)
     let replaces = lastShownSource.map { TextMatch.isRevision(source, $0) } ?? false
-    show(source, translated, box, duration, replaces: replaces)
+    show(source, translated, box, duration, replaces: replaces, origin: origin)
   }
 
-  private func show(_ source: String, _ translated: String, _ box: TextBox?, _ duration: Int, replaces: Bool) {
+  private func show(_ source: String, _ translated: String, _ box: TextBox?, _ duration: Int, replaces: Bool, origin: String) {
     lastShownSource = source
     lastShownAt = contextClock()
     sink.show(translated, durationMs: duration, box: box, replaces: replaces)
     onPair?(source, translated)
+    onShown?(source, translated, origin)
   }
 
   private func key(_ source: String) -> UTF16Text { KotlinText.units(TextMatch.normalize(source)) }
@@ -303,6 +356,11 @@ final class SubtitlePipeline: @unchecked Sendable {
     nameMemory.reset()
     if stabilizer.reset().kind == .clear { sink.clear() }
   }
+}
+
+/// [SubtitlePipeline.translateOnce] sonucunu çeviri kuyruğundan çağırana taşır.
+private final class OnceResult: @unchecked Sendable {
+  var value: (text: String?, origin: String) = (nil, "")
 }
 
 /// Kotlin'deki erişim sıralı `LinkedHashMap` + `removeEldestEntry`: en uzun süredir dokunulmayan kayıt atılır.

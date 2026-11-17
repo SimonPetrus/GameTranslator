@@ -28,6 +28,10 @@ final class VisionReader: FrameReader {
   private var lastLines: [String] = []
   private var lastBox: TextBox?
   private var ocrTimes: [Int] = []
+  /// Sağlık ekranı için (busyLock altında): son okumanın süresi, kullanılan tanıma dili, takılma kurtarma sayısı.
+  private var lastOcrMs = 0
+  private var healthLanguage = ""
+  private var stuckRecoveries = 0
   private let sink: ServerSink
 
   init(engine: Engine) {
@@ -58,6 +62,8 @@ final class VisionReader: FrameReader {
       self.region = s.region
       self.language = s.sourceLanguage
       self.ocrLanguage = self.resolveOcrLanguage(s.sourceLanguage)
+      let languageName = self.ocrLanguage ?? "otomatik"
+      _ = self.whenCurrent(target.token) { self.healthLanguage = languageName }
       self.hideButtonHints = s.hideButtonHints
       // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
       let local = AppleTranslator(source: s.sourceLanguage, target: s.targetLanguage) { level, text in self.engine.log(level, text) }
@@ -89,7 +95,11 @@ final class VisionReader: FrameReader {
       let translator = PrefixTranslator(SpeakerNameTranslator(withGlossary))
       let engine = self.engine
       let built = SubtitlePipeline(translator: translator, sink: self.sink, translateQueue: self.translating)
+      built.onShown = { source, translation, origin in
+        Engine.history.record(source: source, text: translation, engine: origin)
+      }
       built.onPair = { source, translation in
+        engine.noteTranslation(ok: true)
         engine.lastSource = source
         engine.lastTranslation = translation
         engine.translatedCount += 1
@@ -97,6 +107,7 @@ final class VisionReader: FrameReader {
         engine.notifyChanged()
       }
       built.onTranslateFailed = { source in
+        engine.noteTranslation(ok: false, error: "Çeviri alınamadı (motor yanıt vermedi)")
         engine.log(1, "çevrilemedi: \"\(source.replacingOccurrences(of: "\n", with: " "))\"")
       }
       // Oyun paketi: satır paketteyse motora gidilmez. Bulanık arama yalnız son tam eşleşmenin paketinde (oynanan oyun).
@@ -151,6 +162,7 @@ final class VisionReader: FrameReader {
       busy = false
       queue = DispatchQueue(label: "gt.reader.\(generation)")
       recovered = reason
+      stuckRecoveries += 1
     }
     // Önceki kare hâlâ okunuyorsa bu kare atlanır; okuma kareleri biriktirmez.
     if busy { busyLock.unlock(); reportRecovery(recovered); return }
@@ -203,6 +215,77 @@ final class VisionReader: FrameReader {
     let fallback = LanguageCodes.visionLanguage("en", supported: supported)
     engine.log(1, "yazı tanıma bu iOS sürümünde \"\(code)\" dilini desteklemiyor; \(fallback ?? "otomatik dil") kullanılıyor")
     return fallback
+  }
+
+  // MARK: - Demo, ek alan ve sağlık
+
+  /// Okunmuş gibi satırları çeviri hattına verir (demo); sıra, gerçek okumayla aynı kuyruktadır.
+  func feed(lines: [String], box: TextBox?) {
+    let target = currentQueue()
+    target.queue.async {
+      guard self.isCurrent(target.token), let pipeline = self.pipeline else { return }
+      pipeline.onRead(lines, box)
+    }
+  }
+
+  var health: ReaderHealth {
+    busyLock.lock(); defer { busyLock.unlock() }
+    return ReaderHealth(lastReadMs: lastOcrMs, language: healthLanguage, stuckRecoveries: stuckRecoveries)
+  }
+
+  /// Ek alanı bir kez okur: yazı tanıma okuma kuyruğunda sıraya girer (asıl okuma ve kararlılık durumuna dokunmaz),
+  /// çeviri çeviri kuyruğunda yapılır, sonuç ~8 sn'lik altyazı olarak TV'ye gider. Bloklar (en çok ~30 sn).
+  func readExtra(_ frame: Frame, region r: ExtraRegion) -> ExtraReadResult {
+    var failed = ExtraReadResult()
+    let target = currentQueue()
+    let semaphore = DispatchSemaphore(value: 0)
+    let slot = ExtraSlot()
+    target.queue.async {
+      defer { semaphore.signal() }
+      guard self.isCurrent(target.token) else { return }
+      slot.pipeline = self.pipeline
+      slot.lines = self.extraLines(frame, r, token: target.token)
+    }
+    if semaphore.wait(timeout: .now() + 12) == .timedOut {
+      failed.error = "Okuma zaman aşımına uğradı; yeniden deneyin."
+      return failed
+    }
+    guard let pipeline = slot.pipeline, let lines = slot.lines else {
+      failed.error = "Alan okunamadı; yeniden deneyin."
+      return failed
+    }
+    let source = ExtraRegion.joinLines(lines.map { OcrNoise.clean($0) })
+    if source.isEmpty {
+      failed.error = "Bu alanda okunacak yazı bulunamadı."
+      return failed
+    }
+    failed.source = source
+    let translated = pipeline.translateOnce(source)
+    guard let text = translated.text, !text.isEmpty else {
+      failed.error = "Çeviri alınamadı; bağlantıyı kontrol edin."
+      return failed
+    }
+    // Ek alan çevirisi 8 sn kalır; kutu verilmez, TV kendi yerleşimini kullanır.
+    sink.show(text, durationMs: 8000, box: nil, replaces: false)
+    Engine.history.record(source: source, text: text, engine: translated.origin)
+    engine.log(2, "ek alan (\(r.name)): \"\(source)\" → \"\(text)\"")
+    return ExtraReadResult(ok: true, source: source, text: text, error: "")
+  }
+
+  /// Okuma kuyruğunda: ek alanın satırları (yukarıdan aşağı). Okuma hatasında nil, yazı yoksa boş dizi.
+  private func extraLines(_ frame: Frame, _ r: ExtraRegion, token: Int) -> [String]? {
+    guard let image = frame.cgImage() else { return nil }
+    let fullWidth = frame.width, fullHeight = frame.height
+    let cropX = min(max(Int(r.left * Double(fullWidth)), 0), fullWidth - 2)
+    let cropY = min(max(Int(r.top * Double(fullHeight)), 0), fullHeight - 2)
+    let w = min(max(Int((r.right - r.left) * Double(fullWidth)), 1), fullWidth - cropX)
+    let h = min(max(Int((r.bottom - r.top) * Double(fullHeight)), 1), fullHeight - cropY)
+    guard let crop = image.cropping(to: CGRect(x: cropX, y: cropY, width: w, height: h)) else { return nil }
+    guard let found = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: false, token: token) else { return nil }
+    guard isCurrent(token) else { return nil }
+    let selected = ReadingSelector.select(found, width: w, height: h)
+    let pieces: [Piece] = selected.map { Piece(text: $0.text, left: $0.left, top: $0.top, right: $0.right, bottom: $0.bottom) }
+    return Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight).0
   }
 
   // MARK: - Okuma
@@ -285,6 +368,7 @@ final class VisionReader: FrameReader {
         // ocrTimes yalnız güncel nesilde ve kilit altında değişir; günlük kilit dışında yazılır.
         let elapsed = Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
         let report: String? = whenCurrent(token) { () -> String? in
+          lastOcrMs = elapsed
           ocrTimes.append(elapsed)
           guard ocrTimes.count >= 100 else { return nil }
           let sorted = ocrTimes.sorted()
@@ -369,6 +453,12 @@ final class VisionReader: FrameReader {
       return UInt8((r * 3 + g * 6 + b) / 10)
     }
   }
+}
+
+/// Ek alan okumasının okuma kuyruğundan çağırana taşıdığı sonuç.
+private final class ExtraSlot: @unchecked Sendable {
+  var pipeline: SubtitlePipeline?
+  var lines: [String]?
 }
 
 /// Çevirinin gittiği yer: TV sunucusu. Okunan yazının yeri ve satır yüksekliği de gider: TV "cover" yerleşiminde

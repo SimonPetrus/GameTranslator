@@ -95,6 +95,44 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
       engine.sendTestSubtitle()
       result(nil)
     case "logs": result(engine.logLines())
+    case "history":
+      // En yeniden en eskiye: [{"at": ms, "source", "text", "engine"}].
+      background.async {
+        let list = Engine.history.list()
+        DispatchQueue.main.async { result(list) }
+      }
+    case "clearHistory":
+      background.async {
+        Engine.history.clear()
+        DispatchQueue.main.async { result(nil) }
+      }
+    case "resetSettings":
+      // Ayarlar varsayılana döner; PSN hesabı, PS5 kaydı, DeepL/Gemini anahtarı ve tanıtım bilgisi kalır.
+      let fresh = store.resetSettings()
+      engine.applySettings()
+      result(fresh.toJsonString())
+    case "lastCrash": result(CrashLog.last())
+    case "clearCrash":
+      CrashLog.clear()
+      result(nil)
+    case "health":
+      background.async {
+        let report = engine.health()
+        DispatchQueue.main.async { result(report) }
+      }
+    case "demoStart":
+      engine.demoStart()
+      result(nil)
+    case "demoStop":
+      engine.demoStop()
+      result(nil)
+    case "readExtra":
+      // Bağımsız değişken: alan sırası (Int) ya da {"index": Int}.
+      let index = call.arguments as? Int ?? args?["index"] as? Int ?? -1
+      background.async {
+        let outcome = engine.readExtra(index: index)
+        DispatchQueue.main.async { result(outcome) }
+      }
     case "packList":
       // Oyun seçimi listesi: yüklü paketler (gömülü + inen); ilk çağrıda paketler açılır (~1 sn).
       background.async {

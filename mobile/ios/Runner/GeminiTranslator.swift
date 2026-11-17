@@ -19,6 +19,16 @@ final class GeminiTranslator: TextTranslator {
     "Keep line breaks. Keep the meaning and tone; do not add or leave out anything. " +
     "Reply with only the translation, no explanations, notes or quotes."
 
+  /// En son duraklatmanın bitişi (sistem sağlık ekranı için; tüm örnekler ortak, yeni örnek kurulunca sıfırlanır).
+  private static let pauseLock = NSLock()
+  private static var lastPauseEnd = Date.distantPast
+
+  /// Gemini'nin yedek motora bırakıldığı kalan süre (sn); duraklatma yoksa 0.
+  static var pausedSeconds: Int {
+    pauseLock.lock(); defer { pauseLock.unlock() }
+    return max(0, Int(lastPauseEnd.timeIntervalSinceNow.rounded(.up)))
+  }
+
   private let key: String
   private let model: String
   private let log: (Int, String) -> Void
@@ -33,6 +43,9 @@ final class GeminiTranslator: TextTranslator {
     self.key = key.trimmingCharacters(in: .whitespacesAndNewlines)
     self.model = GeminiModels.resolve(model ?? Store.shared.settings.geminiModel)
     self.log = log
+    Self.pauseLock.lock()
+    Self.lastPauseEnd = Date.distantPast
+    Self.pauseLock.unlock()
   }
 
   func translate(_ text: String) -> String? {
@@ -156,7 +169,11 @@ final class GeminiTranslator: TextTranslator {
     lock.lock()
     let wasPaused = Date() < pausedUntil
     pausedUntil = Date().addingTimeInterval(seconds)
+    let until = pausedUntil
     lock.unlock()
+    Self.pauseLock.lock()
+    Self.lastPauseEnd = until
+    Self.pauseLock.unlock()
     if let message, !wasPaused { log(1, message) }
   }
 

@@ -22,6 +22,7 @@ class EngineState {
     this.packHits = 0,
     this.packGame = '',
     this.nativeAvailable = true,
+    this.demo,
   });
 
   /// idle, starting, waking, connecting, streaming, reconnecting, stopping, failed
@@ -44,6 +45,9 @@ class EngineState {
   final String packGame;
   final bool nativeAvailable;
 
+  /// PS5'siz deneme çalışıyor mu (yalnız iOS; alan yoksa null).
+  final bool? demo;
+
   factory EngineState.fromMap(Map<Object?, Object?> map) => EngineState(
         phase: map['phase'] as String? ?? 'idle',
         message: map['message'] as String? ?? '',
@@ -61,7 +65,116 @@ class EngineState {
         packHits: (map['packHits'] as num?)?.toInt() ?? 0,
         packGame: map['packGame'] as String? ?? '',
         nativeAvailable: map['nativeAvailable'] as bool? ?? true,
+        demo: map['demo'] as bool?,
       );
+}
+
+/// Altyazı geçmişindeki bir satır.
+class HistoryEntry {
+  const HistoryEntry({required this.at, required this.source, required this.text, required this.engine});
+
+  final DateTime at;
+  final String source;
+  final String text;
+  final String engine;
+}
+
+/// Önceki çalıştırmada olan çökmenin özeti.
+class CrashInfo {
+  const CrashInfo({required this.at, required this.kind, required this.name, required this.detail});
+
+  final DateTime at;
+  final String kind;
+  final String name;
+  final String detail;
+}
+
+/// Ek okuma alanının tek seferlik okuma sonucu.
+class ExtraReadResult {
+  const ExtraReadResult({this.ok = false, this.source = '', this.text = '', this.error = ''});
+
+  final bool ok;
+  final String source;
+  final String text;
+  final String error;
+}
+
+/// Sistem durumu ekranının verisi; eksik alanlar varsayılanlarla dolar.
+class HealthInfo {
+  const HealthInfo({
+    this.network = false,
+    this.phoneAddress = '',
+    this.consoleRegistered = false,
+    this.consoleHost = '',
+    this.consoleState = '',
+    this.streamRunning = false,
+    this.fps = 0,
+    this.lastReadMs = 0,
+    this.readerLanguage = '',
+    this.stuckRecoveries = 0,
+    this.engine = '',
+    this.translatorLastOk = true,
+    this.translatorLastError = '',
+    this.geminiPausedSeconds = 0,
+    this.tvClients = 0,
+    this.tvPort = 0,
+    this.packsEnabled = false,
+    this.packGame = '',
+    this.cacheEntries = 0,
+  });
+
+  final bool network;
+  final String phoneAddress;
+  final bool consoleRegistered;
+  final String consoleHost;
+  final String consoleState;
+  final bool streamRunning;
+  final double fps;
+  final int lastReadMs;
+  final String readerLanguage;
+  final int stuckRecoveries;
+  final String engine;
+  final bool translatorLastOk;
+  final String translatorLastError;
+  final int geminiPausedSeconds;
+  final int tvClients;
+  final int tvPort;
+  final bool packsEnabled;
+  final String packGame;
+  final int cacheEntries;
+
+  static Map<Object?, Object?> _sub(Object? value) => value is Map ? value.cast<Object?, Object?>() : const <Object?, Object?>{};
+
+  factory HealthInfo.fromMap(Map<Object?, Object?> map) {
+    final console = _sub(map['console']);
+    final stream = _sub(map['stream']);
+    final reader = _sub(map['reader']);
+    final translator = _sub(map['translator']);
+    final tv = _sub(map['tv']);
+    final packs = _sub(map['packs']);
+    final cache = _sub(map['cache']);
+    return HealthInfo(
+      network: map['network'] as bool? ?? false,
+      phoneAddress: map['phoneAddress'] as String? ?? '',
+      consoleRegistered: console['registered'] as bool? ?? false,
+      consoleHost: console['host'] as String? ?? '',
+      consoleState: console['state'] as String? ?? '',
+      streamRunning: stream['running'] as bool? ?? false,
+      fps: (stream['fps'] as num?)?.toDouble() ?? 0,
+      lastReadMs: (reader['lastReadMs'] as num?)?.toInt() ?? 0,
+      readerLanguage: reader['language'] as String? ?? '',
+      stuckRecoveries: (reader['stuckRecoveries'] as num?)?.toInt() ?? 0,
+      engine: translator['engine'] as String? ?? '',
+      translatorLastOk: translator['lastOk'] as bool? ?? true,
+      translatorLastError: translator['lastError'] as String? ?? '',
+      geminiPausedSeconds: (translator['geminiPausedSeconds'] as num?)?.toInt() ?? 0,
+      tvClients: (tv['clients'] as num?)?.toInt() ?? 0,
+      tvPort: (tv['port'] as num?)?.toInt() ?? 0,
+      packsEnabled: packs['enabled'] as bool? ?? false,
+      packGame: packs['game'] as String? ?? '',
+      cacheEntries: (cache['entries'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 /// Kayıtlı PSN hesabı ve eşleştirilmiş PS5.
@@ -114,6 +227,16 @@ class AppSettings {
   bool get packsEnabled => json['packsEnabled'] as bool? ?? true;
   bool get hideButtonHints => json['hideButtonHints'] as bool? ?? true;
   String get packChoice => json['packChoice'] as String? ?? '';
+
+  /// Ek okuma alanları (en çok 3): üst, alt, sol, sağ (0–1) ve ad.
+  List<Map<String, dynamic>> get extraRegions {
+    final raw = json['extraRegions'];
+    if (raw is! List) return [];
+    return [
+      for (final item in raw)
+        if (item is Map) item.cast<String, dynamic>(),
+    ];
+  }
 
   AppSettings copy() => AppSettings(jsonDecode(jsonEncode(json)) as Map<String, dynamic>);
 }
@@ -211,6 +334,129 @@ class Bridge {
       return false;
     } on PlatformException {
       return false;
+    }
+  }
+
+  /// Altyazı geçmişi, yeniden eskiye (yalnız iOS; başka yerde boş liste).
+  static Future<List<HistoryEntry>> history() async {
+    try {
+      final list = await _channel.invokeMethod<List<Object?>>('history') ?? [];
+      return [
+        for (final item in list)
+          if (item is Map)
+            HistoryEntry(
+              at: DateTime.fromMillisecondsSinceEpoch((item['at'] as num?)?.toInt() ?? 0),
+              source: item['source'] as String? ?? '',
+              text: item['text'] as String? ?? '',
+              engine: item['engine'] as String? ?? '',
+            ),
+      ];
+    } on MissingPluginException {
+      return [];
+    } on PlatformException {
+      return [];
+    }
+  }
+
+  static Future<void> clearHistory() async {
+    try {
+      await _channel.invokeMethod<void>('clearHistory');
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  /// Bütün ayarları varsayılana döndürür; yeni ayarları döner (yalnız iOS, olmazsa null).
+  static Future<AppSettings?> resetSettings() async {
+    try {
+      final text = await _channel.invokeMethod<String>('resetSettings');
+      if (text == null) return null;
+      return AppSettings(jsonDecode(text) as Map<String, dynamic>);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Önceki çalıştırmadaki çökme; yoksa null (yalnız iOS).
+  static Future<CrashInfo?> lastCrash() async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('lastCrash');
+      if (map == null) return null;
+      return CrashInfo(
+        at: DateTime.fromMillisecondsSinceEpoch((map['at'] as num?)?.toInt() ?? 0),
+        kind: map['kind'] as String? ?? '',
+        name: map['name'] as String? ?? '',
+        detail: map['detail'] as String? ?? '',
+      );
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  static Future<void> clearCrash() async {
+    try {
+      await _channel.invokeMethod<void>('clearCrash');
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  /// Sistem durumu (yalnız iOS; olmazsa null).
+  static Future<HealthInfo?> health() async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('health');
+      if (map == null) return null;
+      return HealthInfo.fromMap(map);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// PS5'siz deneme: örnek satırlar çevrilip TV'ye gönderilir (yalnız iOS).
+  static Future<void> demoStart() async {
+    try {
+      await _channel.invokeMethod<void>('demoStart');
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  static Future<void> demoStop() async {
+    try {
+      await _channel.invokeMethod<void>('demoStop');
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  /// [index]. ek okuma alanını bir kez okuyup çevirir (yalnız iOS).
+  static Future<ExtraReadResult> readExtra(int index) async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('readExtra', index) ?? {};
+      return ExtraReadResult(
+        ok: map['ok'] as bool? ?? false,
+        source: map['source'] as String? ?? '',
+        text: map['text'] as String? ?? '',
+        error: map['error'] as String? ?? '',
+      );
+    } on MissingPluginException {
+      return const ExtraReadResult(error: 'Bu telefonda desteklenmiyor.');
+    } on PlatformException {
+      return const ExtraReadResult(error: 'Okunamadı.');
     }
   }
 

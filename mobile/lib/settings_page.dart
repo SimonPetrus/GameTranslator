@@ -8,6 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
+import 'extra_region_page.dart';
+import 'health_page.dart';
+import 'history_page.dart';
 import 'home_page.dart';
 import 'intro_page.dart';
 import 'main.dart';
@@ -186,6 +189,13 @@ class _SettingsTabState extends State<SettingsTab> {
   Uint8List? preview;
   Timer? saveTimer;
   Timer? previewTimer;
+  StreamSubscription<EngineState>? stateSubscription;
+
+  /// Önceki çalıştırmadaki çökme (yalnız iOS).
+  CrashInfo? crash;
+
+  /// PS5'siz deneme açık mı (yalnız iOS).
+  bool demoOn = false;
 
   /// Altyazı bölgesinde sürgünün ayarladığı kenar.
   String edge = 'top';
@@ -194,6 +204,13 @@ class _SettingsTabState extends State<SettingsTab> {
   void initState() {
     super.initState();
     load();
+    if (Platform.isIOS) {
+      loadIosExtras();
+      stateSubscription = Bridge.states.listen((next) {
+        final demo = next.demo;
+        if (mounted && demo != null && demo != demoOn) setState(() => demoOn = demo);
+      });
+    }
     // Bölge ayarlanırken oyun görüntüsü güncel kalsın.
     previewTimer = Timer.periodic(const Duration(seconds: 2), (_) => refreshPreview());
   }
@@ -202,11 +219,149 @@ class _SettingsTabState extends State<SettingsTab> {
   void dispose() {
     saveTimer?.cancel();
     previewTimer?.cancel();
+    stateSubscription?.cancel();
     final current = settings;
     if (current != null) Bridge.saveSettings(current);
     deepLController.dispose();
     geminiController.dispose();
     super.dispose();
+  }
+
+  /// iOS'a özgü bilgiler: önceki çökme ve deneme durumu.
+  Future<void> loadIosExtras() async {
+    final lastCrash = await Bridge.lastCrash();
+    bool? demo;
+    try {
+      demo = (await Bridge.state()).demo;
+    } on Object {
+      demo = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      crash = lastCrash;
+      if (demo != null) demoOn = demo;
+    });
+  }
+
+  Future<void> setDemo(bool on) async {
+    setState(() => demoOn = on);
+    if (on) {
+      await Bridge.demoStart();
+    } else {
+      await Bridge.demoStop();
+    }
+  }
+
+  Future<void> resetAll() async {
+    final confirmed = await confirmApple(
+      context,
+      title: 'Bütün ayarlar sıfırlansın mı?',
+      message: 'Çeviri, bölge, görünüm ve sözlük ayarları varsayılana döner. '
+          'PS5 eşleştirmesi, PSN hesabı ve API anahtarların korunur.',
+      action: 'Sıfırla',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    saveTimer?.cancel();
+    final fresh = await Bridge.resetSettings();
+    if (!mounted) return;
+    if (fresh == null) {
+      toast(context, 'Ayarlar sıfırlanamadı.');
+      return;
+    }
+    setState(() {
+      settings = fresh;
+      deepLController.text = fresh.deepLKey;
+      geminiController.text = fresh.geminiKey;
+    });
+    toast(context, 'Ayarlar sıfırlandı.');
+  }
+
+  String crashTime(DateTime at) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(at.day)}.${two(at.month)}.${at.year} ${clockText(at)}';
+  }
+
+  void showCrash() {
+    final info = crash;
+    if (info == null) return;
+    final report = '${crashTime(info.at)}\n${info.kind}: ${info.name}\n\n${info.detail}';
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheet) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        builder: (sheet, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+          children: [
+            const Text('Önceki çalıştırma çöktü', style: Txt.title2),
+            const SizedBox(height: 4),
+            Text('${crashTime(info.at)} · ${info.name}', style: Txt.footnote.copyWith(color: Tokens.textSecondary)),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: report));
+                    toast(context, 'Çökme bilgisi kopyalandı.');
+                  },
+                  child: const Text('Kopyala'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.of(sheet).pop();
+                    await Bridge.clearCrash();
+                    if (mounted) setState(() => crash = null);
+                  },
+                  child: const Text('Sil', style: TextStyle(color: Tokens.danger)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              info.detail.isEmpty ? 'Ayrıntı yok.' : info.detail,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Tokens.textSecondary, height: 1.45),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Ek okuma alanını düzenleme sayfasında açar; kaydedilince ya da silinince ayarlara işler.
+  Future<void> editExtra(int index) async {
+    final current = settings;
+    if (current == null) return;
+    final regions = current.extraRegions;
+    if (index < 0 || index >= regions.length) return;
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      appleRoute((_) => ExtraRegionPage(initial: regions[index], image: preview)),
+    );
+    if (result == null) return;
+    change((s) {
+      final list = s.extraRegions;
+      if (index >= list.length) return;
+      if (result['delete'] == true) {
+        list.removeAt(index);
+      } else {
+        list[index] = result;
+      }
+      s.json['extraRegions'] = list;
+    });
+  }
+
+  Future<void> addExtra() async {
+    final current = settings;
+    if (current == null || current.extraRegions.length >= 3) return;
+    final count = current.extraRegions.length;
+    change((s) {
+      s.json['extraRegions'] = [
+        ...s.extraRegions,
+        {'top': 0.05, 'bottom': 0.25, 'left': 0.10, 'right': 0.90, 'name': 'Alan ${count + 1}'},
+      ];
+    });
+    await editExtra(count);
   }
 
   Future<void> load() async {
@@ -376,6 +531,22 @@ class _SettingsTabState extends State<SettingsTab> {
     return LargeTitleList(
       title: 'Ayarlar',
       children: [
+        if (Platform.isIOS && crash != null) ...[
+          Group(
+            inset: 60,
+            children: [
+              Cell(
+                icon: CupertinoIcons.exclamationmark_triangle_fill,
+                iconColor: Tokens.danger,
+                title: 'Önceki çalıştırma çöktü',
+                subtitle: '${crashTime(crash!.at)} · ${crash!.name}',
+                chevron: true,
+                onTap: showCrash,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+        ],
         // ---------------------------------------------------------------- Çeviri
         const GroupHeader('ÇEVİRİ'),
         Group(
@@ -603,6 +774,23 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
         ),
         const GroupFooter('Mavi çerçeveyi oyunun altyazısının çıktığı yere getir. Çerçeve dar olursa cümlenin başı ya da sonu kesilir.'),
+        if (Platform.isIOS) ...[
+          const GroupHeader('EK OKUMA ALANLARI'),
+          Group(
+            children: [
+              for (var i = 0; i < s.extraRegions.length; i++)
+                Cell(
+                  title: s.extraRegions[i]['name'] as String? ?? 'Alan ${i + 1}',
+                  subtitle: 'Üst %${(((s.extraRegions[i]['top'] as num?) ?? 0) * 100).round()} · Alt %${(((s.extraRegions[i]['bottom'] as num?) ?? 0) * 100).round()}',
+                  chevron: true,
+                  onTap: () => editExtra(i),
+                ),
+              if (s.extraRegions.length < 3) Cell(title: 'Alan ekle', titleColor: Tokens.accent, onTap: addExtra),
+            ],
+          ),
+          const GroupFooter('Görev notu, harita yazısı gibi başka yerdeki yazıları da çevirebilirsin (en çok 3 alan). '
+              'Çeviri açıkken ana ekranda her alan için bir düğme çıkar; dokununca o alan bir kez okunur.'),
+        ],
 
         // ---------------------------------------------------------------- TV'de görünüm
         const GroupHeader('TV\'DE GÖRÜNÜM'),
@@ -698,6 +886,12 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
               ),
             Cell(title: 'TV\'ye Deneme Altyazısı Gönder', titleColor: Tokens.accent, onTap: sendTest),
+            if (Platform.isIOS)
+              Cell(
+                title: 'PS5\'siz Deneme',
+                subtitle: 'Örnek altyazı satırları çevrilip TV\'ye gönderilir; PS5 gerekmez. Kapatana kadar sürer.',
+                trailing: CupertinoSwitch(value: demoOn, activeTrackColor: Tokens.success, onChanged: setDemo),
+              ),
           ],
         ),
 
@@ -749,6 +943,32 @@ class _SettingsTabState extends State<SettingsTab> {
             Cell(title: 'PSN Hesabını Değiştir', titleColor: Tokens.danger, onTap: () => confirmForget(account: true)),
           ],
         ),
+
+        if (Platform.isIOS) ...[
+          const GroupHeader('TANI'),
+          Group(
+            inset: 60,
+            children: [
+              Cell(
+                icon: CupertinoIcons.clock_fill,
+                iconColor: Tokens.indigo,
+                title: 'Altyazı Geçmişi',
+                chevron: true,
+                onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const HistoryPage())),
+              ),
+              Cell(
+                icon: CupertinoIcons.dot_radiowaves_left_right,
+                iconColor: Tokens.success,
+                title: 'Sistem Durumu',
+                chevron: true,
+                onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const HealthPage())),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Group(children: [Cell(title: 'Tüm Ayarları Sıfırla', titleColor: Tokens.danger, onTap: resetAll)]),
+          const GroupFooter('PS5 eşleştirmesi, PSN hesabı ve API anahtarların silinmez.'),
+        ],
 
         // ---------------------------------------------------------------- Hakkında
         const GroupHeader('HAKKINDA'),

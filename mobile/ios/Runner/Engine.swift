@@ -57,6 +57,26 @@ final class Engine: Native.Listener {
     let url = folder.appendingPathComponent("translation-cache.json")
     return DiskTranslationCache(storage: FileCacheStorage(url: url))
   }()
+  /// Gösterilen altyazıların geçmişi (Application Support/History/history.json; son 200 satır, yedeğe gitmez).
+  static let history: SubtitleHistoryLog = {
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    var folder = support.appendingPathComponent("History", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var excluded = URLResourceValues()
+    excluded.isExcludedFromBackup = true
+    try? folder.setResourceValues(excluded)
+    return SubtitleHistoryLog(storage: FileCacheStorage(url: folder.appendingPathComponent("history.json")))
+  }()
+
+  /// Ayarlardaki motorun fiilen çalışan karşılığı: anahtarsız deepl/gemini seçimi Google çalıştırır.
+  static func effectiveEngine(_ s: Settings) -> String {
+    let usesGemini = s.engine == "gemini" && s.targetLanguage == "tr"
+      && !s.geminiKey.trimmingCharacters(in: .whitespaces).isEmpty
+    let usesDeepL = s.engine == "deepl" && !s.deepLKey.trimmingCharacters(in: .whitespaces).isEmpty
+    return s.engine == "gemini" ? (usesGemini ? "gemini" : "google")
+      : s.engine == "deepl" ? (usesDeepL ? "deepl" : "google") : s.engine
+  }
+
   /// Çeviri kurallarının sürümü: kurallar (ör. sözlük) değişince eski önbellek kayıtları kullanılmaz.
   private static let rulesVersion = "r2"
   private let stopLock = NSLock()
@@ -66,6 +86,23 @@ final class Engine: Native.Listener {
     get { stopLock.lock(); defer { stopLock.unlock() }; return _stopRequested }
     set { stopLock.lock(); _stopRequested = newValue; stopLock.unlock() }
   }
+
+  /// Konsolsuz deneme (demo) zamanlayıcısı; yalnız denetim kuyruğunda değişir.
+  private var demoTimer: DispatchSourceTimer?
+  private var demoScript = DemoScript()
+  private let demoLock = NSLock()
+  private var _demo = false
+  /// Demo çalışıyor mu (her iş parçacığından okunur).
+  var demoActive: Bool {
+    get { demoLock.lock(); defer { demoLock.unlock() }; return _demo }
+    set { demoLock.lock(); _demo = newValue; demoLock.unlock() }
+  }
+
+  /// Sistem sağlığı için: okumaya verilen karelerin hızı ve son çeviri sonucu (kilit altında).
+  private let healthLock = NSLock()
+  private var frameRate = RateMeter(window: 5)
+  private var translatorOk = true
+  private var translatorError = ""
 
   /// Son kare (BGRA). Okuma ve önizleme kopyasını alır.
   private let frameLock = NSLock()
@@ -81,9 +118,7 @@ final class Engine: Native.Listener {
       // Anahtarsız deepl/gemini seçimi fiilen Google çalıştırır; önbellek anahtarı gerçek motoru göstersin.
       let usesGemini = s.engine == "gemini" && s.targetLanguage == "tr"
         && !s.geminiKey.trimmingCharacters(in: .whitespaces).isEmpty
-      let usesDeepL = s.engine == "deepl" && !s.deepLKey.trimmingCharacters(in: .whitespaces).isEmpty
-      options.engineId = s.engine == "gemini" ? (usesGemini ? "gemini" : "google")
-        : s.engine == "deepl" ? (usesDeepL ? "deepl" : "google") : s.engine
+      options.engineId = Engine.effectiveEngine(s)
       options.model = usesGemini ? GeminiModels.resolve(s.geminiModel) : ""
       options.sourceLanguage = s.sourceLanguage
       options.targetLanguage = s.targetLanguage
@@ -104,6 +139,10 @@ final class Engine: Native.Listener {
           self.server.sendStyle(Store.shared.settings.style)
         }
       }
+    }
+    // Geçmişin bekleyen yazımı arka plana giderken diske iner (iOS uygulamayı sonra askıya alabilir).
+    NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { _ in
+      Engine.history.flush()
     }
     server.onChanged = { [weak self] in self?.notifyChanged() }
     server.onLog = { [weak self] level, text in self?.log(level, text) }
@@ -132,6 +171,51 @@ final class Engine: Native.Listener {
       "packHits": packHits,
       "packGame": packGame,
       "nativeAvailable": Native.available,
+      "demo": demoActive,
+    ]
+  }
+
+  /// Çeviri sonucu bildirimi (sağlık ekranı): başarılıysa hata temizlenir.
+  func noteTranslation(ok: Bool, error: String = "") {
+    healthLock.lock()
+    translatorOk = ok
+    translatorError = ok ? "" : error
+    healthLock.unlock()
+  }
+
+  /// Sistem sağlığı özeti ("health" yöntemi). Ucuzdur: yalnız bellekteki sayaçlara bakar (çeviri önbelleği sayısı ilk
+  /// çağrıda dosyayı yükleyebilir). Kullanılamayan değerler nötr döner.
+  func health() -> [String: Any] {
+    let store = Store.shared
+    let s = store.settings
+    let console = store.console
+    let address = Network.localAddress()
+    healthLock.lock()
+    let fps = frameRate.rate(at: ProcessInfo.processInfo.systemUptime)
+    let ok = translatorOk
+    let error = translatorError
+    healthLock.unlock()
+    let readerHealth = reader?.health ?? ReaderHealth()
+    let port = server.boundPort
+    let consoleInfo: [String: Any] = ["registered": console != nil, "host": console?.host ?? "", "state": phase]
+    let streamInfo: [String: Any] = ["running": phase == "streaming", "fps": fps]
+    let readerInfo: [String: Any] = ["lastReadMs": readerHealth.lastReadMs, "language": readerHealth.language,
+                                     "stuckRecoveries": readerHealth.stuckRecoveries]
+    let translatorInfo: [String: Any] = ["engine": Engine.effectiveEngine(s), "lastOk": ok, "lastError": error,
+                                         "geminiPausedSeconds": GeminiTranslator.pausedSeconds]
+    let tvInfo: [String: Any] = ["clients": server.connectedClients, "port": port == 0 ? Int(SubtitleServer.defaultPort) : port]
+    let packInfo: [String: Any] = ["enabled": s.packsEnabled, "game": packGame]
+    let cacheInfo: [String: Any] = ["entries": Engine.translationCache.count]
+    return [
+      "network": address != nil,
+      "phoneAddress": address ?? "",
+      "console": consoleInfo,
+      "stream": streamInfo,
+      "reader": readerInfo,
+      "translator": translatorInfo,
+      "tv": tvInfo,
+      "packs": packInfo,
+      "cache": cacheInfo,
     ]
   }
 
@@ -193,9 +277,12 @@ final class Engine: Native.Listener {
       if store.accountId == nil || store.console == nil {
         return self.setPhase("failed", "Önce PSN girişi ve PS5 eşleştirmesi gerekli")
       }
+      // Gerçek akış başlarken demo durur.
+      if self.demoTimer != nil { self.stopDemoLocked() }
       self.running = true
       self.reconnect.reset()
       self.frameCount = 0
+      self.healthLock.lock(); self.frameRate.reset(); self.healthLock.unlock()
       self.translatedCount = 0
       self.packHits = 0
       self.packGame = ""
@@ -223,6 +310,7 @@ final class Engine: Native.Listener {
       self.retry?.cancel()
       self.retry = nil
       Engine.translationCache.flush()
+      Engine.history.flush()
       self.closeSession()
       self.reader?.reset()
       // Sunucu açık kalır: TV bağlı kalsın, çeviri yeniden başlayınca altyazılar hemen gitsin.
@@ -240,7 +328,7 @@ final class Engine: Native.Listener {
       let now = Store.shared.settings
       self.settings = now
       if now.style != before.style, self.server.isStarted { self.server.sendStyle(now.style) }
-      guard self.running else { return }
+      guard self.running || self.demoTimer != nil else { return }
       if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.sourceLanguage != before.sourceLanguage
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled
         || now.packChoice != before.packChoice {
@@ -264,6 +352,76 @@ final class Engine: Native.Listener {
       self.server.sendSubtitle("Bu bir deneme altyazısıdır. Oyunun üstünde görüyor musunuz?", durationMs: 8000,
                                box: TextBox(left: 0.3, top: r.bottom - 0.1, right: 0.7, bottom: r.bottom - 0.03))
     }
+  }
+
+  // MARK: - Demo (konsolsuz deneme)
+
+  /// Demo: birkaç saniyede bir örnek İngilizce satırı gerçek çeviri hattından geçirip TV'ye gönderir. Akış sürerken
+  /// başlamaz; akış başlayınca kendiliğinden durur.
+  func demoStart() {
+    onControl { self.startDemoLocked() }
+  }
+
+  func demoStop() {
+    onControl { self.stopDemoLocked() }
+  }
+
+  /// Denetim kuyruğunda.
+  private func startDemoLocked() {
+    if running {
+      log(1, "demo: akış sürerken başlatılamaz")
+      return
+    }
+    if demoTimer != nil { return }
+    settings = Store.shared.settings
+    if !server.isStarted { server.start() }
+    server.sendStyle(settings.style)
+    if reader == nil { reader = VisionReader(engine: self) }
+    reader?.rebuild(settings: settings)
+    demoScript = DemoScript()
+    demoActive = true
+    let timer = DispatchSource.makeTimerSource(queue: control)
+    timer.schedule(deadline: .now() + 0.8, repeating: DemoScript.intervalSeconds)
+    timer.setEventHandler { [weak self] in self?.demoTick() }
+    timer.resume()
+    demoTimer = timer
+    log(2, "demo başladı")
+    notifyChanged()
+  }
+
+  /// Denetim kuyruğunda.
+  private func stopDemoLocked() {
+    guard let timer = demoTimer else { return }
+    timer.cancel()
+    demoTimer = nil
+    demoActive = false
+    reader?.reset()
+    server.clear()
+    log(2, "demo durdu")
+    notifyChanged()
+  }
+
+  /// Denetim kuyruğunda: sıradaki örnek satır okunmuş gibi hatta verilir (kararlılık için iki kare).
+  private func demoTick() {
+    guard !running, demoTimer != nil else { return }
+    let line = demoScript.next()
+    let r = settings.region
+    let box = TextBox(left: 0.25, top: max(0, r.bottom - 0.1), right: 0.75, bottom: max(0.1, r.bottom - 0.04))
+    reader?.feed(lines: [line], box: box)
+    reader?.feed(lines: [line], box: box)
+  }
+
+  // MARK: - Ek okuma alanı
+
+  /// Ek alanı son karede bir kez okuyup çevirir ve TV'ye gönderir (bloklar; arka plan iş parçacığında çağrılır).
+  func readExtra(index: Int) -> [String: Any] {
+    func failure(_ message: String) -> [String: Any] { ["ok": false, "source": "", "text": "", "error": message] }
+    guard running, phase == "streaming", let reader = reader else { return failure("Akış çalışmıyor; önce çeviriyi başlatın.") }
+    let regions = Store.shared.settings.extraRegions
+    guard index >= 0, index < regions.count else { return failure("Geçersiz okuma alanı.") }
+    guard let frame = currentFrame() else { return failure("Henüz görüntü gelmedi; biraz bekleyin.") }
+    let outcome = reader.readExtra(frame, region: regions[index])
+    return ["ok": outcome.ok, "source": outcome.source, "text": outcome.text, "error": outcome.error]
   }
 
   // MARK: - PS5 oturumu
@@ -413,6 +571,9 @@ final class Engine: Native.Listener {
     frameWidth = width
     frameHeight = height
     frameCount += 1
+    healthLock.lock()
+    frameRate.record(at: ProcessInfo.processInfo.systemUptime)
+    healthLock.unlock()
     if frameCount % Self.maxFps == 1 { notifyChanged() }
     reader?.offer(copy)
   }
@@ -536,6 +697,27 @@ protocol FrameReader: AnyObject {
   func reset()
   /// Yeni kare; okuma sürüyorsa kare atlanabilir (libchiaki iş parçacığından).
   func offer(_ frame: Frame)
+  /// Okunmuş gibi satırları doğrudan çeviri hattına verir (demo).
+  func feed(lines: [String], box: TextBox?)
+  /// Ek alanı verilen karede bir kez okuyup çevirir ve TV'ye gönderir (bloklar); asıl okumayı bozmaz.
+  func readExtra(_ frame: Frame, region: ExtraRegion) -> ExtraReadResult
+  /// Sağlık ekranı için okuyucu sayaçları.
+  var health: ReaderHealth { get }
+}
+
+/// Ek alan okumasının sonucu.
+struct ExtraReadResult {
+  var ok = false
+  var source = ""
+  var text = ""
+  var error = ""
+}
+
+/// Okuyucunun sağlık sayaçları (yoksa nötr değerler).
+struct ReaderHealth {
+  var lastReadMs = 0
+  var language = ""
+  var stuckRecoveries = 0
 }
 
 /// Ağ yardımcıları.

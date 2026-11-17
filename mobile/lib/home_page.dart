@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
 import 'guide_page.dart';
+import 'history_page.dart';
 import 'main.dart';
 import 'settings_page.dart';
 import 'tv_install_page.dart';
@@ -106,6 +108,46 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     await Bridge.testSubtitle();
     if (!mounted) return;
     toast(context, state.tvClients > 0 ? 'Deneme altyazısı TV\'ye gönderildi.' : 'TV bağlı değil. Önce TV\'de GameTranslator\'ı aç.');
+  }
+
+  /// Şu an okunan ek alanın sırası (yoksa null).
+  int? readingExtra;
+
+  /// Ek okuma alanını bir kez okutur ve sonucu küçük bir pencerede gösterir (yalnız iOS).
+  Future<void> readExtraArea(int index) async {
+    if (readingExtra != null) return;
+    setState(() => readingExtra = index);
+    final result = await Bridge.readExtra(index);
+    if (!mounted) return;
+    setState(() => readingExtra = null);
+    final failed = !result.ok || result.text.isEmpty;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheet) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (failed)
+              Text(
+                result.error.isEmpty ? 'Bu alanda okunacak yazı bulunamadı.' : result.error,
+                style: Txt.subhead.copyWith(color: Tokens.danger),
+              )
+            else ...[
+              Text(
+                result.text,
+                textDirection: isRtlText(result.text) ? TextDirection.rtl : TextDirection.ltr,
+                textAlign: isRtlText(result.text) ? TextAlign.right : TextAlign.left,
+                style: Txt.title3.copyWith(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              Text(result.source.replaceAll('\n', ' '), style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   (String, String, Color) get headline => switch (state.phase) {
@@ -260,10 +302,35 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         if (active) ...[
           const GroupHeader('CANLI'),
           _LiveCard(state: state, preview: streaming ? preview : null, settings: settings),
+          if (Platform.isIOS && streaming && (settings?.extraRegions.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var i = 0; i < settings!.extraRegions.length; i++)
+                  OutlinedButton.icon(
+                    onPressed: readingExtra == null ? () => readExtraArea(i) : null,
+                    icon: readingExtra == i
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(CupertinoIcons.crop, size: 16),
+                    label: Text(settings!.extraRegions[i]['name'] as String? ?? 'Alan ${i + 1}'),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           Group(
             inset: 60,
             children: [
+              if (Platform.isIOS)
+                Cell(
+                  icon: CupertinoIcons.clock_fill,
+                  iconColor: Tokens.indigo,
+                  title: 'Altyazı geçmişi',
+                  chevron: true,
+                  onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const HistoryPage())),
+                ),
               Cell(icon: CupertinoIcons.captions_bubble_fill, iconColor: Tokens.indigo, title: 'TV\'ye deneme altyazısı gönder', onTap: sendTest),
               Cell(icon: CupertinoIcons.crop, iconColor: Tokens.teal, title: 'Altyazı bölgesini ayarla', chevron: true, onTap: () => selectTab(2)),
             ],
