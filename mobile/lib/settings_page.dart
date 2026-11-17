@@ -40,6 +40,23 @@ class _SettingsTabState extends State<SettingsTab> {
     'ru': 'Rusça',
     'ar': 'Arapça',
     'ja': 'Japonca',
+    'zh': 'Çince',
+    'ko': 'Korece',
+    'pl': 'Lehçe',
+    'nl': 'Felemenkçe',
+    'id': 'Endonezce',
+    'hi': 'Hintçe',
+    'fa': 'Farsça',
+    'uk': 'Ukraynaca',
+    'el': 'Yunanca',
+    'hu': 'Macarca',
+    'ro': 'Romence',
+    'cs': 'Çekçe',
+    'sv': 'İsveççe',
+    'th': 'Tayca',
+    'vi': 'Vietnamca',
+    'he': 'İbranice',
+    'az': 'Azerice',
   };
 
   static const flags = {
@@ -53,6 +70,29 @@ class _SettingsTabState extends State<SettingsTab> {
     'ru': '🇷🇺',
     'ar': '🇸🇦',
     'ja': '🇯🇵',
+    'zh': '🇨🇳',
+    'ko': '🇰🇷',
+    'pl': '🇵🇱',
+    'nl': '🇳🇱',
+    'id': '🇮🇩',
+    'hi': '🇮🇳',
+    'fa': '🇮🇷',
+    'uk': '🇺🇦',
+    'el': '🇬🇷',
+    'hu': '🇭🇺',
+    'ro': '🇷🇴',
+    'cs': '🇨🇿',
+    'sv': '🇸🇪',
+    'th': '🇹🇭',
+    'vi': '🇻🇳',
+    'he': '🇮🇱',
+    'az': '🇦🇿',
+  };
+
+  /// Gemini modelleri (ai-models.json); ilki varsayılandır.
+  static const geminiModels = {
+    'gemini-3.5-flash-lite': 'Hızlı ve ucuz (önerilen)',
+    'gemini-3.6-flash': 'Daha iyi çeviri, biraz yavaş',
   };
 
   static const placements = {
@@ -196,9 +236,23 @@ class _SettingsTabState extends State<SettingsTab> {
         s.json['style'] = style;
       });
 
-  Future<void> pickLanguage(String key, String title) async {
-    final picked = await showApplePicker(context, title: title, options: languages, selected: settings?.json[key] as String?, leading: flags);
+  /// Oyunun dili: ekran okuma (Vision) yalnız bunları okuyabilir.
+  static const sourceCodes = ['en', 'ja', 'zh', 'ko', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'uk', 'ar', 'th', 'vi', 'tr'];
+
+  Future<void> pickLanguage(String key, String title, {Iterable<String>? only}) async {
+    final options = only == null ? languages : {for (final code in only) code: languages[code] ?? code};
+    final picked = await showApplePicker(context, title: title, options: options, selected: settings?.json[key] as String?, leading: flags);
     if (picked != null) change((s) => s.json[key] = picked);
+  }
+
+  Future<void> pickGeminiModel() async {
+    final picked = await showApplePicker(context, title: 'Gemini modeli', options: geminiModels, selected: geminiModelId);
+    if (picked != null) change((s) => s.json['geminiModel'] = picked);
+  }
+
+  String get geminiModelId {
+    final id = settings?.json['geminiModel'] as String?;
+    return geminiModels.containsKey(id) ? id! : geminiModels.keys.first;
   }
 
   Future<void> pickPlacement() async {
@@ -304,7 +358,7 @@ class _SettingsTabState extends State<SettingsTab> {
               title: 'Oyunun dili',
               value: '${flags[s.sourceLanguage] ?? ''} ${languages[s.sourceLanguage] ?? s.sourceLanguage}',
               chevron: true,
-              onTap: () => pickLanguage('sourceLanguage', 'Oyunun dili'),
+              onTap: () => pickLanguage('sourceLanguage', 'Oyunun dili', only: sourceCodes),
             ),
             Cell(
               icon: CupertinoIcons.globe,
@@ -436,6 +490,13 @@ class _SettingsTabState extends State<SettingsTab> {
                   ],
                 ),
               ),
+            if (Platform.isIOS && s.engine == 'gemini')
+              Cell(
+                title: 'Gemini modeli',
+                subtitle: geminiModels[geminiModelId] ?? '',
+                chevron: true,
+                onTap: pickGeminiModel,
+              ),
             Cell(
               title: 'Cihazda',
               subtitle: Platform.isIOS
@@ -455,7 +516,7 @@ class _SettingsTabState extends State<SettingsTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (preview != null) RegionPreview(image: preview!, settings: s) else _RegionPlaceholder(settings: s),
+              if (preview != null) RegionPreview(image: preview!, settings: s, subtitle: 'Örnek altyazı') else _RegionPlaceholder(settings: s),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
                 child: CupertinoSlidingSegmentedControl<String>(
@@ -542,6 +603,37 @@ class _SettingsTabState extends State<SettingsTab> {
                     onChanged: (value) => setStyle('background', value.round()),
                   ),
                 ],
+              ),
+            ),
+            if (style['placement'] == 'fixed')
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(child: Text('Ekran konumu (alttan yükseklik)', style: Txt.body)),
+                      Text('%${(style['bottomPercent'] as num? ?? 7).round()}', style: Txt.body.copyWith(color: Tokens.textSecondary)),
+                    ],
+                  ),
+                  CupertinoSlider(
+                    value: (style['bottomPercent'] as num? ?? 7).toDouble().clamp(0, 85),
+                    max: 85,
+                    divisions: 85,
+                    activeColor: Tokens.accent,
+                    onChanged: (value) => setStyle('bottomPercent', value.round()),
+                  ),
+                ],
+              ),
+            ),
+            Cell(
+              title: 'Önceki satır da görünsün',
+              subtitle: 'Yeni cümlenin üstünde bir önceki cümle soluk kalır',
+              trailing: CupertinoSwitch(
+                value: style['stackPrevious'] as bool? ?? true,
+                activeTrackColor: Tokens.success,
+                onChanged: (value) => setStyle('stackPrevious', value),
               ),
             ),
             Cell(

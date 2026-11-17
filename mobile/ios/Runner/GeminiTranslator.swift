@@ -8,7 +8,7 @@ import Foundation
 /// nil döner ve hat yedek motora (Google) geçer; altyazı beklemez.
 final class GeminiTranslator: TextTranslator {
   /// ai-models.json'daki ilk (önerilen) model: hızlı, ücretsiz katmanda dakikada 15 istek.
-  static let defaultModel = "gemini-3.5-flash-lite"
+  static let defaultModel = GeminiModels.defaultId
   static let requestsPerMinute = 15
   static let keyPage = "https://aistudio.google.com/apikey"
 
@@ -28,9 +28,10 @@ final class GeminiTranslator: TextTranslator {
   private var context: [(String, String)] = []
   private var warnedKey = false
 
-  init(key: String, model: String = GeminiTranslator.defaultModel, log: @escaping (Int, String) -> Void) {
+  /// [model] verilmezse ayarlardaki `geminiModel` kullanılır; bilinmeyen değer varsayılana döner.
+  init(key: String, model: String? = nil, log: @escaping (Int, String) -> Void) {
     self.key = key.trimmingCharacters(in: .whitespacesAndNewlines)
-    self.model = model
+    self.model = GeminiModels.resolve(model ?? Store.shared.settings.geminiModel)
     self.log = log
   }
 
@@ -66,8 +67,12 @@ final class GeminiTranslator: TextTranslator {
     case 200:
       break
     case 429:
-      // Dakikalık ya da günlük hak doldu: bir dakika yedek motor kullanılır.
-      pause(60, "Gemini sınırı doldu; bir dakika Google kullanılıyor")
+      // Dakikalık hak doldu: Gemini'nin söylediği süre (RetryInfo) kadar, günlük hak bittiyse bir saat yedek motor kullanılır.
+      let decision = GeminiRateLimit.decide(data)
+      let wait = Int(decision.seconds.rounded())
+      pause(decision.seconds, decision.daily
+        ? "Gemini günlük hakkı doldu; \(wait / 60) dakika Google kullanılıyor (yarın ya da başka anahtarla yeniden denenir)"
+        : "Gemini dakikalık sınırı doldu; \(wait) sn Google kullanılıyor")
       return nil
     case 400, 401, 403:
       lock.lock()
@@ -87,10 +92,11 @@ final class GeminiTranslator: TextTranslator {
   }
 
   /// Ayarlardaki "Kaydet ve dene": anahtarı tek bir deneme çevirisiyle sınar. (başarılı mı, kullanıcıya gösterilecek metin)
-  static func check(key: String) -> (Bool, String) {
+  static func check(key: String, model: String? = nil) -> (Bool, String) {
+    let model = GeminiModels.resolve(model ?? Store.shared.settings.geminiModel)
     let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
     if key.isEmpty { return (false, "Önce anahtarı yapıştır.") }
-    guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(defaultModel):generateContent") else {
+    guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
       return (false, "Gemini adresi kurulamadı.")
     }
     var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)

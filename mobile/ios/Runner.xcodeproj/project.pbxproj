@@ -33,6 +33,12 @@
 		83C03677928B4EB7D195C519 /* packs in Resources */ = {isa = PBXBuildFile; fileRef = B8660D70772C73423AED9503 /* packs */; };
 		884E03E882B506B84B2C064C /* SubtitleServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AFC5C6EAA33F03864A1857F /* SubtitleServer.swift */; };
 		88D36BB321238532E2F6F0FB /* ButtonHints.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBF80853CA8AC14BDE6191D0 /* ButtonHints.swift */; };
+		94008849DA6D5E8B8D6CB875 /* ReconnectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40354BECD1E99FC7C2F7D58A /* ReconnectPolicy.swift */; };
+		254E9F6C4603A2EAEACE47ED /* LanguageCodes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1058D624C2D69F9D690AA4FD /* LanguageCodes.swift */; };
+		5AAC718C9D63233E3BD09810 /* GeminiRateLimit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E4EB3016481EFB1C6B5ADA /* GeminiRateLimit.swift */; };
+		30E7585D24F62CE3615E8DFB /* TurkishDetect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB01A21BC58CE6537E8026C /* TurkishDetect.swift */; };
+		9FE278EABAECE4FB4AD9D2A0 /* FallbackTranslator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6EC734771CA34020CD7B2DC /* FallbackTranslator.swift */; };
+		134F31B88647C2233A314BE7 /* TranslationCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E39252E89EF5D678CFFF831 /* TranslationCache.swift */; };
 		9686FC4D5C0D1DBBA060F89D /* gt_native.c in Sources */ = {isa = PBXBuildFile; fileRef = 637B2FEE2FE0E0D1FFF4A309 /* gt_native.c */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -113,6 +119,12 @@
 		B83BDC67080AC749B786DCA7 /* SubtitleSegmenter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleSegmenter.swift; sourceTree = "<group>"; };
 		B8660D70772C73423AED9503 /* packs */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = packs; path = ../../windows/src/GameTranslator.Core/Resources/packs; sourceTree = SOURCE_ROOT; };
 		BBF80853CA8AC14BDE6191D0 /* ButtonHints.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ButtonHints.swift; sourceTree = "<group>"; };
+		40354BECD1E99FC7C2F7D58A /* ReconnectPolicy.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReconnectPolicy.swift; sourceTree = "<group>"; };
+		1058D624C2D69F9D690AA4FD /* LanguageCodes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LanguageCodes.swift; sourceTree = "<group>"; };
+		D3E4EB3016481EFB1C6B5ADA /* GeminiRateLimit.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiRateLimit.swift; sourceTree = "<group>"; };
+		7DB01A21BC58CE6537E8026C /* TurkishDetect.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TurkishDetect.swift; sourceTree = "<group>"; };
+		D6EC734771CA34020CD7B2DC /* FallbackTranslator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FallbackTranslator.swift; sourceTree = "<group>"; };
+		0E39252E89EF5D678CFFF831 /* TranslationCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TranslationCache.swift; sourceTree = "<group>"; };
 		CCE460BE59646CAB2561F841 /* GameTranslator.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = GameTranslator.xcconfig; sourceTree = "<group>"; };
 		D49FFD04407055D8838CE7C5 /* CommunityPatches.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CommunityPatches.swift; sourceTree = "<group>"; };
 		DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */ = {isa = PBXFileReference; includeInIndex = 1; name = "obs-overlay.html"; path = "../../core/Sources/GameTranslatorCore/Resources/obs-overlay.html"; sourceTree = SOURCE_ROOT; };
@@ -151,6 +163,12 @@
 				2E30468FEE82EE398D6C7CCC /* PackTranslation.swift */,
 				B83BDC67080AC749B786DCA7 /* SubtitleSegmenter.swift */,
 				BBF80853CA8AC14BDE6191D0 /* ButtonHints.swift */,
+				40354BECD1E99FC7C2F7D58A /* ReconnectPolicy.swift */,
+				1058D624C2D69F9D690AA4FD /* LanguageCodes.swift */,
+				D3E4EB3016481EFB1C6B5ADA /* GeminiRateLimit.swift */,
+				7DB01A21BC58CE6537E8026C /* TurkishDetect.swift */,
+				D6EC734771CA34020CD7B2DC /* FallbackTranslator.swift */,
+				0E39252E89EF5D678CFFF831 /* TranslationCache.swift */,
 			);
 			name = Core;
 			path = Core;
@@ -441,6 +459,12 @@
 				DAF2EB6287AA3A5A9ABB5ABE /* Packs.swift in Sources */,
 				80CE5D4E018A7CCB0B1D2D8B /* GeminiTranslator.swift in Sources */,
 				88D36BB321238532E2F6F0FB /* ButtonHints.swift in Sources */,
+				94008849DA6D5E8B8D6CB875 /* ReconnectPolicy.swift in Sources */,
+				254E9F6C4603A2EAEACE47ED /* LanguageCodes.swift in Sources */,
+				5AAC718C9D63233E3BD09810 /* GeminiRateLimit.swift in Sources */,
+				30E7585D24F62CE3615E8DFB /* TurkishDetect.swift in Sources */,
+				9FE278EABAECE4FB4AD9D2A0 /* FallbackTranslator.swift in Sources */,
+				134F31B88647C2233A314BE7 /* TranslationCache.swift in Sources */,
 				258D764A3BA16BA428227C06 /* CommunityPatches.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -34,6 +34,7 @@ xcrun swiftc -swift-version "${SWIFT_VERSION:-5}" -O \
   -module-cache-path "$BUILD/module-cache" \
   "$RUNNER"/Core/*.swift "$BUILD/TextBox.swift" \
   "$HERE/Harness.swift" "$HERE/CoreTest.swift" "$HERE/GlossaryTest.swift" "$HERE/SpeakerNameTest.swift" "$HERE/ButtonHintsTest.swift" \
+  "$HERE/ReconnectPolicyTest.swift" "$HERE/TurkishDetectTest.swift" "$HERE/GeminiRateLimitTest.swift" "$HERE/TranslationCacheTest.swift" \
   "$HERE/GamePacksTest.swift" "$HERE/PackFuzzyTest.swift" "$HERE/PackPipelineTest.swift" "$HERE/PackStoreTest.swift" \
   "$HERE/main.swift" \
   -o "$BUILD/coretests"

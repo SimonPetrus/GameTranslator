@@ -43,6 +43,22 @@ final class Engine: Native.Listener {
   private(set) var settings = Settings()
   private var session: Native.Session?
   private var retry: DispatchWorkItem?
+  /// Yeniden bağlanma beklemesi (üstel artış); yalnız denetim kuyruğunda kullanılır.
+  private var reconnect = ReconnectPolicy()
+  /// Tek tek satır çevirilerinin diskteki önbelleği (Application Support/TranslationCache/translation-cache.json).
+  static let translationCache: DiskTranslationCache = {
+    // Yedekten hariç tutma işareti dosyaya değil klasöre konur: dosya her yazımda yeniden oluşur (atomik yazma).
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    var folder = support.appendingPathComponent("TranslationCache", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var excluded = URLResourceValues()
+    excluded.isExcludedFromBackup = true
+    try? folder.setResourceValues(excluded)
+    let url = folder.appendingPathComponent("translation-cache.json")
+    return DiskTranslationCache(storage: FileCacheStorage(url: url))
+  }()
+  /// Çeviri kurallarının sürümü: kurallar (ör. sözlük) değişince eski önbellek kayıtları kullanılmaz.
+  private static let rulesVersion = "r1"
   private let stopLock = NSLock()
   private var _stopRequested = false
   /// Durdurma istendi ama denetim kuyruğu henüz işlemedi (uyandırma beklemesini keser).
@@ -56,6 +72,25 @@ final class Engine: Native.Listener {
   private var frame: Frame?
 
   private init() {
+    // Her yeni çeviri hattı ayarlardan seçeneklerini alır: Türkçe satırı atlama ve diskteki çeviri önbelleği.
+    SubtitlePipeline.optionsProvider = {
+      let s = Store.shared.settings
+      var options = PipelineOptions()
+      options.skipTurkishSource = s.targetLanguage == "tr"
+      options.cache = Engine.translationCache
+      // Anahtarsız deepl/gemini seçimi fiilen Google çalıştırır; önbellek anahtarı gerçek motoru göstersin.
+      let usesGemini = s.engine == "gemini" && s.targetLanguage == "tr"
+        && !s.geminiKey.trimmingCharacters(in: .whitespaces).isEmpty
+      let usesDeepL = s.engine == "deepl" && !s.deepLKey.trimmingCharacters(in: .whitespaces).isEmpty
+      options.engineId = s.engine == "gemini" ? (usesGemini ? "gemini" : "google")
+        : s.engine == "deepl" ? (usesDeepL ? "deepl" : "google") : s.engine
+      options.model = usesGemini ? GeminiModels.resolve(s.geminiModel) : ""
+      options.sourceLanguage = s.sourceLanguage
+      options.targetLanguage = s.targetLanguage
+      let glossary = s.sourceLanguage == "en" && s.targetLanguage == "tr" ? s.glossary : ""
+      options.rulesVersion = Engine.rulesVersion + "-" + DiskTranslationCache.stableHash(glossary)
+      return options
+    }
     // Uygulama arka plandan dönünce (çeviri kapalıyken iOS uygulamayı askıya almış olabilir) dinleyici bozulmuş olabilir;
     // TV "bekleniyor"da kalıyordu, çeviriyi kapatıp açmak düzeltiyordu. Dönüşte sunucu yeniden kurulur.
     NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
@@ -157,6 +192,7 @@ final class Engine: Native.Listener {
         return self.setPhase("failed", "Önce PSN girişi ve PS5 eşleştirmesi gerekli")
       }
       self.running = true
+      self.reconnect.reset()
       self.frameCount = 0
       self.translatedCount = 0
       self.packHits = 0
@@ -184,6 +220,7 @@ final class Engine: Native.Listener {
       self.running = false
       self.retry?.cancel()
       self.retry = nil
+      Engine.translationCache.flush()
       self.closeSession()
       self.reader?.reset()
       // Sunucu açık kalır: TV bağlı kalsın, çeviri yeniden başlayınca altyazılar hemen gitsin.
@@ -202,7 +239,7 @@ final class Engine: Native.Listener {
       self.settings = now
       if now.style != before.style, self.server.isStarted { self.server.sendStyle(now.style) }
       guard self.running else { return }
-      if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.sourceLanguage != before.sourceLanguage
+      if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.sourceLanguage != before.sourceLanguage
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled
         || now.packChoice != before.packChoice {
         self.reader?.rebuild(settings: now)
@@ -244,7 +281,7 @@ final class Engine: Native.Listener {
     case false?:
       guard settings.autoWake, let credential = console.wakeCredential else {
         setPhase("failed", "PS5 dinlenme modunda")
-        return scheduleRetry(10)
+        return scheduleRetry()
       }
       setPhase("waking", console.host)
       Native.wake(host: console.host, credential: credential)
@@ -254,7 +291,7 @@ final class Engine: Native.Listener {
       if stopRequested { return }
       if !awake {
         setPhase("failed", "PS5 uyanmadı")
-        return scheduleRetry(10)
+        return scheduleRetry()
       }
       setPhase("connecting", console.host)
     case nil:
@@ -267,7 +304,7 @@ final class Engine: Native.Listener {
         return connect(relocated: true)
       }
       setPhase("failed", "PS5 ağda bulunamadı (\(console.host))")
-      return scheduleRetry(5)
+      return scheduleRetry()
     }
 
     log(2, "PS5 oturumu: \(console.name) \(console.host)")
@@ -275,7 +312,7 @@ final class Engine: Native.Listener {
                                   accountId: account, maxFps: Self.maxFps, listener: self)
     if session == nil {
       setPhase("failed", "Oturum başlatılamadı")
-      scheduleRetry(5)
+      scheduleRetry()
     }
   }
 
@@ -305,8 +342,12 @@ final class Engine: Native.Listener {
     current?.stop()
   }
 
-  private func scheduleRetry(_ seconds: Double) {
+  /// Yeniden bağlanma: 2, 4, 8, 16, 30 sn (üst sınır 30); "başka cihazda kullanımda" en az 8 sn; akış 60 sn kararlı
+  /// sürmüşse ya da elle başlatılmışsa sayaç başa döner (ReconnectPolicy). Denetim kuyruğunda çağrılır.
+  private func scheduleRetry(_ reason: ReconnectPolicy.Reason = .generic) {
     guard running else { return }
+    let seconds = reconnect.nextDelay(reason, at: ProcessInfo.processInfo.systemUptime)
+    log(2, "yeniden bağlanma \(reconnect.attempt). deneme, \(Int(seconds)) sn sonra")
     retry?.cancel()
     let item = DispatchWorkItem { [weak self] in
       guard let self, self.running, self.session == nil else { return }
@@ -328,7 +369,10 @@ final class Engine: Native.Listener {
   func onEvent(_ event: Int32, quitReason: Int32, reasonText: String?) {
     switch event {
     case Native.eventConnected:
-      onControl { self.setPhase("streaming") }
+      onControl {
+        self.reconnect.streamStarted(at: ProcessInfo.processInfo.systemUptime)
+        self.setPhase("streaming")
+      }
     case Native.eventLoginPin:
       onControl {
         self.closeSession()
@@ -345,13 +389,13 @@ final class Engine: Native.Listener {
           break
         case Native.quitInUse:
           self.setPhase("failed", "Remote Play başka bir cihazda kullanılıyor")
-          self.scheduleRetry(10)
+          self.scheduleRetry(.inUse)
         case Native.quitRefused:
           self.running = false
           self.setPhase("failed", "PS5 bağlantıyı reddetti; yeniden eşleştirin")
         default:
           self.setPhase("reconnecting", reasonText ?? "bağlantı koptu")
-          self.scheduleRetry(3)
+          self.scheduleRetry()
         }
       }
     default:

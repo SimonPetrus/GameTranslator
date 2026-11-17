@@ -109,9 +109,12 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
         DispatchQueue.main.async { result(["ok": ok, "detail": detail]) }
       }
     case "checkGemini":
-      let key = call.arguments as? String ?? ""
+      // Bağımsız değişken: anahtar metni ya da {"key": ..., "model": ...}; model yoksa ayarlardaki seçilir.
+      let map = call.arguments as? [String: Any]
+      let key = map?["key"] as? String ?? call.arguments as? String ?? ""
+      let model = map?["model"] as? String
       background.async {
-        let (ok, detail) = GeminiTranslator.check(key: key)
+        let (ok, detail) = GeminiTranslator.check(key: key, model: model)
         DispatchQueue.main.async { result(["ok": ok, "detail": detail]) }
       }
     case "openUrl":

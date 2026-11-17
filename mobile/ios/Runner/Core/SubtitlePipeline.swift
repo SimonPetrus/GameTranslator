@@ -38,6 +38,24 @@ struct PackMatch: Equatable, Sendable {
 /// Kotlin'deki `java.util.concurrent.Executor` karşılığı: verilen işi (şimdi ya da sonra) çalıştırır.
 typealias TranslateExecutor = (@escaping @Sendable () -> Void) -> Void
 
+/// Hattın ayarlara bağlı seçenekleri (testte varsayılan: hepsi kapalı).
+struct PipelineOptions {
+  /// Hedef dil Türkçeyse ve satır zaten Türkçeyse motora gidilmez.
+  var skipTurkishSource = false
+  /// Diskteki kalıcı önbellek (yoksa yalnız bellek önbelleği).
+  var cache: DiskTranslationCache?
+  var engineId = ""
+  var model = ""
+  var sourceLanguage = ""
+  var targetLanguage = ""
+  var rulesVersion = ""
+
+  func cacheKey(_ text: String) -> String {
+    DiskTranslationCache.key(engine: engineId, model: model, source: sourceLanguage, target: targetLanguage,
+                                   rules: rulesVersion, text: text)
+  }
+}
+
 /// Okunan altyazıyı çevirip gönderen hat: gürültü temizliği → kararlılık → önbellek → oyun paketi/çeviri → TV.
 /// Windows'taki SubtitlePipeline.cs'in çekirdeği (bekletme ve dublaj yok).
 /// [onRead] tek bir iş parçacığından çağrılır; çeviri [translateExecutor]'da yapılır, sonuçlar kilit altında işlenir.
@@ -45,6 +63,8 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// Satır ekranda durdukça çeviri de durur; kalkınca TV'den silinir.
   static let ON_SCREEN_MS = 15000
   private static let CACHE_SIZE = 300
+  /// Yeni hatların seçeneklerini ayarlardan kuran kanca (uygulama kurar; testte nil).
+  nonisolated(unsafe) static var optionsProvider: (() -> PipelineOptions)?
 
   /// Çevirisi geldiğinde ekrandan kalkmış satırın TV'de kalacağı süre.
   static func readingTime(_ text: String) -> Int { min(8000, max(2000, 1200 + 60 * text.utf16.count)) }
@@ -62,6 +82,16 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// Ekranda duran satırın numarası; satır kalktıysa -1.
   private var onScreen = -1
   private var lastShownSource: String?
+
+  /// Seçenekler (Türkçe satırı atlama, kalıcı önbellek); varsayılanı [optionsProvider]'dan gelir.
+  var options: PipelineOptions {
+    get { lock.lock(); defer { lock.unlock() }; return _options }
+    set { lock.lock(); defer { lock.unlock() }; _options = newValue }
+  }
+  private var _options = PipelineOptions()
+  /// Zaten hedef dilde olduğu için motora gönderilmeyen satır sayısı.
+  var skippedAsTarget: Int { lock.lock(); defer { lock.unlock() }; return _skipped }
+  private var _skipped = 0
 
   /// Çeviri gösterildiğinde (kaynak, çeviri).
   var onPair: ((String, String) -> Void)?
@@ -99,6 +129,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     self.sink = sink
     self.translateExecutor = translateExecutor
     self.stabilizer = stabilizer
+    _options = SubtitlePipeline.optionsProvider?() ?? PipelineOptions()
   }
 
   /// Bir karenin okuması: [lines] yukarıdan aşağı satırlar, [box] yazının ekrandaki yeri.
@@ -135,11 +166,28 @@ final class SubtitlePipeline: @unchecked Sendable {
 
   private func request(_ number: Int, _ source: String, _ box: TextBox?) {
     translateExecutor { [self] in
+      let options = self.options
+      // Satır zaten Türkçeyse motora gidilmez; sonuç kaynağıyla aynı olduğundan eskiden olduğu gibi gösterilmez.
+      if options.skipTurkishSource && TurkishDetect.isTurkish(source) {
+        lock.lock()
+        defer { lock.unlock() }
+        _skipped += 1
+        deliver(number, source, source, box)
+        return
+      }
       let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
       // İki satırlık altyazı tek cümledir; çevirmene tek satır olarak gider.
+      let oneLine = KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })
+      let diskKey = options.cache != nil ? options.cacheKey(oneLine) : nil
+      let stored: String? = packed == nil ? diskKey.flatMap { options.cache?.get($0) } : nil
+      FallbackSignal.reset()
       let translated: String? = packed.map { KotlinText.trim($0.text) }
-        ?? (translator.translate(KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })))
-          .map { KotlinText.trim($0) }
+        ?? stored
+        ?? (translator.translate(oneLine)).map { KotlinText.trim($0) }
+      // Yedek motorun çevirisi gösterilir ama asıl motorun anahtarıyla diske yazılmaz.
+      if packed == nil, stored == nil, !FallbackSignal.marked, let diskKey, let translated, !translated.isEmpty {
+        options.cache?.set(diskKey, translated)
+      }
       lock.lock()
       defer { lock.unlock() }
       if let packed = packed {

@@ -35,6 +35,8 @@ struct Settings: Equatable {
   var deepLKey = ""
   /// Google Gemini anahtarı (aistudio.google.com/apikey; yalnız iOS'ta, bilgisayar sürümündeki gibi).
   var geminiKey = ""
+  /// Gemini modeli (ai-models.json'daki kimlikler); bilinmeyen değer varsayılana döner.
+  var geminiModel = GeminiModels.defaultId
   var style = SubtitleStyle()
   /// PS5 dinlenme modundaysa uyandır.
   var autoWake = true
@@ -69,6 +71,7 @@ struct Settings: Equatable {
       "engine": engine,
       "deepLKey": deepLKey,
       "geminiKey": geminiKey,
+      "geminiModel": geminiModel,
       "autoWake": autoWake,
       "glossary": glossary,
       "packsEnabled": packsEnabled,
@@ -106,6 +109,7 @@ struct Settings: Equatable {
     out.engine = string(json["engine"], d.engine)
     out.deepLKey = string(json["deepLKey"], "")
     out.geminiKey = string(json["geminiKey"], "")
+    out.geminiModel = GeminiModels.resolve(string(json["geminiModel"], GeminiModels.defaultId))
     out.autoWake = bool(json["autoWake"], true)
     out.glossary = string(json["glossary"], "")
     out.packsEnabled = bool(json["packsEnabled"], true)

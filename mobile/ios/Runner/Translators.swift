@@ -24,8 +24,8 @@ final class GoogleGtxTranslator: TextTranslator {
   private let target: String
 
   init(source: String, target: String) {
-    self.source = source
-    self.target = target
+    self.source = LanguageCodes.google(source)
+    self.target = LanguageCodes.google(target)
   }
 
   func translate(_ text: String) -> String? {
@@ -98,23 +98,25 @@ final class GoogleGtxTranslator: TextTranslator {
 /// DeepL API (kullanıcının kendi anahtarıyla). ":fx" ile biten anahtar ücretsiz uca gider.
 final class DeepLTranslator: TextTranslator {
   private let key: String
-  private let source: String
-  private let target: String
+  private let source: String?
+  private let target: String?
 
   init(key: String, source: String, target: String) {
     self.key = key.trimmingCharacters(in: .whitespacesAndNewlines)
-    self.source = source
-    self.target = target
+    self.source = LanguageCodes.deepLSource(source)
+    self.target = LanguageCodes.deepLTarget(target)
   }
 
   func translate(_ text: String) -> String? {
+    // DeepL bu dili desteklemiyorsa istek atılmaz; hat Google'a düşer.
+    guard let source, let target else { return nil }
     let host = key.hasSuffix(":fx") ? "api-free.deepl.com" : "api.deepl.com"
     guard let url = URL(string: "https://\(host)/v2/translate") else { return nil }
     var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
     request.httpMethod = "POST"
     request.setValue("DeepL-Auth-Key \(key)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    let body: [String: Any] = ["text": [text], "source_lang": source.uppercased(), "target_lang": target.uppercased()]
+    let body: [String: Any] = ["text": [text], "source_lang": source, "target_lang": target]
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
     guard let (status, data) = fetch(request), status == 200,
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -123,19 +125,6 @@ final class DeepLTranslator: TextTranslator {
           !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
     return translated
   }
-}
-
-/// Önce [primary]; başarısız olursa [fallback].
-final class FallbackTranslator: TextTranslator {
-  private let primary: TextTranslator
-  private let fallback: TextTranslator
-
-  init(_ primary: TextTranslator, _ fallback: TextTranslator) {
-    self.primary = primary
-    self.fallback = fallback
-  }
-
-  func translate(_ text: String) -> String? { primary.translate(text) ?? fallback.translate(text) }
 }
 
 #if canImport(Translation)
@@ -155,8 +144,8 @@ final class AppleTranslator: TextTranslator {
   private let log: (Int, String) -> Void
 
   init(source: String, target: String, log: @escaping (Int, String) -> Void) {
-    self.source = source
-    self.target = target
+    self.source = LanguageCodes.apple(source)
+    self.target = LanguageCodes.apple(target)
     self.log = log
   }
 

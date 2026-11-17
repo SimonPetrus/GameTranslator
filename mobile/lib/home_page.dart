@@ -527,28 +527,49 @@ class RegionPreview extends StatelessWidget {
                   ),
                 ),
               ),
-            if (subtitle != null)
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 8,
-                child: Center(
-                  child: Glass(
-                    blur: true,
-                    radius: 10,
-                    tint: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    child: Text(
-                      subtitle!,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.25),
-                    ),
-                  ),
-                ),
-              ),
+            if (subtitle != null) _subtitle(s, constraints.maxHeight),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// TV'deki görünümün yaklaşık hâli: renk, kalınlık, boyut (1080p TV'ye göre ölçekli), zemin ve yer.
+  Widget _subtitle(AppSettings? s, double height) {
+    final style = s?.style ?? const <String, dynamic>{};
+    final fontSize = ((style['fontSize'] as num?) ?? 46).toDouble() / 1080 * height;
+    final color = style['textColor'] == 'yellow' ? const Color(0xFFFFE600) : Colors.white;
+    final placement = style['placement'] as String? ?? 'cover';
+    final alpha = placement == 'cover' ? 0.92 : ((style['background'] as num?) ?? 72).toDouble().clamp(0, 100) / 100;
+    final bottomPercent = ((style['bottomPercent'] as num?) ?? 7).toDouble().clamp(0, 85) / 100;
+    var bottom = bottomPercent * height;
+    if (s != null && placement != 'fixed') {
+      final top = s.regionValue('top');
+      final regionBottom = s.regionValue('bottom');
+      if (placement == 'cover') bottom = ((1 - regionBottom) * height).clamp(0.0, height);
+      if (placement == 'above') bottom = ((1 - top) * height).clamp(0.0, height);
+      if (placement == 'below') bottom = ((1 - regionBottom) * height - fontSize * 2.6).clamp(0.0, height);
+    }
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: bottom,
+      child: Center(
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: fontSize * 0.2),
+          decoration: BoxDecoration(color: Colors.black.withValues(alpha: alpha), borderRadius: BorderRadius.circular(6)),
+          child: Text(
+            subtitle!,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: fontSize.clamp(8.0, 28.0),
+              fontWeight: style['bold'] == false ? FontWeight.w600 : FontWeight.w700,
+              height: 1.25,
+            ),
+          ),
         ),
       ),
     );

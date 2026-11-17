@@ -15,6 +15,8 @@ final class VisionReader: FrameReader {
   private var pipeline: SubtitlePipeline?
   private var region = Region()
   private var language = "en"
+  /// Vision'a verilecek tanıma dili; nil: Vision kendi seçsin (kaynak dil bu iOS sürümünde desteklenmiyor).
+  private var ocrLanguage: String? = "en-US"
   private var hideButtonHints = true
   private var lastLines: [String] = []
   private var lastBox: TextBox?
@@ -33,6 +35,7 @@ final class VisionReader: FrameReader {
       self.pipeline?.reset()
       self.region = s.region
       self.language = s.sourceLanguage
+      self.ocrLanguage = self.resolveOcrLanguage(s.sourceLanguage)
       self.hideButtonHints = s.hideButtonHints
       // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
       let local = AppleTranslator(source: s.sourceLanguage, target: s.targetLanguage) { level, text in self.engine.log(level, text) }
@@ -124,6 +127,19 @@ final class VisionReader: FrameReader {
     }
   }
 
+  /// Kaynak dil kodunu Vision'ın desteklediği bir kimliğe çevirir. Desteklenmiyorsa tek bir uyarı yazılır ve
+  /// İngilizceye (o da yoksa Vision'ın kendi seçimine) dönülür; her karede hata verilmez.
+  private func resolveOcrLanguage(_ code: String) -> String? {
+    let probe = VNRecognizeTextRequest()
+    probe.recognitionLevel = .accurate
+    let supported = (try? probe.supportedRecognitionLanguages()) ?? []
+    if supported.isEmpty { return LanguageCodes.visionCandidates(code).first }
+    if let chosen = LanguageCodes.visionLanguage(code, supported: supported) { return chosen }
+    let fallback = LanguageCodes.visionLanguage("en", supported: supported)
+    engine.log(1, "yazı tanıma bu iOS sürümünde \"\(code)\" dilini desteklemiyor; \(fallback ?? "otomatik dil") kullanılıyor")
+    return fallback
+  }
+
   // MARK: - Okuma
 
   private func read(_ frame: Frame) {
@@ -144,7 +160,7 @@ final class VisionReader: FrameReader {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     request.usesLanguageCorrection = true
-    request.recognitionLanguages = [language]
+    if let ocrLanguage { request.recognitionLanguages = [ocrLanguage] }
     do {
       let started = DispatchTime.now().uptimeNanoseconds
       try VNImageRequestHandler(cgImage: crop, options: [:]).perform([request])
