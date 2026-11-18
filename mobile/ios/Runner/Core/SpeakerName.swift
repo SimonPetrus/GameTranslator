@@ -22,6 +22,65 @@ enum SpeakerName {
   }
 }
 
+/// Altyazıdaki konuşmalar: konuşmacı etiketiyle ("Devin:", "PRISON GUARD:") ya da diyalog tiresiyle başlayan her satır
+/// yeni bir konuşmadır, diğer satırlar öncekinin sarmasıdır (kural SubtitleSegmenter.split'inkidir). Birden çok konuşma
+/// tek satıra düzleştirilip çevrilince TV'de tek paragrafa akıyordu; hat her konuşmayı kendi satırında gösterir.
+enum SpeakerTurns {
+  /// Konuşmalar yukarıdan aşağı, her biri tek satır (sarma satırlar boşlukla birleşir). Etiketsiz ilk satır (önceki
+  /// konuşmanın devamı) kendi konuşmasıdır. Tek konuşmalı altyazıda tek öğe döner.
+  /// Satır ortasında, cümle sonundan (. ! ? …) sonra gelen etiket ("…not mine. Devin: No.") da yeni konuşmadır; ama
+  /// yalnız metinde en az iki etiket varsa ya da ad [known] içindeyse (yakın geçmişte satır başında konuşmacı olarak
+  /// görülmüş, küçük harfli). Tek başına "He said. Captain: go." bölünmez; "10:30", "In Spanish:" etiket değildir.
+  static func split(_ text: String, known: Set<String> = []) -> [String] {
+    var blocks: [[SubtitleSegmenter.Piece]] = [[]]
+    for piece in SubtitleSegmenter.split(text) {
+      if !piece.translate && piece.text == "\n" { blocks.append([]) } else { blocks[blocks.count - 1].append(piece) }
+    }
+    let labels = blocks.reduce(0) { sum, block in sum + block.filter { SubtitleSegmenter.labelName($0) != nil }.count }
+    var turns: [String] = []
+    func flush(_ text: String) { if !KotlinText.isBlank(text) { turns.append(KotlinText.trim(text)) } }
+    for block in blocks {
+      var current = ""
+      for (index, piece) in block.enumerated() {
+        // Cümle arası ayracından (" ") sonraki etiket: satır ortasında konuşmacı değişimi.
+        if index > 0, block[index - 1].text == " ", !block[index - 1].translate, let name = SubtitleSegmenter.labelName(piece),
+           labels >= 2 || known.contains(KotlinText.lowercaseRoot(name)) {
+          flush(current)
+          current = ""
+        }
+        current += piece.text
+      }
+      flush(current)
+    }
+    return turns
+  }
+
+  /// Satır başındaki konuşmacı etiketlerinin adları (küçük harfli): hattın yakın geçmiş belleği ([split]'in known'u).
+  static func speakers(in text: String) -> [String] {
+    var names: [String] = []
+    var atLineStart = true
+    for piece in SubtitleSegmenter.split(text) {
+      if !piece.translate && piece.text == "\n" {
+        atLineStart = true
+        continue
+      }
+      if atLineStart, let name = SubtitleSegmenter.labelName(piece) { names.append(KotlinText.lowercaseRoot(name)) }
+      // Satır başındaki diyalog tiresi ("- ") etiketi satır başından düşürmez.
+      if piece.translate || !piece.text.hasPrefix("-") && !piece.text.hasPrefix("–") && !piece.text.hasPrefix("—") {
+        atLineStart = false
+      }
+    }
+    return names
+  }
+
+  /// Motorun çok satırlı yanıtı satırlara: boş satırlar atlanır, her satır kırpılır.
+  static func lines(_ text: String) -> [String] {
+    text.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" || $0 == "\r" || $0 == "\r\n" })
+      .map { KotlinText.trim(String($0)) }
+      .filter { !$0.isEmpty }
+  }
+}
+
 /// Çevirmeni sarar: konuşmacı adı çevirmene gönderilmez, çevirinin başına olduğu gibi konur.
 final class SpeakerNameTranslator: TextTranslator {
   private let inner: TextTranslator

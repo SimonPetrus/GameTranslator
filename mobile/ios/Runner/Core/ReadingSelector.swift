@@ -159,6 +159,21 @@ enum ReadingSelector {
     list.isEmpty ? 0 : list.map(\.confidence).reduce(0, +) / Double(list.count)
   }
 
+  /// Parçaları satırlara ayırır: yukarıdan aşağı, aynı hizadakiler (dikey ortası satırın ilk parçasına iki yükseklikten
+  /// büyüğünün yarısından yakın) aynı satırda, soldan sağa (VisionReader.rows ile aynı kural).
+  static func rows(_ input: [TextObservation]) -> [[TextObservation]] {
+    var grouped: [[TextObservation]] = []
+    for o in input.sorted(by: { $0.top < $1.top }) {
+      if let reference = grouped.last?.first,
+         abs((o.top + o.bottom) / 2 - (reference.top + reference.bottom) / 2) < max(reference.height, o.height) / 2 {
+        grouped[grouped.count - 1].append(o)
+      } else {
+        grouped.append([o])
+      }
+    }
+    return grouped.map { $0.sorted { $0.left < $1.left } }
+  }
+
   /// Yeniden okunacak ortalanmış bant (bölge pikselinde): x, y, genişlik, yükseklik.
   static func retryBand(width: Int, height: Int) -> (x: Int, y: Int, width: Int, height: Int) {
     let x = Int((Double(width) * RETRY_INSET_X).rounded())
@@ -178,6 +193,88 @@ enum ReadingSelector {
     let bottom = Int(((1 - minY) * Double(imageHeight) / s).rounded()) + offsetY
     return (left, top, right, bottom)
   }
+}
+
+/// Oyun altyazısının tek satır yüksekliği (ekran yüksekliğine oranla). TV "örterek" yerleşiminde yazı boyunun üst
+/// sınırını bundan alır; fazla büyük ölçüm yazıyı ayardaki boyun 1,6 katına kadar büyütüyordu. Tahmin güvenilmezse nil
+/// (TV ayardaki boyu kullanır).
+enum LineHeight {
+  /// Bu aralığın dışındaki tahmin güvenilmez sayılır (1080p'de ~13–86 piksel).
+  static let MIN_RATIO = 0.012
+  static let MAX_RATIO = 0.08
+  /// Yazı kutusu yüksekliğinin ortalama karakter genişliğine oranı tek satırda ~2,2–3,2'dir. k satırı kapsayan parçada
+  /// yükseklik k, karakter sayısı da k katına çıktığı için oran ~k² katıdır: satır sayısı √(oran / 2,6)'dan bulunur.
+  /// Oran yalnız bu kadar karakterden uzun parçada ölçülür.
+  static let SINGLE_LINE_RATIO = 2.6
+  static let MIN_CHARACTERS = 8
+  /// Komşularının ortancasının bu katından uzun parça birden çok satır sayılır.
+  static let TALL_FACTOR = 1.7
+
+  /// Parçaların (aynı bloktaki satırlar, bölge pikselinde) tek satır yüksekliği / [frameHeight]; güvenilmezse nil.
+  /// Hedef satırın gerçek kutu yüksekliğidir (TV yazı boyunu bunun 1,05 katıyla sınırlar). Uzun parça (en az
+  /// [MIN_CHARACTERS] karakter) varsa yalnız uzun parçalara bakılır: "me", "so" gibi kısa ya da yalnız küçük harfli parça
+  /// yazının gerçek boyundan alçaktır. Komşularının [TALL_FACTOR] katından uzun parça satır sayısına bölünür; kalanlardan
+  /// üstteki ortanca alınır (alt çıkıntılı satır çıkıntısızdan biraz yüksektir; gerçek boy büyüğe yakındır).
+  static func estimate(_ pieces: [TextObservation], frameHeight: Int) -> Double? {
+    guard frameHeight > 0 else { return nil }
+    let measured = pieces.filter { $0.height > 0 }
+    let long = measured.filter { $0.text.count >= MIN_CHARACTERS && $0.width > 0 }
+    let used = long.isEmpty ? measured : long
+    let heights = used.map { piece -> Double in
+      let h = Double(piece.height)
+      guard piece.text.count >= MIN_CHARACTERS, piece.width > 0 else { return h }
+      let ratio = h / (Double(piece.width) / Double(piece.text.count))
+      let lines = (ratio / SINGLE_LINE_RATIO).squareRoot().rounded()
+      return lines >= 2 ? h / lines : h
+    }
+    guard !heights.isEmpty else { return nil }
+    let typical = lowerMedian(heights)
+    // Komşularından belirgin uzun parça kaç satırsa ona bölünür.
+    let single = heights.map { h -> Double in
+      guard typical > 0, h >= typical * TALL_FACTOR else { return h }
+      return h / (h / typical).rounded()
+    }
+    let ratio = upperMedian(single) / Double(frameHeight)
+    return ratio >= MIN_RATIO && ratio <= MAX_RATIO ? ratio : nil
+  }
+
+  /// Büyük olan ortanca (çift sayıda değerde üstteki).
+  static func upperMedian(_ values: [Double]) -> Double {
+    let sorted = values.sorted()
+    return sorted.isEmpty ? 0 : sorted[sorted.count / 2]
+  }
+
+  /// TV'ye gidecek satır yüksekliği: "Oyunun yazı boyuna uy" kapalıysa hiç gönderilmez (TV ayardaki boyu kullanır).
+  static func toSend(_ tracked: Double?, matchGameTextSize: Bool) -> Double? {
+    guard matchGameTextSize, let tracked, tracked > 0 else { return nil }
+    return tracked
+  }
+
+  /// Küçük olan ortanca (çift sayıda değerde alttaki): büyük ölçüme kaymaz.
+  static func lowerMedian(_ values: [Double]) -> Double {
+    let sorted = values.sorted()
+    return sorted.isEmpty ? 0 : sorted[(sorted.count - 1) / 2]
+  }
+}
+
+/// Satır yüksekliği tahminlerini kararlı tutar: son [capacity] güvenilir tahminin ortancası. Oyunun yazı boyu değişmez;
+/// tek bir hatalı ölçüm yazıyı büyütüp küçültmesin, aynı altyazının okumaları arasında boy oynamasın.
+struct LineHeightTracker {
+  let capacity: Int
+  private var recent: [Double] = []
+
+  init(capacity: Int = 7) { self.capacity = max(1, capacity) }
+
+  /// Yeni tahmini (nil: bu okumada güvenilir ölçüm yok) ekler; kullanılacak değeri döner (henüz yoksa nil).
+  mutating func add(_ estimate: Double?) -> Double? {
+    if let estimate, estimate > 0 {
+      recent.append(estimate)
+      if recent.count > capacity { recent.removeFirst(recent.count - capacity) }
+    }
+    return recent.isEmpty ? nil : LineHeight.lowerMedian(recent)
+  }
+
+  mutating func reset() { recent.removeAll() }
 }
 
 /// Yeniden okuma sıklığını sınırlar (saf; saat dışarıdan).

@@ -50,6 +50,9 @@ struct Settings: Equatable {
   var packsEnabled = true
   /// Satır sonundaki oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye gitmez (yalnız iOS'ta, ayarlardan kapatılır).
   var hideButtonHints = true
+  /// "Örterek" yerleşiminde çevirinin yazı boyu oyunun altyazısının boyuna yaklaşır (okunan satır yüksekliği TV'ye gider);
+  /// kapalıysa ayardaki boyda kalır, sığmazsa küçülür (yalnız iOS'ta).
+  var matchGameTextSize = true
   /// Elle seçilen oyunun paketi (bilgisayar sürümündeki "Oyun" seçimi); boş: otomatik.
   var packChoice = ""
   /// Ana bölgenin dışında, istek üzerine bir kez okunan ek alanlar (en çok 3; görev metni, eşya adı vb.).
@@ -88,6 +91,7 @@ struct Settings: Equatable {
       "glossary": glossary,
       "packsEnabled": packsEnabled,
       "hideButtonHints": hideButtonHints,
+      "matchGameTextSize": matchGameTextSize,
       "packChoice": packChoice,
       "extraRegions": extraRegions.map { $0.toJson() },
       "autoRegion": autoRegion,
@@ -131,6 +135,7 @@ struct Settings: Equatable {
     out.glossary = string(json["glossary"], "")
     out.packsEnabled = bool(json["packsEnabled"], true)
     out.hideButtonHints = bool(json["hideButtonHints"], true)
+    out.matchGameTextSize = bool(json["matchGameTextSize"], true)
     out.packChoice = string(json["packChoice"], "")
     out.extraRegions = ExtraRegion.parseList(json["extraRegions"])
     out.autoRegion = bool(json["autoRegion"], false)

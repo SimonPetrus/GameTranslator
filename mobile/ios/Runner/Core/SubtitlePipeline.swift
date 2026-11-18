@@ -89,6 +89,10 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// Doğal Türkçe adımlarının (sen/siz belleği) oturum durumu; oyun/paket değişince ve [reset]te sıfırlanır.
   private let address: AddressMemory
   private let nameMemory = NameMemory()
+  /// Yakın geçmişte satır başında görülen konuşmacı adları (küçük harfli, en yenisi sonda; kilit altında):
+  /// satır ortasındaki "…mine. Devin: No." ancak bu adlardansa ayrı konuşma sayılır ([SpeakerTurns.split]).
+  private var recentSpeakers: [String] = []
+  private static let RECENT_SPEAKERS = 32
   private var lastPackId: String?
   /// TV'ye hattın en son gönderdiği satır (numarası, çevirisi, kutusu, süresi, gönderildiği an); kalkınca ya da sıfırlanınca nil.
   private var displayed: (number: Int, text: String, box: TextBox?, durationMs: Int, at: Double)?
@@ -192,6 +196,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     // Kısa satırın bağlamı: bu an gösterilmiş olan satır ve ne zaman gösterildiği (kilit altında okunur).
     let previous = lastShownSource
     let previousAt = lastShownAt
+    let known = Set(recentSpeakers)
     translateExecutor { [self] in
       let options = self.options
       // Satır zaten Türkçeyse motora gidilmez; sonuç kaynağıyla aynı olduğundan eskiden olduğu gibi gösterilmez.
@@ -203,6 +208,22 @@ final class SubtitlePipeline: @unchecked Sendable {
         return
       }
       let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
+      rememberSpeakers(SpeakerTurns.speakers(in: source))
+      // Birden çok konuşma (etiketli satırlar): her konuşma TV'de kendi satırında; tek satıra düzleştirilmez.
+      let turns = packed == nil ? SpeakerTurns.split(source, known: known) : []
+      if turns.count > 1 {
+        let result = translateTurns(turns, options: options, remember: true)
+        lock.lock()
+        defer { lock.unlock() }
+        guard let translated = result.text, !translated.isEmpty else {
+          if number == onScreen { stabilizer.forgetSent() }
+          onTranslateFailed?(source)
+          return
+        }
+        cache.set(key(source), translated)
+        deliver(number, source, translated, box, origin: result.origin)
+        return
+      }
       // İki satırlık altyazı tek cümledir; çevirmene tek satır olarak gider.
       let oneLine = KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })
       // Doğal Türkçe adımları yalnız İngilizce→Türkçe; Gemini bağlamı kendisi anlar (deyim, bağlam, ad adımları yok).
@@ -300,6 +321,11 @@ final class SubtitlePipeline: @unchecked Sendable {
     if options.skipTurkishSource && TurkishDetect.isTurkish(source) { return (source, "") }
     let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
     if let packed { return (KotlinText.trim(packed.text), "pack") }
+    lock.lock()
+    let known = Set(recentSpeakers)
+    lock.unlock()
+    let turns = SpeakerTurns.split(source, known: known)
+    if turns.count > 1 { return translateTurns(turns, options: options, remember: false) }
     let oneLine = KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })
     let natural = options.sourceLanguage == "en" && options.targetLanguage == "tr"
     if natural, let stock = StockLines.lookup(oneLine) { return (stock, "stock") }
@@ -336,6 +362,90 @@ final class SubtitlePipeline: @unchecked Sendable {
     guard let raw = engine.translate(input).map({ KotlinText.trim($0) }), !raw.isEmpty else { return nil }
     let edited = TurkishPolish.apply(raw, source: line)
     return AddressForm.harmonizeLine(edited)
+  }
+
+  /// Birden çok konuşmalı altyazı ([SpeakerTurns]): her konuşma kendi satırında çevrilir, satırlar "\n" ile birleşir
+  /// (TV satır sonunu gösterir). Disk önbelleğinin anahtarı satır sonlu metindir: tek satıra düzleştirilmiş eski birleşik
+  /// çeviriler geri gelmez. Hazır cevap ve kısa satır bağlamı bu yolda yoktur. [remember]: konuşmacı belleği uygulanır
+  /// (ana hat). Çevrilemezse metin nil.
+  private func translateTurns(_ turns: [String], options: PipelineOptions, remember: Bool) -> (text: String?, origin: String) {
+    let natural = options.sourceLanguage == "en" && options.targetLanguage == "tr"
+    let gemini = options.engineId == "gemini" && !geminiBypassed()
+    let diskKey: String? = options.cache != nil ? options.cacheKey(turns.joined(separator: "\n")) : nil
+    var parts: [String]?
+    var origin = ""
+    if let diskKey, let stored = options.cache?.get(diskKey) {
+      let lines = SpeakerTurns.lines(stored)
+      if lines.count == turns.count {
+        parts = lines
+        origin = "cache"
+      }
+    }
+    if parts == nil {
+      FallbackSignal.reset()
+      parts = translateTurnsEngine(turns, natural: natural, gemini: gemini, options: options)
+      origin = SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: FallbackSignal.marked,
+                                             answeredBy: FallbackSignal.answeredBy)
+      // Yedek motorun çevirisi asıl motorun anahtarıyla diske yazılmaz.
+      if let done = parts, !FallbackSignal.marked, let diskKey { options.cache?.set(diskKey, done.joined(separator: "\n")) }
+    }
+    guard var result = parts, result.count == turns.count else { return (nil, "") }
+    if remember && natural {
+      for i in result.indices { result[i] = address.apply(result[i], speaker: AddressMemory.speaker(of: turns[i])) }
+    }
+    return (result.joined(separator: "\n"), origin)
+  }
+
+  /// Konuşmaların motor çevirisi. Baştaki tire/">>" ve büyük harfli ad ([SpeakerPrefix], [SpeakerName]) ayrılıp olduğu
+  /// gibi geri konur; gövdeler tek istekte, satır satır ("\n") gider. Motor satır sayısını korumazsa (satır sonlarını
+  /// yuttuysa) her gövde ayrı istekle çevrilir. İngilizce→Türkçe adımları ([translateEngine] ile aynı) gövde başına
+  /// uygulanır. Çevrilemezse nil; dönen dizi [turns] ile aynı boydadır.
+  private func translateTurnsEngine(_ turns: [String], natural: Bool, gemini: Bool, options: PipelineOptions) -> [String]? {
+    var heads: [String] = []
+    var bodies: [String] = []
+    for turn in turns {
+      let (prefix, afterPrefix) = SpeakerPrefix.split(turn)
+      let (name, body) = SpeakerName.split(afterPrefix)
+      heads.append(prefix + name)
+      bodies.append(body)
+    }
+    let wanted = bodies.indices.filter { !KotlinText.isBlank(bodies[$0]) }
+    var inputs = wanted.map { bodies[$0] }
+    var engine: TextTranslator = translator
+    if natural && !gemini {
+      inputs = inputs.map { IdiomNormalizer.apply($0) }
+      let known = nameMemory.snapshot
+      var names: [String] = []
+      for input in inputs {
+        for name in NameProtection.candidates(input, glossary: options.glossary, known: known) where !names.contains(name) {
+          names.append(name)
+        }
+      }
+      nameMemory.remember(names)
+      if !names.isEmpty { engine = GlossaryTranslator(NameProtection.glossary(for: names), translator) }
+    }
+    TranslationContext.set(nil)
+    var outputs: [String] = []
+    if inputs.count > 1 {
+      // Motor hiç çeviremediyse gövde gövde yeniden denenmez (boşa istek).
+      guard let raw = engine.translate(inputs.joined(separator: "\n")) else { return nil }
+      let lines = SpeakerTurns.lines(raw)
+      if lines.count == inputs.count { outputs = lines }
+    }
+    if outputs.isEmpty {
+      for input in inputs {
+        guard let raw = engine.translate(input).map({ KotlinText.trim($0) }), !raw.isEmpty else { return nil }
+        outputs.append(raw)
+      }
+    }
+    // Yalnız işaretten oluşan konuşma ("-") olduğu gibi kalır.
+    var result = heads.map { KotlinText.trim($0) }
+    for (k, index) in wanted.enumerated() {
+      var text = outputs[k]
+      if natural { text = AddressForm.harmonizeLine(TurkishPolish.apply(text, source: bodies[index])) }
+      result[index] = heads[index] + text
+    }
+    return result
   }
 
   /// Kilit altında çağrılır. Yerine yenisi gelmiş satırın geç kalan çevirisi gösterilmez.
@@ -378,7 +488,27 @@ final class SubtitlePipeline: @unchecked Sendable {
     onShown?(source, translated, origin, replaces)
   }
 
-  private func key(_ source: String) -> UTF16Text { KotlinText.units(TextMatch.normalize(source)) }
+  /// Kilit altında çağrılır. Bellek önbelleği anahtarı: sadeleştirilmiş metin; birden çok konuşmalı okumada konuşma sayısı
+  /// da eklenir (aynı sözcüklerin tek paragraf çevirisi satırlı okumaya dönmesin). Tek konuşmada anahtar değişmez.
+  private func key(_ source: String) -> UTF16Text {
+    let base = KotlinText.units(TextMatch.normalize(source))
+    let turns = SpeakerTurns.split(source, known: Set(recentSpeakers)).count
+    return turns > 1 ? base + KotlinText.units("\u{1F}\(turns)") : base
+  }
+
+  /// Satır başında görülen konuşmacı adlarını yakın geçmişe yazar (kilidi kendisi alır).
+  private func rememberSpeakers(_ names: [String]) {
+    if names.isEmpty { return }
+    lock.lock()
+    defer { lock.unlock() }
+    for name in names {
+      recentSpeakers.removeAll { $0 == name }
+      recentSpeakers.append(name)
+    }
+    if recentSpeakers.count > SubtitlePipeline.RECENT_SPEAKERS {
+      recentSpeakers.removeFirst(recentSpeakers.count - SubtitlePipeline.RECENT_SPEAKERS)
+    }
+  }
 
   /// Hattın kaç kez sıfırlandığı (durdurma, bölge ya da ayar değişimi).
   var resetCount: Int { lock.lock(); defer { lock.unlock() }; return resets }
@@ -425,6 +555,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     lastShownSource = nil
     lastShownAt = nil
     lastPackId = nil
+    recentSpeakers.removeAll()
     address.reset()
     nameMemory.reset()
     if stabilizer.reset().kind == .clear { sink.clear() }

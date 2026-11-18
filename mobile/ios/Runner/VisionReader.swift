@@ -31,6 +31,8 @@ final class VisionReader: FrameReader {
   /// Vision'a verilecek tanıma dili; nil: Vision kendi seçsin (kaynak dil bu iOS sürümünde desteklenmiyor).
   private var ocrLanguage: String? = "en-US"
   private var hideButtonHints = true
+  /// Oyun altyazısının satır yüksekliği (yalnız okuma kuyruğunda); bölge ya da hat değişince sıfırlanır.
+  private var lineTracker = LineHeightTracker()
   private var lastLines: [String] = []
   private var lastBox: TextBox?
   private var ocrTimes: [Int] = []
@@ -72,6 +74,8 @@ final class VisionReader: FrameReader {
       let languageName = self.ocrLanguage ?? Lang.t("otomatik", "automatic")
       _ = self.whenCurrent(target.token) { self.healthLanguage = languageName }
       self.hideButtonHints = s.hideButtonHints
+      self.lineTracker.reset()
+      self.sink.matchGameTextSize = s.matchGameTextSize
       // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
       let local = AppleTranslator(source: s.sourceLanguage, target: s.targetLanguage) { level, text in self.engine.log(level, text) }
       self.translating.async { _ = local.prepare() }
@@ -169,6 +173,9 @@ final class VisionReader: FrameReader {
     }
   }
 
+  /// "Oyunun yazı boyuna uy" değişti: bir sonraki satırdan geçerli (hat yeniden kurulmaz).
+  func setMatchGameTextSize(_ on: Bool) { sink.matchGameTextSize = on }
+
   func reset(clearScreen: Bool) {
     let target = currentQueue()
     target.queue.async {
@@ -177,6 +184,8 @@ final class VisionReader: FrameReader {
       self.region = settings.region
       self.resetAuto(enabled: settings.autoRegion, token: target.token)
       self.hideButtonHints = settings.hideButtonHints
+      self.lineTracker.reset()
+      self.sink.matchGameTextSize = settings.matchGameTextSize
       self.scheduler.reset()
       _ = self.whenCurrent(target.token) { self.retryLimiter.reset() }
       self.pipeline?.reset()
@@ -491,8 +500,12 @@ final class VisionReader: FrameReader {
     }
 
     // İlk okuma tüm bölgede; sonuç yoksa ya da güvensizse sınırlı sıklıkta, ortalanmış bandı büyüterek bir kez daha.
-    guard let first = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: true, token: token) else { return }
+    guard let raw = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: true, token: token) else { return }
     guard isCurrent(token) else { return }
+    // Tuş ipucu satırları ("Hold L2 to aim") altyazı bloğu seçilmeden önce atılır: ne çevrilir ne de kutuya girer
+    // (yoksa ipucu bloğu altyazının yerine seçilebiliyor, çeviri kutusu ipucunu örtüyordu).
+    let english = language == "en"
+    let first = hideButtonHints ? ButtonHints.dropHintRows(raw, english: english) : raw
     var selected = ReadingSelector.select(first, width: w, height: h)
     let clock = SubtitleStabilizer.monotonicMillis()
     let band = ReadingSelector.retryBand(width: w, height: h)
@@ -502,8 +515,9 @@ final class VisionReader: FrameReader {
        whenCurrent(token, { retryLimiter.allow(at: clock) }) == true {
       if let part = image.cropping(to: CGRect(x: cropX + band.x, y: cropY + band.y, width: band.width, height: band.height)),
          let big = Self.upscaled(part, factor: scale),
-         let again = recognize(big, offsetX: band.x, offsetY: band.y, scale: scale, timed: false, token: token) {
+         let rereadRaw = recognize(big, offsetX: band.x, offsetY: band.y, scale: scale, timed: false, token: token) {
         guard isCurrent(token) else { return }
+        let again = hideButtonHints ? ButtonHints.dropHintRows(rereadRaw, english: english) : rereadRaw
         let retried = ReadingSelector.select(again, width: w, height: h)
         if ReadingSelector.isBetter(retried, than: selected) { selected = retried }
       }
@@ -516,10 +530,10 @@ final class VisionReader: FrameReader {
       if lines.isEmpty { box = nil }
     }
     if let box, !pieces.isEmpty {
-      // Satır yüksekliği: okunan satırların ortanca yüksekliği, ekran yüksekliğine oranla.
-      let heights = pieces.map { $0.bottom - $0.top }.sorted()
-      sink.remember(box, line: Double(heights[heights.count / 2]) / Double(fullHeight),
-                    characters: lines.reduce(0) { $0 + $1.count })
+      // Satır yüksekliği: iki satırı ya da simgeyi kapsayan parçaya karşı sağlam tahmin, son okumaların ortancası;
+      // güvenilir ölçüm yoksa gönderilmez (TV ayardaki boyu kullanır).
+      let line = lineTracker.add(LineHeight.estimate(selected, frameHeight: fullHeight))
+      sink.remember(box, line: line, characters: lines.reduce(0) { $0 + $1.count })
     }
     // Kurtarmadan önce başlamış eski okumanın bayat satırları hatta ve ortak duruma gitmez.
     guard isCurrent(token) else { return }
@@ -647,13 +661,24 @@ private final class ServerSink: SubtitleSink {
   private let lock = NSLock()
   /// Son okumaların kutusu → (satır yüksekliği, okunan İngilizce metnin karakter sayısı); hat aynı kutuyu çeviriyle
   /// birlikte geri verir.
-  private var lines: [(box: TextBox, line: Double, characters: Int)] = []
+  private var lines: [(box: TextBox, line: Double?, characters: Int)] = []
+  private var matchesGameSize = true
 
   init(server: SubtitleServer) { self.server = server }
 
-  func remember(_ box: TextBox, line: Double, characters: Int) {
+  /// Açıksa okunan satır yüksekliği TV'ye gider (yazı oyunun altyazısının boyuna yaklaşır); kapalıysa gitmez (ayardaki boy).
+  var matchGameTextSize: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return matchesGameSize }
+    set { lock.lock(); matchesGameSize = newValue; lock.unlock() }
+  }
+
+  func remember(_ box: TextBox, line: Double?, characters: Int) {
     lock.lock(); defer { lock.unlock() }
-    if let last = lines.last, last.box == box { return }
+    if let last = lines.last, last.box == box {
+      // Aynı kutunun sonraki okuması: satır yüksekliği ilk okumada henüz ölçülemediyse sonradan gelen kullanılır.
+      if last.line == nil, let line { lines[lines.count - 1].line = line }
+      return
+    }
     lines.append((box, line, characters))
     if lines.count > 32 { lines.removeFirst(lines.count - 32) }
   }
@@ -664,8 +689,9 @@ private final class ServerSink: SubtitleSink {
     if let box {
       lock.lock()
       let known = lines.last(where: { $0.box == box })
+      let match = matchesGameSize
       lock.unlock()
-      line = known?.line
+      line = LineHeight.toSend(known?.line, matchGameTextSize: match)
       if let known, known.characters > 0 {
         source = Self.widened(box, ratio: Double(text.count) / Double(known.characters))
       }

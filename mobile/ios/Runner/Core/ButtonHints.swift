@@ -119,6 +119,174 @@ enum ButtonHints {
     !s.isEmpty && s.unicodeScalars.allSatisfy { iconScalars.contains($0) || circledLetters.contains($0.value) }
   }
 
+  // MARK: - Tuş ipucu satırı ("Hold L2 to aim")
+
+  /// İpucunun başındaki eylem fiilleri (PS5 kumandası: tuşlar, tetikler, çubuklar, dokunmatik yüzey; "Double tap" ve
+  /// "Press and hold" ayrıca bakılır).
+  private static let actionVerbs: Set<String> = [
+    "hold", "press", "tap", "release", "use", "push", "pull", "click", "toggle", "move", "tilt", "rotate", "flick",
+    "squeeze", "half-press", "mash", "swipe",
+  ]
+  /// Simge okunmadığında da ipucu sayılan basış fiilleri ("Hold to aim"). "Move", "Use", "Push" gibi genel fiiller
+  /// ancak açık bir düğme ya da çubukla ipucudur ("Move to cover on three" diyalogdur).
+  private static let pressVerbs: Set<String> = ["hold", "press", "tap", "double", "release", "squeeze", "mash", "half-press", "click"]
+  /// "to"dan sonra gelince ipucu değil diyalog olan sözcükler ("Push to the limit!", "Move to the left.").
+  private static let notActions: Set<String> = [
+    "the", "a", "an", "my", "your", "his", "her", "its", "our", "their", "me", "him", "them", "us", "it", "this", "that",
+    "these", "those", "you", "be", "do", "go",
+  ]
+  /// Simge yerine okunabilen düğme adları: şekil tuşları, yön tuşu, Options/Share/Create, PS, dokunmatik yüzey.
+  /// Çubuk ("stick") yalnız yanıyla düğmedir: "left stick", "R stick", "analog stick" ([stickSides]).
+  private static let buttonNames: Set<String> = [
+    "options", "share", "create", "touchpad", "d-pad", "dpad", "ps", "triangle", "circle", "cross", "square",
+  ]
+  private static let stickWords: Set<String> = ["stick", "sticks"]
+  private static let stickSides: Set<String> = ["left", "right", "l", "r", "analog", "both"]
+  /// Düğmenin yanında durabilen sözcükler ("L2 + R2", "L1 and R1", "✕ repeatedly", "up on the D-pad").
+  private static let buttonFillers: Set<String> = [
+    "+", "&", "/", "and", "or", "both", "left", "right", "up", "down", "on", "repeatedly", "quickly", "button", "buttons",
+    "trigger", "triggers",
+  ]
+  /// "the" yalnız bu sözcüklerden biriyle düğme dizisinde durabilir ("the left stick", "the D-pad"); "Use the cross" diyalogdur.
+  private static let theAllowedWith: Set<String> = ["stick", "sticks", "d-pad", "dpad", "touchpad", "button", "buttons", "trigger", "triggers"]
+  /// Simge okunmadığında fiille "to" arasında kalabilen sözcükler ("Tap repeatedly to break free").
+  private static let repeatWords: Set<String> = ["repeatedly", "quickly"]
+  /// Yön tuşu okları; diyalogda geçmez.
+  private static let arrowScalars = Set("←↑→↓⬅⬆➡⬇".unicodeScalars)
+  /// OCR'ın şekil tuşları için okuduğu biçimler (✕ → x, ○ → o/0, △ → ^, □ → [] ya da 口).
+  private static let shapeMisreads: Set<String> = ["x", "o", "0", "^", "[]", "()", "口"]
+  private static let tokenEdges = CharacterSet(charactersIn: "()[]{}<>|.,!?:;…")
+
+  /// Tek başına oyunun tuş ipucu satırı mı (İngilizce kalıp): "<eylem fiili> <düğmeler> to <fiil>" — "Hold L2 to aim",
+  /// "Press ✕ to continue", "Double tap R1 to dodge", "Hold L2 + R2 to aim", "Move the left stick to walk", OCR'ın
+  /// bozduğu "Hold [2 to aim", "Hold L2to aim", "Hold LZ to aim"; "to"suz yalnız düğmeli "Press ✕", "Tap ✕ repeatedly";
+  /// simgesi hiç okunmamış "Hold to aim", "Tap repeatedly to break free".
+  /// Koşullar: satır büyük harfli fiille başlar (konuşmacı etiketi yok), en çok 8 sözcük, virgül yok; "to"dan sonra 1–4
+  /// sözcük gelir ve ilki zamir/tanımlık değildir. Sonda cümle noktalaması varsa (oyun ipuçları çoğunlukla noktasızdır)
+  /// yalnız simge, ok ya da L1–R3 gibi açık bir tuşla ipucudur. Simge okunmadıysa daha sıkı: yalnız basış fiilleri
+  /// ([pressVerbs]), en çok 5 sözcük, "to"dan sonra en çok 3 sözcük, noktalama yok ve satır bir sonraki satıra küçük
+  /// harfle sürmüyor ([continues]: sarılmış diyalogun ilk satırı). "Hold on to this.", "Press charges against him.",
+  /// "Use the cross to ward him off.", "Use V to distract them.", "Use the stick to hit him." ipucu değildir.
+  static func isPrompt(_ line: String, continues: Bool = false) -> Bool {
+    var tokens: [String] = []
+    for part in line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init) {
+      // Düğme adına yapışmış "to" ("L2to") ayrılır.
+      if part.count > 2, part.lowercased().hasSuffix("to"), isButtonToken(String(part.dropLast(2))) {
+        tokens.append(String(part.dropLast(2)))
+        tokens.append("to")
+      } else {
+        tokens.append(part)
+      }
+    }
+    guard tokens.count >= 2, tokens.count <= 8, !line.contains(","), let initial = tokens[0].first, initial.isUppercase,
+          let last = line.trimmingCharacters(in: .whitespaces).last else {
+      return false
+    }
+    let punctuated = ".!?…".contains(last)
+    var start = 1
+    let verb = tokens[0].lowercased()
+    if verb == "double" {
+      guard tokens[1].lowercased() == "tap" else { return false }
+      start = 2
+    } else if !actionVerbs.contains(verb) {
+      return false
+    }
+    // "Press and hold ✕ to ...": ikinci fiil atlanır.
+    if start + 1 < tokens.count, tokens[start].lowercased() == "and", actionVerbs.contains(tokens[start + 1].lowercased()) {
+      start += 2
+    }
+    guard start < tokens.count else { return false }
+    guard let to = tokens[start...].firstIndex(where: { $0.lowercased() == "to" }) else {
+      // "to"suz ipucu yalnız düğmelerden oluşur: "Press ✕", "Hold L2 + R2", "Tap ✕ repeatedly".
+      return tokens.count <= 6 && isButtonGroup(tokens[start...], punctuated: punctuated)
+    }
+    let middle = tokens[start..<to]
+    let rest = tokens[(to + 1)...]
+    guard !rest.isEmpty, rest.count <= 4 else { return false }
+    let next = rest.first!.lowercased().filter { $0.isLetter }
+    guard !next.isEmpty, !notActions.contains(next) else { return false }
+    if middle.allSatisfy({ repeatWords.contains($0.lowercased()) }) {
+      // Simge okunmadı.
+      return pressVerbs.contains(verb) && tokens.count <= 5 && rest.count <= 3 && !punctuated && !continues
+    }
+    return isButtonGroup(middle, punctuated: punctuated)
+  }
+
+  /// Düğme dizisi: en az bir düğme, geri kalanı düğme yanı sözcükleri, en çok 5 parça. [punctuated]: satır cümle
+  /// noktalamasıyla bitiyor; o zaman dizide açık bir tuş ([isStrongButton]) bulunmalı.
+  private static func isButtonGroup(_ parts: ArraySlice<String>, punctuated: Bool) -> Bool {
+    guard !parts.isEmpty, parts.count <= 5 else { return false }
+    let items = Array(parts)
+    let lowered = items.map { $0.lowercased().trimmingCharacters(in: tokenEdges) }
+    var button = items.map { isButtonToken($0) }
+    // Çubuk yalnız yanıyla: "left stick", "R stick", "analog stick".
+    for i in lowered.indices.dropFirst() where stickWords.contains(lowered[i]) && stickSides.contains(lowered[i - 1]) {
+      button[i] = true
+      button[i - 1] = true
+    }
+    guard button.contains(true) else { return false }
+    if punctuated && !items.contains(where: { isStrongButton($0) }) { return false }
+    let allowsThe = lowered.contains { theAllowedWith.contains($0) }
+    for i in items.indices where !button[i] {
+      if buttonFillers.contains(lowered[i]) || (allowsThe && lowered[i] == "the") { continue }
+      return false
+    }
+    return true
+  }
+
+  /// Açık tuş: kumanda simgesi, ok ya da L1–R3 (küçük harfli ya da bozuk okunmuş: "l2", "12", "[2", "(L2)", "LZ",
+  /// "02"). Diyalogda bu biçimler geçmez.
+  private static func isStrongButton(_ part: String) -> Bool {
+    let inner = part.trimmingCharacters(in: tokenEdges)
+    if inner.isEmpty { return false }
+    if isIcon(inner) || inner.unicodeScalars.allSatisfy({ arrowScalars.contains($0) }) || triggerNames.contains(inner.uppercased()) {
+      return true
+    }
+    let scalars = Array(inner.unicodeScalars)
+    guard scalars.count <= 2, let second = scalars.last else { return false }
+    if "123".unicodeScalars.contains(second) {
+      return scalars.count == 1 || "LlRrIi1|0Oo".unicodeScalars.contains(scalars[0])
+    }
+    // "L2"/"R2"deki 2'nin Z okunuşu.
+    return scalars.count == 2 && "LR".unicodeScalars.contains(scalars[0]) && "Zz".unicodeScalars.contains(second)
+  }
+
+  /// Düğme yerine okunan parça: açık tuş ([isStrongButton]), düğme adı (OPTIONS, Touchpad, D-pad, Triangle) ya da
+  /// şekil tuşunun bozuk okunuşu ("X", "x", "o", "[]"). Başka tek büyük harf ("V", tek başına "L") düğme sayılmaz.
+  private static func isButtonToken(_ part: String) -> Bool {
+    if shapeMisreads.contains(part.lowercased()) { return true }
+    let inner = part.trimmingCharacters(in: tokenEdges)
+    if inner.isEmpty { return false }
+    return shapeMisreads.contains(inner.lowercased()) || buttonNames.contains(inner.lowercased()) || isStrongButton(inner)
+  }
+
+  /// Altyazı olmayan satırları parçalarıyla birlikte atar (yazı da kutu da onları içermesin): tamamı düğme yazısı olan
+  /// satır ([strip] boş döner), İngilizcede tuş ipucu satırı ([isPrompt]) ve harf ya da rakam içermeyen satır ("● ○ ○").
+  /// Satırlar [ReadingSelector.rows] ile kurulur; Vision ipucunu simgenin iki yanında iki parça okusa da satır tek bakılır.
+  /// Hemen altındaki satır küçük harfle başlıyorsa satır sarılmış bir cümlenin başıdır (simgesiz kalıpta ipucu sayılmaz).
+  static func dropHintRows(_ input: [TextObservation], english: Bool) -> [TextObservation] {
+    let rows = ReadingSelector.rows(input)
+    var kept: [TextObservation] = []
+    for (index, row) in rows.enumerated() {
+      let text = row.map(\.text).joined(separator: " ")
+      if !text.unicodeScalars.contains(where: { CharacterSet.alphanumerics.contains($0) }) { continue }
+      if strip(text).isEmpty { continue }
+      if english {
+        let continues = index + 1 < rows.count && continuesInto(row, rows[index + 1])
+        if isPrompt(text, continues: continues) { continue }
+      }
+      kept.append(contentsOf: row)
+    }
+    return kept
+  }
+
+  /// [next] satırı [row]'un hemen altında (aradaki boşluk bir satır yüksekliğini aşmıyor) ve küçük harfle başlıyor mu.
+  private static func continuesInto(_ row: [TextObservation], _ next: [TextObservation]) -> Bool {
+    guard let bottom = row.map(\.bottom).max(), let height = row.map(\.height).max(), let top = next.map(\.top).min(),
+          let first = next.map(\.text).joined(separator: " ").first(where: { $0.isLetter }) else { return false }
+    return top - bottom <= height && first.isLowercase
+  }
+
   /// "L2", "R1" gibi tetik adı; parantez içinde ilk karakter 1/I/l/| okunmuş L'dir ("(13)", "I2)").
   private static func isTrigger(_ part: String, _ inner: String) -> Bool {
     if triggerNames.contains(inner) { return true }

@@ -1168,6 +1168,17 @@ class _SettingsTabState extends State<SettingsTab> {
               chevron: true,
               onTap: pickPlacement,
             ),
+            if (Platform.isIOS && style['placement'] == 'cover')
+              Cell(
+                title: L.t('Oyunun yazı boyuna uy', 'Match the game\'s text size'),
+                subtitle: L.t('Kapalıyken yazı ayardaki boyda kalır, sığmazsa küçülür. Açıkken oyunun altyazısının boyuna yaklaşır.',
+                    'When off, the text stays at the size you chose and shrinks if it does not fit. When on, it approaches the size of the game\'s subtitle.'),
+                trailing: CupertinoSwitch(
+                  value: s.matchGameTextSize,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => change((s) => s.json['matchGameTextSize'] = value),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
               child: Column(

@@ -349,6 +349,10 @@ final class Engine: Native.Listener {
         self.notifyChanged()
       }
       if now.style != before.style, self.server.isStarted { self.server.sendStyle(now.style) }
+      // Yazı boyu seçimi bir sonraki satırdan geçerli; hat yeniden kurulmaz.
+      if now.matchGameTextSize != before.matchGameTextSize {
+        (self.reader as? VisionReader)?.setMatchGameTextSize(now.matchGameTextSize)
+      }
       guard self.running || self.demoTimer != nil else { return }
       if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.geminiStyleNote != before.geminiStyleNote || now.engineFailover != before.engineFailover || now.sourceLanguage != before.sourceLanguage
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled

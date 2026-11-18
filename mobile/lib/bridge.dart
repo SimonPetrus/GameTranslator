@@ -277,6 +277,7 @@ class AppSettings {
   String get glossary => json['glossary'] as String? ?? '';
   bool get packsEnabled => json['packsEnabled'] as bool? ?? true;
   bool get hideButtonHints => json['hideButtonHints'] as bool? ?? true;
+  bool get matchGameTextSize => json['matchGameTextSize'] as bool? ?? true;
   String get packChoice => json['packChoice'] as String? ?? '';
   String get uiLanguage => json['uiLanguage'] as String? ?? 'auto';
   bool get autoRegion => json['autoRegion'] as bool? ?? false;

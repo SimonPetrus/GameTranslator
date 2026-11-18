@@ -118,3 +118,71 @@ enum ReadingSelectorTest {
     }
   }
 }
+
+/// Core/ReadingSelector.swift'teki LineHeight ve LineHeightTracker (TV'ye giden tek satır yüksekliği). Kare 1000 piksel
+/// yüksek varsayılır: 40 piksel = 0,04.
+enum LineHeightTest {
+  static func run() {
+    func obs(_ text: String, _ l: Int, _ t: Int, _ r: Int, _ b: Int) -> TextObservation {
+      TextObservation(text: text, confidence: 0.9, left: l, top: t, right: r, bottom: b)
+    }
+    func near(_ expected: Double, _ actual: Double?, _ message: String = "", file: String = #fileID, line: Int = #line) {
+      guard let actual else { return TestRun.fail("\(message) \(expected) bekleniyordu, nil geldi", file, line) }
+      if abs(expected - actual) > 1e-9 { TestRun.fail("\(message) \(expected) bekleniyordu, \(actual) geldi", file, line) }
+    }
+    // 26 karakter, 400 piksel: karakter başına ~15,4 piksel, 40 piksel yükseklikte oran 2,6 (tek satır).
+    let line1 = "We need to leave right now"
+
+    TestRun.test("LineHeightTest.singleAndSeparateLines") {
+      near(0.04, LineHeight.estimate([obs(line1, 300, 900, 700, 940)], frameHeight: 1000))
+      near(0.04, LineHeight.estimate([obs(line1, 300, 850, 700, 890), obs(line1, 300, 900, 700, 940)], frameHeight: 1000))
+    }
+    TestRun.test("LineHeightTest.twoLinesInOneObservationAreHalved") {
+      // 51 karakter tek satır genişliğinde (400 px), 85 px yükseklik: oran 85 / (400/51) = 10,84; √(10,84/2,6) ≈ 2,04 → 2 satır.
+      near(0.0425, LineHeight.estimate([obs("We need to leave right now before they find us here", 300, 860, 700, 945)], frameHeight: 1000))
+      // Kısa metinli iki satırlık parça (karakter oranı ölçülmez): komşularının ortancasının 2 katı → ikiye bölünür.
+      // Eski kural (ortanca yerine üstteki değer) burada 80 px (0,08) gönderiyordu.
+      near(0.04, LineHeight.estimate([obs("Hey", 450, 820, 550, 860), obs("Hey you", 430, 870, 570, 950)], frameHeight: 1000))
+    }
+    TestRun.test("LineHeightTest.mixedHeightsAndOutliers") {
+      // Büyük/küçük harf ve alt çıkıntı farkı: 38, 40, 42 → ortanca 40.
+      near(0.04, LineHeight.estimate([obs(line1, 300, 800, 700, 838), obs(line1, 300, 850, 700, 890), obs(line1, 300, 900, 700, 942)],
+                                     frameHeight: 1000))
+      // Kısa dev parça (120 px) uzun satırlar varken hiç sayılmaz.
+      near(0.04, LineHeight.estimate([obs(line1, 300, 800, 700, 840), obs(line1, 300, 850, 700, 890), obs("OK", 480, 700, 520, 820)],
+                                     frameHeight: 1000))
+      // İki uzun satır, biri alt çıkıntılı (40 ve 44 px): büyüğe yakın olan, satırın gerçek kutu yüksekliği.
+      near(0.044, LineHeight.estimate([obs(line1, 300, 850, 700, 890), obs(line1, 300, 900, 700, 944)], frameHeight: 1000))
+      // Uzun satırda komşusunun 1,7 katından uzun parça (84 px) yine satır sayısına bölünür: 84 / 2 = 42.
+      near(0.042, LineHeight.estimate([obs(line1, 300, 800, 700, 840), obs(line1, 300, 860, 700, 944)], frameHeight: 1000))
+    }
+    TestRun.test("LineHeightTest.shortPiecesDoNotShrinkAFullLine") {
+      // Tam satır (44 px) + kısa küçük harfli "me" (13 px): yalnız uzun satıra bakılır.
+      near(0.044, LineHeight.estimate([obs(line1, 300, 900, 700, 944), obs("me", 490, 950, 510, 963)], frameHeight: 1000))
+      // Tam satır + alt çıkıntısız kısa satır (34 px).
+      near(0.044, LineHeight.estimate([obs(line1, 300, 900, 700, 944), obs("Go now", 460, 950, 540, 984)], frameHeight: 1000))
+    }
+    TestRun.test("LineHeightTest.unreliableEstimateIsNotSent") {
+      assertNull(LineHeight.estimate([], frameHeight: 1000))
+      assertNull(LineHeight.estimate([obs("OK", 450, 700, 550, 900)], frameHeight: 1000), "0,2: sınırın üstünde")
+      assertNull(LineHeight.estimate([obs("OK", 450, 900, 550, 905)], frameHeight: 1000), "0,005: sınırın altında")
+      assertNull(LineHeight.estimate([obs(line1, 300, 900, 700, 940)], frameHeight: 0))
+    }
+    TestRun.test("LineHeightTest.trackerKeepsTheSizeSteady") {
+      var tracker = LineHeightTracker(capacity: 3)
+      assertNull(tracker.add(nil))
+      near(0.04, tracker.add(0.04))
+      near(0.04, tracker.add(nil), "ölçüm yoksa son değerler")
+      near(0.04, tracker.add(0.08), "tek büyük ölçüm boyu büyütmez")
+      near(0.05, tracker.add(0.05))
+      near(0.05, tracker.add(0.03), "en eski (0,04) düşer: 0,03 0,05 0,08")
+      tracker.reset()
+      assertNull(tracker.add(nil))
+    }
+    TestRun.test("LineHeightTest.sentOnlyWhenMatchingTheGameSize") {
+      near(0.04, LineHeight.toSend(0.04, matchGameTextSize: true))
+      assertNull(LineHeight.toSend(0.04, matchGameTextSize: false))
+      assertNull(LineHeight.toSend(nil, matchGameTextSize: true))
+    }
+  }
+}
