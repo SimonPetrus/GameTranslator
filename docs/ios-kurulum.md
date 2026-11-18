@@ -3,14 +3,13 @@
 iPhone sürümü App Store'da değil. İmzasız bir IPA dosyası olarak dağıtılır; her kullanıcı kendi sertifikasıyla imzalayıp
 kurar (Feather, Sideloadly, AltStore gibi araçlarla).
 
-## Bu sürümde yeni (1.8.2)
+## Bu sürümde yeni (1.8.3)
 
-- **Çeviri motorları arasında otomatik geçiş.** DeepL ya da Gemini kotası dolunca (ya da anahtar reddedilince) anahtarı girilmiş diğer motor, o da olmazsa Google çevirir; kota açılınca asıl motora dönülür. Bağlantı iki kez üst üste kurulamazsa motor kısa süre atlanır.
-- **Ayarlar'da "Kota dolunca diğer motora geç" anahtarı** (varsayılan açık). Açıkken iki anahtar kutusu da görünür.
-- **Sistem durumu** sayfası o an çeviren ve bekleyen motoru gösterir.
+- **Önemli düzeltme: ana ekran durumu.** 1.8.0–1.8.2'de ana ekran durum bilgisini alamıyordu; telefon Wi-Fi'a bağlıyken "Wi-Fi yok" yazıyor, başlat düğmesi tepkisiz görünüyor, ekran güncellenmiyordu. Düzeltildi. Uygulama arka plandan dönünce durum da tazeleniyor. 1.8.0–1.8.2 kullananların güncellemesi gerekir.
 
 ## Önceki sürümler
 
+- **1.8.2:** DeepL ya da Gemini kotası dolunca (ya da anahtar reddedilince) diğer motora, o da olmazsa Google'a otomatik geçiş; Ayarlar'da "Kota dolunca diğer motora geç" anahtarı; sistem durumunda çalışan ve bekleyen motor.
 - **1.8.1:** Ayarlar'da DeepL anahtarı için kontrol düğmesi (anahtar çalışıyor mu, bu ay kullanılan karakter; kota harcamaz).
 - **1.8.0:** Yazı rengi TV'ye ulaşıyor, okuma bölgesi seçimleri ve otomatik altyazı alanı, daha sağlam okuma, daha iyi İngilizce-Türkçe çeviri, kalıcı çeviri hafızası, 27 çeviri dili, altyazı geçmişi, sistem durumu, PS5'siz deneme, çökme kaydı, ayar yedeği, İngilizce arayüz.
 
