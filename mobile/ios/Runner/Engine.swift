@@ -121,7 +121,9 @@ final class Engine: Native.Listener {
       let usesGemini = s.engine == "gemini" && s.targetLanguage == "tr"
         && !s.geminiKey.trimmingCharacters(in: .whitespaces).isEmpty
       options.engineId = Engine.effectiveEngine(s)
-      options.model = usesGemini ? GeminiModels.resolve(s.geminiModel) : ""
+      // Talimat değişince eski üslupla saklanmış çeviriler gelmesin: kararlı kısa özet modele eklenir (boşsa eklenmez).
+      let noteTag = GeminiStyleNote.cacheTag(s.geminiStyleNote)
+      options.model = usesGemini ? GeminiModels.resolve(s.geminiModel) + (noteTag.isEmpty ? "" : "+" + noteTag) : ""
       options.sourceLanguage = s.sourceLanguage
       options.targetLanguage = s.targetLanguage
       let glossary = s.sourceLanguage == "en" && s.targetLanguage == "tr" ? s.glossary : ""
@@ -347,7 +349,7 @@ final class Engine: Native.Listener {
       }
       if now.style != before.style, self.server.isStarted { self.server.sendStyle(now.style) }
       guard self.running || self.demoTimer != nil else { return }
-      if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.engineFailover != before.engineFailover || now.sourceLanguage != before.sourceLanguage
+      if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.geminiStyleNote != before.geminiStyleNote || now.engineFailover != before.engineFailover || now.sourceLanguage != before.sourceLanguage
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled
         || now.packChoice != before.packChoice {
         self.reader?.rebuild(settings: now)

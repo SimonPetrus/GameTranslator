@@ -37,6 +37,8 @@ struct Settings: Equatable {
   var geminiKey = ""
   /// Gemini modeli (ai-models.json'daki kimlikler); bilinmeyen değer varsayılana döner.
   var geminiModel = GeminiModels.defaultId
+  /// Gemini'ye giden isteme eklenen kısa üslup notu (yalnız iOS'ta; en çok 200 karakter, boş: not yok).
+  var geminiStyleNote = ""
   /// DeepL ya da Gemini kotası dolunca anahtarı girilmiş diğer motora, o da olmazsa Google'a geç (yalnız iOS'ta).
   var engineFailover = true
   var style = SubtitleStyle()
@@ -80,6 +82,7 @@ struct Settings: Equatable {
       "deepLKey": deepLKey,
       "geminiKey": geminiKey,
       "geminiModel": geminiModel,
+      "geminiStyleNote": geminiStyleNote,
       "engineFailover": engineFailover,
       "autoWake": autoWake,
       "glossary": glossary,
@@ -122,6 +125,7 @@ struct Settings: Equatable {
     out.deepLKey = string(json["deepLKey"], "")
     out.geminiKey = string(json["geminiKey"], "")
     out.geminiModel = GeminiModels.resolve(string(json["geminiModel"], GeminiModels.defaultId))
+    out.geminiStyleNote = GeminiStyleNote.clean(string(json["geminiStyleNote"], ""))
     out.engineFailover = bool(json["engineFailover"], true)
     out.autoWake = bool(json["autoWake"], true)
     out.glossary = string(json["glossary"], "")

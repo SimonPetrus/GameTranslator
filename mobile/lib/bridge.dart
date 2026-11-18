@@ -271,6 +271,7 @@ class AppSettings {
   String get sourceLanguage => json['sourceLanguage'] as String? ?? 'en';
   String get deepLKey => json['deepLKey'] as String? ?? '';
   String get geminiKey => json['geminiKey'] as String? ?? '';
+  String get geminiStyleNote => json['geminiStyleNote'] as String? ?? '';
   bool get engineFailover => json['engineFailover'] as bool? ?? true;
   bool get autoWake => json['autoWake'] as bool? ?? true;
   String get glossary => json['glossary'] as String? ?? '';

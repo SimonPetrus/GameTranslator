@@ -64,7 +64,7 @@ final class GeminiTranslator: TextTranslator {
     request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     let body: [String: Any] = [
-      "systemInstruction": ["parts": [["text": Self.systemPrompt]]],
+      "systemInstruction": ["parts": [["text": GeminiStyleNote.compose(Self.systemPrompt, note: Store.shared.settings.geminiStyleNote)]]],
       "contents": [["role": "user", "parts": [["text": Self.userMessage([text], context: previous)]]]],
       "generationConfig": ["maxOutputTokens": 1024],
     ]
@@ -126,7 +126,7 @@ final class GeminiTranslator: TextTranslator {
     request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     let body: [String: Any] = [
-      "systemInstruction": ["parts": [["text": systemPrompt]]],
+      "systemInstruction": ["parts": [["text": GeminiStyleNote.compose(systemPrompt, note: Store.shared.settings.geminiStyleNote)]]],
       "contents": [["role": "user", "parts": [["text": userMessage(["Let's get out of here before they find us."], context: [])]]]],
       "generationConfig": ["maxOutputTokens": 1024],
     ]

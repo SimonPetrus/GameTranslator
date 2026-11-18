@@ -189,6 +189,7 @@ class _SettingsTabState extends State<SettingsTab> {
   AppSettings? settings;
   final deepLController = TextEditingController();
   final geminiController = TextEditingController();
+  final geminiStyleController = TextEditingController();
   bool checkingGemini = false;
   bool updatingPatches = false;
   (bool, String)? patchesResult;
@@ -307,6 +308,7 @@ class _SettingsTabState extends State<SettingsTab> {
     if (current != null) Bridge.saveSettings(current);
     deepLController.dispose();
     geminiController.dispose();
+    geminiStyleController.dispose();
     super.dispose();
   }
 
@@ -360,6 +362,7 @@ class _SettingsTabState extends State<SettingsTab> {
       settings = fresh;
       deepLController.text = fresh.deepLKey;
       geminiController.text = fresh.geminiKey;
+      geminiStyleController.text = fresh.geminiStyleNote;
     });
     L.apply(fresh.uiLanguage);
     toast(context, L.t('Ayarlar sıfırlandı.', 'Settings reset.'));
@@ -461,6 +464,7 @@ class _SettingsTabState extends State<SettingsTab> {
       preview = image;
       deepLController.text = loaded.deepLKey;
       geminiController.text = loaded.geminiKey;
+      geminiStyleController.text = loaded.geminiStyleNote;
     });
   }
 
@@ -873,6 +877,29 @@ class _SettingsTabState extends State<SettingsTab> {
                 subtitle: geminiModels[geminiModelId] ?? '',
                 chevron: true,
                 onTap: pickGeminiModel,
+              ),
+            if (Platform.isIOS && (s.engine == 'gemini' || (s.engine == 'deepl' && s.engineFailover)))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: geminiStyleController,
+                      maxLength: 200,
+                      decoration: InputDecoration(
+                        hintText: L.t('Ek talimat (isteğe bağlı), ör. Samimi dille çevir', 'Extra instruction (optional), e.g. Translate casually'),
+                        counterText: '',
+                      ),
+                      onChanged: (value) => change((s) => s.json['geminiStyleNote'] = value),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      L.t("Gemini'ye üslup notu. Yalnız Gemini çevirirken etkilidir.", 'A style note for Gemini. Only applies when Gemini is translating.'),
+                      style: Txt.footnote.copyWith(color: Tokens.textSecondary),
+                    ),
+                  ],
+                ),
               ),
             if (Platform.isIOS && (s.engine == 'deepl' || s.engine == 'gemini'))
               Cell(
