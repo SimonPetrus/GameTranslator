@@ -3,13 +3,15 @@
 iPhone sürümü App Store'da değil. İmzasız bir IPA dosyası olarak dağıtılır; her kullanıcı kendi sertifikasıyla imzalayıp
 kurar (Feather, Sideloadly, AltStore gibi araçlarla).
 
-## Bu sürümde yeni (1.8.4)
+## Bu sürümde yeni (1.8.5)
 
-- **Çok konuşmacılı altyazı:** Her konuşma artık kendi satırında; önceden tek paragrafa akıyordu. Aynı kişinin iki satıra sarılmış cümlesi birleşik kalır. TV uygulaması 1.0.5 ya da üstü gerekir.
-- **"Orijinal altyazının üstünü ört" kipi:** Yazı artık bazen aşırı büyümüyor; oyunun satır yüksekliği daha sağlam ölçülüyor. Yeni ayar: "Oyunun yazı boyuna uy" (varsayılan açık; kapatınca yazı ayardaki boyda kalır).
-- **Tuş ipuçları** ("Hold L2 to aim" gibi; tüm PlayStation tuşları) artık çevrilmiyor ve çevirinin kutusuyla örtülmüyor ("Tuş yazılarını gizle" açıkken).
+- **Tanı kaydı** (Ayarlar › Tanı kaydı): Bir sorunu göstermek için kaydı başlat, oyna, durdur ve dosyayı paylaş. Kayıtta oyun görüntüleri, okunan yazılar ve çeviriler bulunur; API anahtarları ve PSN hesabı kaydedilmez; dosya sen paylaşmadıkça telefondan çıkmaz. En çok 15 dakika / 40 MB.
+- **TV bağlantısı:** Telefon artık TV'ye çeviri yapıp yapmadığını bildiriyor; TV telefonu boşta sayıp ağı yeniden taramıyor (TV uygulaması 1.0.7 ve üstü).
+- **"Üstünü ört" kipi, çok konuşmacılı altyazı:** Yeni TV uygulaması (1.0.8) ile her çeviri, oyundaki kendi satırının üstüne oturur. Eski TV uygulamasında görünüm değişmez.
 
 ## Önceki sürümler
+
+- **1.8.4:** Çok konuşmacılı altyazıda her konuşma kendi satırında; örtme kipinde yazı boyu düzeltmesi ve "Oyunun yazı boyuna uy" ayarı; tuş ipuçları artık çevrilmiyor.
 
 - **1.8.3:** Ana ekran durum düzeltmesi, ek okuma alanı ve durdurma düzeltmeleri, Gemini ek talimat kutusu.
 - **1.8.2:** DeepL ya da Gemini kotası dolunca (ya da anahtar reddedilince) diğer motora, o da olmazsa Google'a otomatik geçiş; Ayarlar'da "Kota dolunca diğer motora geç" anahtarı; sistem durumunda çalışan ve bekleyen motor.
