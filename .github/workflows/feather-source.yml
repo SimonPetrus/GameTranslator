@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Yayın etiketi (ör. ios-v1.0.6)'
+        description: 'Yayın etiketi (ör. ios-v1.8.0)'
         required: true
 
 permissions:
@@ -86,7 +86,8 @@ jobs:
         run: |
           python3 feather/build_source.py --template feather/source.template.json \
             --ipa "$(ls work/*.ipa | head -1)" --tag "$TAG" --date "$(cat work/date.txt)" --repo "$REPO" \
-            --existing work/fs/source.json --out work/fs/source.json
+            --existing work/fs/source.json --out work/fs/source.json \
+            --notes "$(cat "feather/notlar/${TAG#ios-v}.md" 2>/dev/null || true)"
           python3 -m json.tool work/fs/source.json > /dev/null
           cat work/fs/source.json
 

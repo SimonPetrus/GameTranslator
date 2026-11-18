@@ -3,6 +3,18 @@
 iPhone sürümü App Store'da değil. İmzasız bir IPA dosyası olarak dağıtılır; her kullanıcı kendi sertifikasıyla imzalayıp
 kurar (Feather, Sideloadly, AltStore gibi araçlarla).
 
+## Bu sürümde yeni (1.8.0)
+
+- **Yazı rengi TV'ye ulaşıyor.** Beş renk: beyaz, sarı, camgöbeği, yeşil, turuncu.
+- **Altyazı görünümü:** Sabit yerleşimde ekran konumu, "önceki satır da görünsün" ayarı; önizleme seçtiğin stili gösterir.
+- **Okuma bölgesi:** Hazır seçimler, altyazı alanını otomatik bulma (ayar, varsayılan kapalı) ve en çok 3 ek okuma alanı.
+- **Daha sağlam okuma:** Parlak zeminde satır tutulur, takılan okuyucu toparlanır, kenara taşan yazı atılır, zayıf okumada büyütüp yeniden okunur; tuş yazıları daha iyi temizlenir.
+- **Daha iyi çeviri (İngilizce → Türkçe):** Oyun deyimleri, hazır kısa cevaplar, noktalama ve sen/siz düzeltmeleri, kısa satıra bağlam, özel adlar korunur. Okumaya olumsuzluk ya da sayı eklenince satır yeniden çevrilir; zaten Türkçe olan satır çevrilmez.
+- **Çeviri ayarları:** Kalıcı çeviri hafızası, Gemini model seçimi ve doğru bekleme süresi, 27 çeviri dili.
+- **Yeni araçlar:** Altyazı geçmişi, sistem durumu, PS5'siz deneme, çökme kaydı, tüm ayarları sıfırla, ayar yedeği.
+- **Bağlantı kopunca** bekleme süresi giderek artar.
+- **İngilizce arayüz** ve dil düğmesi.
+
 ## Gerekenler
 
 - iOS 15 ve üstü bir iPhone (internetsiz (cihazda) çeviri için iOS 26 gerekir).
