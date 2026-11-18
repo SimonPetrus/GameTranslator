@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 
 import 'l10n.dart';
+import 'state_hub.dart';
 
 /// Çekirdeğin (Android tarafındaki Engine) arayüze bildirdiği durum.
 class EngineState {
@@ -297,8 +298,34 @@ class Bridge {
   static const _channel = MethodChannel('gt/bridge');
   static const _events = EventChannel('gt/events');
 
-  static Stream<EngineState> get states =>
-      _events.receiveBroadcastStream().map((event) => EngineState.fromMap(event as Map<Object?, Object?>));
+  static final StateHub<EngineState> _hub =
+      StateHub<EngineState>((event) => EngineState.fromMap(event as Map<Object?, Object?>));
+  static bool _listening = false;
+
+  /// Kanalı uygulama ömrü boyunca tek kez dinler; abonelik hiç iptal edilmez.
+  static void _ensureListening() {
+    if (_listening) return;
+    _listening = true;
+    _events.receiveBroadcastStream().listen(_hub.feed, onError: (Object _) {}, cancelOnError: false);
+    refreshState();
+  }
+
+  /// Paylaşımlı akış: sayfalar kendi aboneliklerini iptal etse de kanal açık kalır.
+  static Stream<EngineState> get states {
+    _ensureListening();
+    return _hub.stream;
+  }
+
+  /// Son bilinen durum; henüz olay gelmediyse null.
+  static EngineState? get latestState => _hub.latest;
+
+  /// Durumu çekip paylaşımlı dağıtıma verir; hata sessizce geçilir.
+  static Future<void> refreshState() async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('getState');
+      if (map != null) _hub.feed(map);
+    } catch (_) {}
+  }
 
   static Future<EngineState> state() async =>
       EngineState.fromMap((await _channel.invokeMethod<Map<Object?, Object?>>('getState'))!);

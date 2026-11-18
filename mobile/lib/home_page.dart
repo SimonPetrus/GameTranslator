@@ -26,7 +26,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static List<(IconData, IconData, String)> get tabs => [
         (CupertinoIcons.captions_bubble, CupertinoIcons.captions_bubble_fill, L.t('Çeviri', 'Translate')),
         (CupertinoIcons.book, CupertinoIcons.book_fill, L.t('Rehber', 'Guide')),
@@ -52,6 +52,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat(reverse: true);
     subscription = Bridge.states.listen((next) {
       if (!mounted) return;
@@ -71,10 +72,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     subscription?.cancel();
     previewTimer?.cancel();
     pulse.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    if (lifecycle == AppLifecycleState.resumed) Bridge.refreshState();
   }
 
   bool get active => state.running || (state.phase != 'idle' && state.phase != 'failed');
