@@ -6,6 +6,12 @@ kurar (Feather, Sideloadly, AltStore gibi araçlarla).
 ## Bu sürümde yeni (1.8.3)
 
 - **Önemli düzeltme: ana ekran durumu.** 1.8.0–1.8.2'de ana ekran durum bilgisini alamıyordu; telefon Wi-Fi'a bağlıyken "Wi-Fi yok" yazıyor, başlat düğmesi tepkisiz görünüyor, ekran güncellenmiyordu. Düzeltildi. Uygulama arka plandan dönünce durum da tazeleniyor. 1.8.0–1.8.2 kullananların güncellemesi gerekir.
+- **Ek okuma alanı:** Artık TV'deki diyalog altyazısını silmiyor; ek alan gösterimi bitince diyalog çevirisi geri geliyor, ek alan satırı da geçmişte kaybolmuyor.
+- **Çeviri durdurulunca** TV'de son altyazı yeniden belirmiyor.
+- **"Tuş yazılarını gizle"** ayarı akış sürerken de hemen etkili.
+- **Deneme altyazısı** gönderirken yapılan ayar değişikliği artık kaybolmuyor.
+- **Okuma alanı sürgüleri** uçta doğru çerçeveyi gösteriyor.
+- **Yeni: Gemini için ek talimat kutusu.** Kısa üslup notu yazılır (en çok 200 karakter); yalnız Gemini çevirirken etkilidir. Dört hazır seçenek: Samimi, Argo, Resmî, Kısa.
 
 ## Önceki sürümler
 
