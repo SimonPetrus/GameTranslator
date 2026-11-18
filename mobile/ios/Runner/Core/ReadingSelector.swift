@@ -216,26 +216,75 @@ enum LineHeight {
   /// yazının gerçek boyundan alçaktır. Komşularının [TALL_FACTOR] katından uzun parça satır sayısına bölünür; kalanlardan
   /// üstteki ortanca alınır (alt çıkıntılı satır çıkıntısızdan biraz yüksektir; gerçek boy büyüğe yakındır).
   static func estimate(_ pieces: [TextObservation], frameHeight: Int) -> Double? {
-    guard frameHeight > 0 else { return nil }
+    explain(pieces, frameHeight: frameHeight).result
+  }
+
+  /// [estimate]'in bütün ara değerleri (tanı kaydı): tahmin yalnız bu hesaptan çıkar, ikisi ayrışamaz.
+  struct Trace {
+    struct Piece {
+      let text: String
+      let characters: Int
+      let heightPx: Int
+      let widthPx: Int
+      /// Yükseklik / ortalama karakter genişliği; kısa parçada nil.
+      let ratio: Double?
+      /// Oran'dan bulunan satır sayısı (√(oran / 2,6) yuvarlanmış); kısa parçada nil.
+      let linesGuess: Double?
+      /// Bu parçanın tek satır yüksekliği (piksel; satır sayısına bölünmüş).
+      let perLine: Double
+    }
+
+    var frameHeight = 0
+    /// Uzun parça (≥ MIN_CHARACTERS) vardı ve yalnız onlar kullanıldı.
+    var onlyLong = false
+    var pieces: [Piece] = []
+    /// Parça tek satır yüksekliklerinin küçük ortancası.
+    var typical = 0.0
+    /// Komşularının TALL_FACTOR katından uzun olanlar bölündükten sonraki değerler.
+    var single: [Double] = []
+    var upper = 0.0
+    var ratio = 0.0
+    /// Kabul aralığında mı (MIN_RATIO…MAX_RATIO).
+    var inRange = false
+    var result: Double?
+  }
+
+  static func explain(_ pieces: [TextObservation], frameHeight: Int) -> Trace {
+    var trace = Trace()
+    trace.frameHeight = frameHeight
+    guard frameHeight > 0 else { return trace }
     let measured = pieces.filter { $0.height > 0 }
     let long = measured.filter { $0.text.count >= MIN_CHARACTERS && $0.width > 0 }
     let used = long.isEmpty ? measured : long
-    let heights = used.map { piece -> Double in
+    trace.onlyLong = !long.isEmpty
+    trace.pieces = used.map { piece -> Trace.Piece in
       let h = Double(piece.height)
-      guard piece.text.count >= MIN_CHARACTERS, piece.width > 0 else { return h }
-      let ratio = h / (Double(piece.width) / Double(piece.text.count))
+      let characters = piece.text.count
+      guard characters >= MIN_CHARACTERS, piece.width > 0 else {
+        return Trace.Piece(text: piece.text, characters: characters, heightPx: piece.height, widthPx: piece.width,
+                           ratio: nil, linesGuess: nil, perLine: h)
+      }
+      let ratio = h / (Double(piece.width) / Double(characters))
       let lines = (ratio / SINGLE_LINE_RATIO).squareRoot().rounded()
-      return lines >= 2 ? h / lines : h
+      return Trace.Piece(text: piece.text, characters: characters, heightPx: piece.height, widthPx: piece.width,
+                         ratio: ratio, linesGuess: lines, perLine: lines >= 2 ? h / lines : h)
     }
-    guard !heights.isEmpty else { return nil }
+    let heights = trace.pieces.map(\.perLine)
+    guard !heights.isEmpty else { return trace }
     let typical = lowerMedian(heights)
+    trace.typical = typical
     // Komşularından belirgin uzun parça kaç satırsa ona bölünür.
     let single = heights.map { h -> Double in
       guard typical > 0, h >= typical * TALL_FACTOR else { return h }
       return h / (h / typical).rounded()
     }
-    let ratio = upperMedian(single) / Double(frameHeight)
-    return ratio >= MIN_RATIO && ratio <= MAX_RATIO ? ratio : nil
+    trace.single = single
+    trace.upper = upperMedian(single)
+    let ratio = trace.upper / Double(frameHeight)
+    trace.ratio = ratio
+    trace.inRange = ratio >= MIN_RATIO && ratio <= MAX_RATIO
+    trace.result = trace.inRange ? ratio : nil
+    return trace
   }
 
   /// Büyük olan ortanca (çift sayıda değerde üstteki).
@@ -275,6 +324,9 @@ struct LineHeightTracker {
   }
 
   mutating func reset() { recent.removeAll() }
+
+  /// Ortancası alınan son tahminler, eskiden yeniye (tanı kaydı).
+  var window: [Double] { recent }
 }
 
 /// Yeniden okuma sıklığını sınırlar (saf; saat dışarıdan).

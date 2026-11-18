@@ -27,6 +27,7 @@ class EngineState {
     this.nativeAvailable = true,
     this.demo,
     this.autoRegion,
+    this.diagnostics,
   });
 
   /// idle, starting, waking, connecting, streaming, reconnecting, stopping, failed
@@ -54,6 +55,9 @@ class EngineState {
 
   /// Otomatik bulunan altyazı alanı (top, bottom, left, right; 0–1); bulunmadıysa null.
   final ({double top, double bottom, double left, double right})? autoRegion;
+
+  /// Tanı kaydının durumu (yalnız iOS; Android'de alan yok, null).
+  final DiagnosticsState? diagnostics;
 
   static ({double top, double bottom, double left, double right})? _parseAuto(Object? raw) {
     if (raw is! Map) return null;
@@ -84,7 +88,150 @@ class EngineState {
         nativeAvailable: map['nativeAvailable'] as bool? ?? true,
         demo: map['demo'] as bool?,
         autoRegion: _parseAuto(map['autoRegion']),
+        diagnostics: DiagnosticsState.parse(map['diagnostics']),
       );
+}
+
+/// Tanı kaydının ana ekrana taşınan özeti: kayıt sürüyor mu, sayaçlar ve son duruşun nedeni.
+class DiagnosticsState {
+  const DiagnosticsState({this.recording = false, this.seconds = 0, this.events = 0, this.bytes = 0, this.frames = 0, this.lastStop = '', this.stops = 0});
+
+  final bool recording;
+  final int seconds;
+  final int events;
+  final int bytes;
+  final int frames;
+
+  /// manual, duration, size, frames, failed, terminated ya da boş.
+  final String lastStop;
+
+  /// Her duruşta artar (kendiliğinden duruş bildirimi için).
+  final int stops;
+
+  /// Kendiliğinden (sınır dolunca ya da hata yüzünden) mi durdu.
+  bool get stoppedByLimit => const {'duration', 'size', 'frames', 'failed'}.contains(lastStop);
+
+  static DiagnosticsState? parse(Object? raw) {
+    if (raw is! Map) return null;
+    return DiagnosticsState(
+      recording: raw['recording'] as bool? ?? false,
+      seconds: (raw['seconds'] as num?)?.toInt() ?? 0,
+      events: (raw['events'] as num?)?.toInt() ?? 0,
+      bytes: (raw['bytes'] as num?)?.toInt() ?? 0,
+      frames: (raw['frames'] as num?)?.toInt() ?? 0,
+      lastStop: raw['lastStop'] as String? ?? '',
+      stops: (raw['stops'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Telefonda saklanan bir tanı kaydı.
+class DiagnosticsSession {
+  const DiagnosticsSession({
+    required this.id,
+    required this.version,
+    required this.startedAt,
+    required this.seconds,
+    required this.events,
+    required this.frames,
+    required this.bytes,
+    required this.reason,
+    required this.interrupted,
+  });
+
+  final String id;
+  final String version;
+  final DateTime? startedAt;
+  final double seconds;
+  final int events;
+  final int frames;
+  final int bytes;
+  final String reason;
+  final bool interrupted;
+}
+
+/// Tanı sayfasının verisi: süren kayıt, sınırlar ve saklanan kayıtlar.
+class DiagnosticsStatus {
+  const DiagnosticsStatus({
+    this.recording = false,
+    this.seconds = 0,
+    this.events = 0,
+    this.bytes = 0,
+    this.frames = 0,
+    this.lastStop = '',
+    this.stops = 0,
+    this.maxSeconds = 900,
+    this.maxBytes = 40 * 1024 * 1024,
+    this.maxFrames = 600,
+    this.maxSessions = 3,
+    this.sessions = const [],
+  });
+
+  final bool recording;
+  final double seconds;
+  final int events;
+  final int bytes;
+  final int frames;
+  final String lastStop;
+  final int stops;
+  final double maxSeconds;
+  final int maxBytes;
+  final int maxFrames;
+  final int maxSessions;
+
+  /// Yeniden eskiye.
+  final List<DiagnosticsSession> sessions;
+
+  /// 1970'ten ms; yoksa ya da sıfırsa null.
+  static DateTime? _time(Object? raw) {
+    final ms = raw is num ? raw.toInt() : 0;
+    return ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null;
+  }
+
+  factory DiagnosticsStatus.fromMap(Map<Object?, Object?> map) {
+    final limits = map['limits'] is Map ? (map['limits'] as Map).cast<Object?, Object?>() : const <Object?, Object?>{};
+    final raw = map['sessions'];
+    return DiagnosticsStatus(
+      recording: map['recording'] as bool? ?? false,
+      seconds: (map['seconds'] as num?)?.toDouble() ?? 0,
+      events: (map['events'] as num?)?.toInt() ?? 0,
+      bytes: (map['bytes'] as num?)?.toInt() ?? 0,
+      frames: (map['frames'] as num?)?.toInt() ?? 0,
+      lastStop: map['lastStop'] as String? ?? '',
+      stops: (map['stops'] as num?)?.toInt() ?? 0,
+      maxSeconds: (limits['seconds'] as num?)?.toDouble() ?? 900,
+      maxBytes: (limits['bytes'] as num?)?.toInt() ?? 40 * 1024 * 1024,
+      maxFrames: (limits['frames'] as num?)?.toInt() ?? 600,
+      maxSessions: (limits['sessions'] as num?)?.toInt() ?? 3,
+      sessions: [
+        if (raw is List)
+          for (final item in raw)
+            if (item is Map && item['id'] is String)
+              DiagnosticsSession(
+                id: item['id'] as String,
+                version: item['version'] as String? ?? '',
+                startedAt: _time(item['startedAt']),
+                seconds: (item['seconds'] as num?)?.toDouble() ?? 0,
+                events: (item['events'] as num?)?.toInt() ?? 0,
+                frames: (item['frames'] as num?)?.toInt() ?? 0,
+                bytes: (item['bytes'] as num?)?.toInt() ?? 0,
+                reason: item['reason'] as String? ?? '',
+                interrupted: item['interrupted'] as bool? ?? false,
+              ),
+      ],
+    );
+  }
+}
+
+/// Tanı kaydını başlatmanın sonucu. [error]: busy, full (en çok kayıt sayısında; [oldest] silinmeli), disk, io,
+/// unsupported.
+class DiagnosticsStartResult {
+  const DiagnosticsStartResult({required this.ok, this.error = '', this.detail = '', this.oldest = ''});
+
+  final bool ok;
+  final String error;
+  final String detail;
+  final String oldest;
 }
 
 /// Altyazı geçmişindeki bir satır.
@@ -565,4 +712,65 @@ class Bridge {
 
   static Future<List<String>> logs() async =>
       (await _channel.invokeMethod<List<Object?>>('logs') ?? []).cast<String>();
+
+  /// Tanı kaydının durumu ve saklanan kayıtlar (yalnız iOS; olmazsa null).
+  static Future<DiagnosticsStatus?> diagStatus() async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('diagStatus');
+      return map == null ? null : DiagnosticsStatus.fromMap(map);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Tanı kaydını başlatır. [replaceOldest]: kayıt sayısı doluysa en eski kayıt silinir (kullanıcı onayladıysa).
+  static Future<DiagnosticsStartResult> diagStart({bool replaceOldest = false}) async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('diagStart', {'replaceOldest': replaceOldest}) ?? {};
+      return DiagnosticsStartResult(
+        ok: map['ok'] as bool? ?? false,
+        error: map['error'] as String? ?? '',
+        detail: map['detail'] as String? ?? '',
+        oldest: map['oldest'] as String? ?? '',
+      );
+    } on MissingPluginException {
+      return DiagnosticsStartResult(ok: false, error: 'unsupported', detail: L.t('Bu telefonda desteklenmiyor.', 'Not supported on this phone.'));
+    } on PlatformException {
+      return DiagnosticsStartResult(ok: false, error: 'io', detail: L.t('Kayıt başlatılamadı.', 'The recording could not be started.'));
+    }
+  }
+
+  static Future<void> diagStop() async {
+    try {
+      await _channel.invokeMethod<Object?>('diagStop');
+    } on MissingPluginException {
+      return;
+    } on PlatformException {
+      return;
+    }
+  }
+
+  static Future<bool> diagDelete(String id) async {
+    try {
+      return await _channel.invokeMethod<bool>('diagDelete', {'id': id}) ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Kaydı tek .zip dosyasına paketleyip iOS paylaşım sayfasını açar. (açıldı mı, hata metni)
+  static Future<(bool, String)> diagShare(String id) async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('diagShare', {'id': id}) ?? {};
+      return (map['ok'] as bool? ?? false, map['error'] as String? ?? '');
+    } on MissingPluginException {
+      return (false, L.t('Bu telefonda desteklenmiyor.', 'Not supported on this phone.'));
+    } on PlatformException {
+      return (false, L.t('Paylaşılamadı.', 'Could not share.'));
+    }
+  }
 }

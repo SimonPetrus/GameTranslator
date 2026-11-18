@@ -42,6 +42,8 @@ final class VisionReader: FrameReader {
   private var healthLanguage = ""
   private var stuckRecoveries = 0
   private let sink: ServerSink
+  /// Tanı kaydı: son yazılan okumanın özeti (yalnız okuma kuyruğunda); okuma sonucu değişmedikçe yeniden yazılmaz.
+  private var diagLastReadKey = ""
 
   init(engine: Engine) {
     self.engine = engine
@@ -173,6 +175,21 @@ final class VisionReader: FrameReader {
       self.lastBox = nil
       self.lastLineBoxes = []
       self.pipeline = built
+      self.diagLastReadKey = ""
+      Diag.emit("engine") {
+        var fields: DiagFields = ["what": .string("reader-rebuild"), "ocrLanguage": DiagValue.optional(self.ocrLanguage)]
+        fields["chain"] = DiagValue.strings(chainOrder)
+        fields["engine"] = .string(s.engine)
+        fields["effectiveEngine"] = .string(Engine.effectiveEngine(s))
+        fields["glossaryTerms"] = .int(glossary.count)
+        fields["packs"] = .bool(s.packsEnabled && PackTranslation.applies(s.sourceLanguage, s.targetLanguage))
+        fields["hideButtonHints"] = .bool(s.hideButtonHints)
+        fields["matchGameTextSize"] = .bool(s.matchGameTextSize)
+        fields["placement"] = .string(s.style.placement)
+        fields["autoRegion"] = .bool(s.autoRegion)
+        fields["region"] = DiagValue.box(TextBox(left: s.region.left, top: s.region.top, right: s.region.right, bottom: s.region.bottom))
+        return fields
+      }
     }
   }
 
@@ -196,6 +213,11 @@ final class VisionReader: FrameReader {
       self.scheduler.reset()
       _ = self.whenCurrent(target.token) { self.retryLimiter.reset() }
       self.pipeline?.reset()
+      self.diagLastReadKey = ""
+      Diag.emit("engine") {
+        ["what": .string("reader-reset"), "clearScreen": .bool(clearScreen), "hideButtonHints": .bool(settings.hideButtonHints),
+         "autoRegion": .bool(settings.autoRegion), "matchGameTextSize": .bool(settings.matchGameTextSize)]
+      }
       // Durdurmada: sıfırlamadan önce biten çeviri TV'ye gitmiş olabilir; sıfırlamadan sonra hat eski satır göndermez.
       if clearScreen { self.sink.clear() }
     }
@@ -402,30 +424,51 @@ final class VisionReader: FrameReader {
     let target = currentQueue()
     let semaphore = DispatchSemaphore(value: 0)
     let slot = ExtraSlot()
+    let queued = DispatchTime.now().uptimeNanoseconds
     target.queue.async {
       defer { semaphore.signal() }
-      guard self.isCurrent(target.token) else { return }
+      guard self.isCurrent(target.token) else {
+        slot.stale = true
+        return
+      }
+      slot.waitedMs = Int((DispatchTime.now().uptimeNanoseconds - queued) / 1_000_000)
       slot.pipeline = self.pipeline
       slot.resets = self.pipeline?.resetCount ?? 0
       slot.lines = self.extraLines(frame, r, token: target.token)
     }
+    /// Tanı kaydı: ek alan denemesinin kesildiği adım.
+    func fail(_ step: String, _ detail: DiagFields = DiagFields()) {
+      Diag.emit("extra") {
+        var fields: DiagFields = ["what": .string("fail"), "step": .string(step), "region": .string(r.name)]
+        for item in detail.items { fields[item.key] = item.value }
+        fields["error"] = .string(failed.error)
+        return fields
+      }
+    }
     if semaphore.wait(timeout: .now() + 12) == .timedOut {
       failed.error = Lang.t("Okuma zaman aşımına uğradı; yeniden deneyin.", "Reading timed out; try again.")
+      fail("ocr-timeout", ["seconds": .int(12)])
       return failed
     }
     guard let pipeline = slot.pipeline, let lines = slot.lines else {
       failed.error = Lang.t("Alan okunamadı; yeniden deneyin.", "The area could not be read; try again.")
+      let step = slot.stale ? "reader-replaced" : slot.pipeline == nil ? "no-pipeline" : "ocr-failed"
+      fail(step, ["waitedMs": .int(slot.waitedMs)])
       return failed
     }
     let source = ExtraRegion.joinLines(lines.map { OcrNoise.clean($0) })
     if source.isEmpty {
       failed.error = Lang.t("Bu alanda okunacak yazı bulunamadı.", "No text to read was found in this area.")
+      fail("ocr-empty", ["lines": DiagValue.strings(lines)])
       return failed
     }
     failed.source = source
+    let translateStarted = DispatchTime.now().uptimeNanoseconds
     let translated = pipeline.translateOnce(source)
+    let translateMs = Int((DispatchTime.now().uptimeNanoseconds - translateStarted) / 1_000_000)
     guard let text = translated.text, !text.isEmpty else {
       failed.error = Lang.t("Çeviri alınamadı; bağlantıyı kontrol edin.", "Translation failed; check your connection.")
+      fail("translate-empty", ["source": .string(source), "origin": .string(translated.origin), "ms": .int(translateMs)])
       return failed
     }
     // Ek alan çevirisi 8 sn kalır; kutu verilmez, TV kendi yerleşimini kullanır. Hat bu arada sıfırlandıysa
@@ -433,7 +476,13 @@ final class VisionReader: FrameReader {
     guard let mark = pipeline.showAside(text, durationMs: Self.extraShowMs, unlessResetSince: slot.resets) else {
       failed.error = Lang.t("Çeviri bu arada durduruldu ya da yeniden kuruldu; yeniden deneyin.",
                             "Translation was stopped or restarted meanwhile; try again.")
+      fail("pipeline-reset", ["source": .string(source), "text": .string(text)])
       return failed
+    }
+    Diag.emit("extra") {
+      ["what": .string("shown"), "region": .string(r.name), "source": .string(source), "text": .string(text),
+       "origin": .string(translated.origin), "translateMs": .int(translateMs), "tvClients": .int(engine.server.connectedClients),
+       "showMs": .int(Self.extraShowMs)]
     }
     Engine.history.record(source: source, text: text, engine: translated.origin, aside: true)
     engine.log(2, "ek alan (\(r.name)): \"\(source)\" → \"\(text)\"")
@@ -441,7 +490,10 @@ final class VisionReader: FrameReader {
     // durdurma olduysa hat karar verir, bir şey gönderilmez).
     let resume = currentQueue()
     resume.queue.asyncAfter(deadline: .now() + .milliseconds(Self.extraShowMs)) {
-      guard self.isCurrent(resume.token), self.pipeline === pipeline else { return }
+      guard self.isCurrent(resume.token), self.pipeline === pipeline else {
+        Diag.emit("extra") { ["what": .string("resume"), "resumed": .bool(false), "reason": .string("reader-rebuilt")] }
+        return
+      }
       pipeline.resumeAfterAside(mark)
     }
     return ExtraReadResult(ok: true, source: source, text: text, error: "")
@@ -458,12 +510,32 @@ final class VisionReader: FrameReader {
     let cropY = min(max(Int(r.top * Double(fullHeight)), 0), fullHeight - 2)
     let w = min(max(Int((r.right - r.left) * Double(fullWidth)), 1), fullWidth - cropX)
     let h = min(max(Int((r.bottom - r.top) * Double(fullHeight)), 1), fullHeight - cropY)
-    guard let crop = image.cropping(to: CGRect(x: cropX, y: cropY, width: w, height: h)) else { return nil }
-    guard let found = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: false, token: token) else { return nil }
+    guard let crop = image.cropping(to: CGRect(x: cropX, y: cropY, width: w, height: h)) else {
+      Diag.emit("extra") { ["what": .string("fail-detail"), "step": .string("crop"), "crop": .array([.int(cropX), .int(cropY), .int(w), .int(h)])] }
+      return nil
+    }
+    let started = DispatchTime.now().uptimeNanoseconds
+    guard let found = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: false, token: token) else {
+      Diag.emit("extra") { ["what": .string("fail-detail"), "step": .string("vision-error")] }
+      return nil
+    }
     guard isCurrent(token) else { return nil }
     let selected = ReadingSelector.select(found, width: w, height: h)
     let pieces: [Piece] = selected.map { Piece(text: $0.text, left: $0.left, top: $0.top, right: $0.right, bottom: $0.bottom) }
-    return Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight).0
+    let lines = Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight).0
+    Diag.emit("extra") {
+      var f: DiagFields = ["what": .string("ocr"), "region": .string(r.name),
+                           "regionBox": DiagValue.box(TextBox(left: r.left, top: r.top, right: r.right, bottom: r.bottom))]
+      f["crop"] = .array([.int(cropX), .int(cropY), .int(w), .int(h)])
+      f["frame"] = .array([.int(fullWidth), .int(fullHeight)])
+      f["ocrMs"] = .int(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
+      f["ocrLanguage"] = DiagValue.optional(ocrLanguage)
+      f["raw"] = DiagRead.observations(found, cropX: cropX, cropY: cropY, frameWidth: fullWidth, frameHeight: fullHeight)
+      f["selection"] = DiagRead.selection(found, width: w, height: h)
+      f["lines"] = DiagValue.strings(lines)
+      return f
+    }
+    return lines
   }
 
   // MARK: - Okuma
@@ -507,15 +579,28 @@ final class VisionReader: FrameReader {
     }
 
     // İlk okuma tüm bölgede; sonuç yoksa ya da güvensizse sınırlı sıklıkta, ortalanmış bandı büyüterek bir kez daha.
+    let diagOn = Diag.on
+    let ocrStarted = diagOn ? DispatchTime.now().uptimeNanoseconds : 0
     guard let raw = recognize(crop, offsetX: 0, offsetY: 0, scale: 1, timed: true, token: token) else { return }
+    let ocrMs = diagOn ? Int((DispatchTime.now().uptimeNanoseconds - ocrStarted) / 1_000_000) : 0
     guard isCurrent(token) else { return }
     // Tuş ipucu satırları ("Hold L2 to aim") altyazı bloğu seçilmeden önce atılır: ne çevrilir ne de kutuya girer
     // (yoksa ipucu bloğu altyazının yerine seçilebiliyor, çeviri kutusu ipucunu örtüyordu).
     let english = language == "en"
-    let first = hideButtonHints ? ButtonHints.dropHintRows(raw, english: english) : raw
+    let first: [TextObservation]
+    var hintDrops: [(text: String, reason: String)] = []
+    if hideButtonHints && diagOn {
+      // Aynı hesap; tanı kaydı için atılan satırlar ve nedenleri de alınır.
+      let explained = ButtonHints.dropHintRowsExplained(raw, english: english)
+      first = explained.kept
+      hintDrops = explained.dropped
+    } else {
+      first = hideButtonHints ? ButtonHints.dropHintRows(raw, english: english) : raw
+    }
     var selected = ReadingSelector.select(first, width: w, height: h)
     let clock = SubtitleStabilizer.monotonicMillis()
     let band = ReadingSelector.retryBand(width: w, height: h)
+    var reread: DiagValue = .null
     // Boş ekranda yeniden okuma yok; büyütme genişliği sınırlı (çok geniş bölgede küçülür ya da atlanır).
     if ReadingSelector.shouldRetry(rawCount: first.count, selected: selected, lastSubtitleAt: lastSubtitleAt, now: clock),
        let scale = ReadingSelector.retryScale(bandWidth: band.width),
@@ -526,12 +611,20 @@ final class VisionReader: FrameReader {
         guard isCurrent(token) else { return }
         let again = hideButtonHints ? ButtonHints.dropHintRows(rereadRaw, english: english) : rereadRaw
         let retried = ReadingSelector.select(again, width: w, height: h)
-        if ReadingSelector.isBetter(retried, than: selected) { selected = retried }
+        let better = ReadingSelector.isBetter(retried, than: selected)
+        if better { selected = retried }
+        if diagOn {
+          reread = .object(["done": .bool(true), "scale": .double(scale), "better": .bool(better),
+                            "raw": DiagRead.observations(rereadRaw, cropX: cropX, cropY: cropY, frameWidth: fullWidth, frameHeight: fullHeight)])
+        }
+      } else if diagOn {
+        reread = .object(["done": .bool(false), "scale": .double(scale), "error": .string("büyütülmüş okuma yapılamadı")])
       }
     }
     let pieces: [Piece] = selected.map { Piece(text: $0.text, left: $0.left, top: $0.top, right: $0.right, bottom: $0.bottom) }
     var (lines, box, lineBoxes) = Self.rowsWithBoxes(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth,
                                                      fullHeight: fullHeight)
+    let rowLines = lines
     if hideButtonHints {
       // Oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye karışmasın. Satır kutuları satırlarla birlikte süzülür.
       let stripped = lines.map(ButtonHints.strip)
@@ -539,11 +632,18 @@ final class VisionReader: FrameReader {
       lines = stripped.filter { !$0.isEmpty }
       if lines.isEmpty { box = nil }
     }
+    var lineTrace: LineHeight.Trace?
+    var tracked: Double?
     if let box, !pieces.isEmpty {
       // Satır yüksekliği: iki satırı ya da simgeyi kapsayan parçaya karşı sağlam tahmin, son okumaların ortancası;
-      // güvenilir ölçüm yoksa gönderilmez (TV ayardaki boyu kullanır).
-      let line = lineTracker.add(LineHeight.estimate(selected, frameHeight: fullHeight))
+      // güvenilir ölçüm yoksa gönderilmez (TV ayardaki boyu kullanır). Tahmin LineHeight.estimate ile aynı hesaptır.
+      let trace = LineHeight.explain(selected, frameHeight: fullHeight)
+      let line = lineTracker.add(trace.result)
       sink.remember(box, line: line, characters: lines.reduce(0) { $0 + $1.count })
+      if diagOn {
+        lineTrace = trace
+        tracked = line
+      }
     }
     // Kurtarmadan önce başlamış eski okumanın bayat satırları hatta ve ortak duruma gitmez.
     guard isCurrent(token) else { return }
@@ -554,6 +654,41 @@ final class VisionReader: FrameReader {
     lastLines = lines
     lastBox = box
     lastLineBoxes = lineBoxes
+    if diagOn {
+      // Yalnız okuma sonucu (satırlar, kutu, izlenen satır yüksekliği) değiştiğinde; her karede yazılmaz.
+      let key = lines.joined(separator: "\n") + "|" + DiagValue.box(box).json + "|" + DiagValue.optional(tracked).json
+      if key != diagLastReadKey {
+        diagLastReadKey = key
+        let regionName = autoEnabled && finder.band != nil ? "auto" : "main"
+        let match = sink.matchGameTextSize
+        let window = lineTracker.window
+        Diag.emit("read") {
+          var f: DiagFields = ["region": .string(regionName),
+                               "regionBox": DiagValue.box(TextBox(left: r.left, top: r.top, right: r.right, bottom: r.bottom))]
+          f["crop"] = .array([.int(cropX), .int(cropY), .int(w), .int(h)])
+          f["frame"] = .array([.int(fullWidth), .int(fullHeight)])
+          f["ocrMs"] = .int(ocrMs)
+          f["raw"] = DiagRead.observations(raw, cropX: cropX, cropY: cropY, frameWidth: fullWidth, frameHeight: fullHeight)
+          f["hideButtonHints"] = .bool(hideButtonHints)
+          f["hintRowsDropped"] = .array(hintDrops.map { drop -> DiagValue in
+            .object(["text": .string(drop.text), "reason": .string(drop.reason)])
+          })
+          f["selection"] = DiagRead.selection(first, width: w, height: h)
+          f["reread"] = reread
+          f["selected"] = DiagRead.observations(selected, cropX: cropX, cropY: cropY, frameWidth: fullWidth, frameHeight: fullHeight)
+          f["rows"] = DiagValue.strings(rowLines)
+          f["lines"] = DiagValue.strings(lines)
+          f["lineBoxes"] = DiagRead.boxes(lineBoxes)
+          f["box"] = DiagValue.box(box)
+          var height: DiagFields = ["trackerWindow": DiagValue.doubles(window), "trackerMedian": DiagValue.optional(tracked)]
+          height["calc"] = lineTrace.map { DiagRead.lineHeight($0) } ?? .null
+          height["matchGameTextSize"] = .bool(match)
+          height["toSend"] = DiagValue.optional(LineHeight.toSend(tracked, matchGameTextSize: match))
+          f["lineHeight"] = .object(height)
+          return f
+        }
+      }
+    }
     pipeline.onRead(lines, box, lineBoxes: lineBoxes)
   }
 
@@ -676,6 +811,10 @@ private final class ExtraSlot: @unchecked Sendable {
   var pipeline: SubtitlePipeline?
   var resets = 0
   var lines: [String]?
+  /// Okuma sırası gelince okuyucu takılma kurtarmasıyla değişmişti (tanı kaydı).
+  var stale = false
+  /// Okuma kuyruğunda bekleme süresi, ms (tanı kaydı).
+  var waitedMs = 0
 }
 
 /// Çevirinin gittiği yer: TV sunucusu. Okunan yazının yeri ve satır yüksekliği de gider: TV "cover" yerleşiminde
@@ -724,6 +863,7 @@ private final class ServerSink: SubtitleSink {
     var line: Double?
     var source = box
     var sent: [SubtitleRow]?
+    var diag: DiagFields?
     if let box {
       lock.lock()
       let known = lines.last(where: { $0.box == box })
@@ -735,6 +875,28 @@ private final class ServerSink: SubtitleSink {
         source = Self.widened(box, ratio: Double(text.count) / Double(known.characters))
       }
       if covering, let rows, rows.count >= 2 { sent = rows.map { SubtitleRow(box: $0, line: line) } }
+      if Diag.on {
+        // Yazı boyu kararının girdileri: okumadan bilinen satır yüksekliği ve karakter sayısı, ayar, giden değer.
+        var f: DiagFields = ["knownBox": .bool(known != nil), "knownLine": DiagValue.optional(known?.line)]
+        f["knownCharacters"] = known.map { DiagValue.int($0.characters) } ?? DiagValue.null
+        f["matchGameTextSize"] = .bool(match)
+        f["cover"] = .bool(covering)
+        if let known, known.characters > 0 { f["widenRatio"] = .double(Double(text.count) / Double(known.characters)) }
+        diag = f
+      }
+    }
+    if Diag.on {
+      let base = diag ?? DiagFields()
+      Diag.emit("tv", frame: "tv") {
+        var f: DiagFields = ["what": .string("show"), "text": .string(text), "durationMs": .int(durationMs), "replaces": .bool(replaces)]
+        f["box"] = DiagValue.box(box)
+        f["source"] = DiagValue.box(source)
+        f["line"] = DiagValue.optional(line)
+        f["rowsIn"] = rows.map { DiagValue.int($0.count) } ?? DiagValue.null
+        f["rowsSent"] = sent.map { DiagValue.int($0.count) } ?? DiagValue.null
+        for item in base.items { f[item.key] = item.value }
+        return f
+      }
     }
     server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces, source: source, line: line, rows: sent)
   }

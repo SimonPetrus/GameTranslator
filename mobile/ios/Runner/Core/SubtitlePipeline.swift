@@ -188,6 +188,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     let action = stabilizer.feed(text)
+    if Diag.on { diagStabilize(text, action) }
     switch action.kind {
     case .none:
       break
@@ -202,6 +203,7 @@ final class SubtitlePipeline: @unchecked Sendable {
       let number = latest
       onScreen = number
       if let cached = cache.get(key(source)) {
+        Diag.emit("pipeline") { ["what": .string("path"), "number": .int(number), "path": .string("memory"), "source": .string(source)] }
         show(number, source, cached, box, layout, SubtitlePipeline.ON_SCREEN_MS, replaces: revises(source), origin: "cache")
       } else {
         request(number, source, box, layout)
@@ -212,10 +214,34 @@ final class SubtitlePipeline: @unchecked Sendable {
       let number = latest
       onScreen = number
       if let cached = cache.get(key(source)) {
+        Diag.emit("pipeline") { ["what": .string("path"), "number": .int(number), "path": .string("memory"), "source": .string(source)] }
         deliver(number, source, cached, box, layout, origin: "cache")
       } else {
         request(number, source, box, layout)
       }
+    }
+  }
+
+  /// Tanı kaydı: son yazılan kararlılık kararı (kilit altında); aynı karar her karede yeniden yazılmaz.
+  private var diagLastDecision = ""
+
+  /// Kilit altında, yalnız kayıt açıkken: kararlılık kararı (bekletildi / aynı satır / boş / çevir / geri geldi / temizle).
+  private func diagStabilize(_ read: String, _ action: StabilizerAction) {
+    let kind: String
+    switch action.kind {
+    case .none: kind = read.isEmpty ? "empty" : (read == lastShownSource ? "same" : "hold")
+    case .translate: kind = "translate"
+    case .clear: kind = "clear"
+    case .restore: kind = "restore"
+    }
+    let key = kind + "\u{1F}" + read
+    if action.kind == .none && key == diagLastDecision { return }
+    diagLastDecision = key
+    let opens = action.kind == .translate || action.kind == .restore
+    let number = opens ? latest + 1 : latest
+    Diag.emit("pipeline") {
+      ["what": .string("stabilize"), "action": .string(kind), "read": .string(read), "source": DiagValue.optional(action.text),
+       "number": .int(number)]
     }
   }
 
@@ -226,8 +252,12 @@ final class SubtitlePipeline: @unchecked Sendable {
     let known = Set(recentSpeakers)
     translateExecutor { [self] in
       let options = self.options
+      // Tanı kaydı açıksa izlenen adımlar (kapalıyken nil; hiçbir şey kurulmaz).
+      let trace: DiagTrace? = Diag.on ? DiagTrace() : nil
+      let started = trace == nil ? 0 : DispatchTime.now().uptimeNanoseconds
       // Satır zaten Türkçeyse motora gidilmez; sonuç kaynağıyla aynı olduğundan eskiden olduğu gibi gösterilmez.
       if options.skipTurkishSource && TurkishDetect.isTurkish(source) {
+        Diag.emit("pipeline") { ["what": .string("path"), "number": .int(number), "path": .string("turkish-source"), "source": .string(source)] }
         lock.lock()
         defer { lock.unlock() }
         _skipped += 1
@@ -239,10 +269,18 @@ final class SubtitlePipeline: @unchecked Sendable {
       // Birden çok konuşma (etiketli satırlar): her konuşma TV'de kendi satırında; tek satıra düzleştirilmez.
       let turns = packed == nil ? SpeakerTurns.split(source, known: known) : []
       if turns.count > 1 {
-        let result = translateTurns(turns, options: options, remember: true)
+        let result = translateTurns(turns, options: options, remember: true, trace: trace)
+        if let trace {
+          Diag.emit("pipeline") {
+            SubtitlePipeline.diagPath(number: number, source: source, path: result.origin == "cache" ? "disk" : "engine",
+                                      origin: result.origin, options: options, trace: trace, started: started,
+                                      translated: result.text, turns: turns)
+          }
+        }
         lock.lock()
         defer { lock.unlock() }
         guard let translated = result.text, !translated.isEmpty else {
+          Diag.emit("pipeline") { ["what": .string("failed"), "number": .int(number), "source": .string(source), "onScreen": .bool(number == onScreen)] }
           if number == onScreen { stabilizer.forgetSent() }
           onTranslateFailed?(source)
           return
@@ -281,7 +319,7 @@ final class SubtitlePipeline: @unchecked Sendable {
         memoryStep = natural
         origin = "cache"
       } else {
-        translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: context, options: options)
+        translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: context, options: options, trace: trace)
         memoryStep = natural
         origin = SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: FallbackSignal.marked,
                                                answeredBy: FallbackSignal.answeredBy)
@@ -293,6 +331,25 @@ final class SubtitlePipeline: @unchecked Sendable {
       // Konuşmacı belleği diske yazılan metne değil gösterilene uygulanır (oturuma bağlı olduğu için önbelleğe girmez).
       if memoryStep, let current = translated, !current.isEmpty {
         translated = address.apply(current, speaker: AddressMemory.speaker(of: oneLine))
+        if let trace, translated != current { trace.steps.append("address-memory") }
+      }
+      if let trace {
+        if context != nil { trace.steps.append("context") }
+        let path = packed != nil ? "pack" : stock != nil ? "stock" : stored != nil ? "disk" : "engine"
+        let fallback = FallbackSignal.marked
+        let answered = FallbackSignal.answeredBy
+        let finalText = translated
+        Diag.emit("pipeline") {
+          var fields = SubtitlePipeline.diagPath(number: number, source: source, path: path, origin: origin, options: options,
+                                                 trace: trace, started: started, translated: finalText, turns: [])
+          fields["packId"] = DiagValue.optional(packed?.packId)
+          fields["context"] = DiagValue.optional(context)
+          fields["fallbackAnswered"] = .bool(path == "engine" && fallback)
+          fields["answeredBy"] = path == "engine" ? DiagValue.optional(answered) : .null
+          fields["gemini"] = .bool(gemini)
+          fields["natural"] = .bool(natural)
+          return fields
+        }
       }
       lock.lock()
       defer { lock.unlock() }
@@ -307,6 +364,7 @@ final class SubtitlePipeline: @unchecked Sendable {
         onPackHit?(source, packed)
       }
       guard let translated = translated, !translated.isEmpty else {
+        Diag.emit("pipeline") { ["what": .string("failed"), "number": .int(number), "source": .string(source), "onScreen": .bool(number == onScreen)] }
         if number == onScreen { stabilizer.forgetSent() }
         onTranslateFailed?(source)
         return
@@ -314,6 +372,25 @@ final class SubtitlePipeline: @unchecked Sendable {
       if context == nil { cache.set(key(source), translated) }
       deliver(number, source, translated, box, layout, origin: origin)
     }
+  }
+
+  /// Tanı kaydı: çevirinin hangi yoldan geldiği (paket, hazır cevap, disk önbelleği, motor), motor, istek sayısı, süre,
+  /// uygulanan adımlar, motorun ham cevabı ve son metin.
+  static func diagPath(number: Int, source: String, path: String, origin: String, options: PipelineOptions, trace: DiagTrace,
+                       started: UInt64, translated: String?, turns: [String]) -> DiagFields {
+    let ms = Int((DispatchTime.now().uptimeNanoseconds &- started) / 1_000_000)
+    var fields: DiagFields = ["what": .string("translate"), "number": .int(number), "source": .string(source), "path": .string(path)]
+    if !turns.isEmpty { fields["turns"] = DiagValue.strings(turns) }
+    fields["origin"] = .string(origin)
+    fields["engine"] = .string(options.engineId)
+    fields["model"] = .string(options.model)
+    fields["requests"] = .int(trace.calls)
+    fields["ms"] = .int(ms)
+    fields["steps"] = DiagValue.strings(trace.steps)
+    if !trace.names.isEmpty { fields["protectedNames"] = DiagValue.strings(trace.names) }
+    fields["raw"] = DiagValue.optional(trace.raw)
+    fields["text"] = DiagValue.optional(translated)
+    return fields
   }
 
   /// Çeviriyi hangi kaynağın verdiği (en iyi tahmin): yedek motor cevap verdiyse Gemini/DeepL'in yerine Google,
@@ -336,14 +413,30 @@ final class SubtitlePipeline: @unchecked Sendable {
     let semaphore = DispatchSemaphore(value: 0)
     let box = OnceResult()
     translateExecutor { [self] in
-      box.value = performOnce(source)
+      let trace: DiagTrace? = Diag.on ? DiagTrace() : nil
+      let started = trace == nil ? 0 : DispatchTime.now().uptimeNanoseconds
+      let value = performOnce(source, trace: trace)
+      box.value = value
+      if let trace {
+        let options = self.options
+        Diag.emit("extra") {
+          var fields = SubtitlePipeline.diagPath(number: -1, source: source, path: value.origin.isEmpty ? "none" : value.origin,
+                                                 origin: value.origin, options: options, trace: trace, started: started,
+                                                 translated: value.text, turns: [])
+          fields["what"] = .string("translate-once")
+          return fields
+        }
+      }
       semaphore.signal()
     }
-    if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut { return (nil, "") }
+    if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut {
+      Diag.emit("extra") { ["what": .string("translate-timeout"), "seconds": .double(timeoutSeconds), "source": .string(source)] }
+      return (nil, "")
+    }
     return box.value
   }
 
-  private func performOnce(_ source: String) -> (text: String?, origin: String) {
+  private func performOnce(_ source: String, trace: DiagTrace? = nil) -> (text: String?, origin: String) {
     let options = self.options
     if options.skipTurkishSource && TurkishDetect.isTurkish(source) { return (source, "") }
     let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
@@ -352,7 +445,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     let known = Set(recentSpeakers)
     lock.unlock()
     let turns = SpeakerTurns.split(source, known: known)
-    if turns.count > 1 { return translateTurns(turns, options: options, remember: false) }
+    if turns.count > 1 { return translateTurns(turns, options: options, remember: false, trace: trace) }
     let oneLine = KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })
     let natural = options.sourceLanguage == "en" && options.targetLanguage == "tr"
     if natural, let stock = StockLines.lookup(oneLine) { return (stock, "stock") }
@@ -360,7 +453,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     if let diskKey, let stored = options.cache?.get(diskKey) { return (stored, "cache") }
     FallbackSignal.reset()
     let gemini = options.engineId == "gemini" && !geminiBypassed()
-    guard let translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: nil, options: options),
+    guard let translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: nil, options: options, trace: trace),
           !translated.isEmpty else { return (nil, "") }
     let fallback = FallbackSignal.marked
     if !fallback, let diskKey { options.cache?.set(diskKey, translated) }
@@ -372,30 +465,46 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// bağlamı, Türkçe son düzeltme, satır içi sen/siz tutarlılığı. Çevrilemezse nil.
   // [gemini]: PipelineOptions.engineId zaten etkin motordur (Engine: anahtarsız ya da hedef Türkçe değilse "google"); tek kaynak.
   private func translateEngine(_ line: String, natural: Bool, gemini: Bool, context: String?,
-                               options: PipelineOptions) -> String? {
+                               options: PipelineOptions, trace: DiagTrace? = nil) -> String? {
     if !natural {
-      return translator.translate(line).map { KotlinText.trim($0) }
+      trace?.calls += 1
+      let plain = translator.translate(line).map { KotlinText.trim($0) }
+      trace?.raw = plain
+      return plain
     }
     var input = line
     var engine: TextTranslator = translator
     if !gemini {
       input = IdiomNormalizer.apply(input)
+      if let trace, input != line { trace.steps.append("idiom") }
       let names = NameProtection.candidates(input, glossary: options.glossary, known: nameMemory.snapshot)
       nameMemory.remember(names)
       if !names.isEmpty { engine = GlossaryTranslator(NameProtection.glossary(for: names), translator) }
+      if let trace, !names.isEmpty {
+        trace.steps.append("names")
+        trace.names.append(contentsOf: names)
+      }
     }
     TranslationContext.set(context)
     defer { TranslationContext.set(nil) }
+    trace?.calls += 1
     guard let raw = engine.translate(input).map({ KotlinText.trim($0) }), !raw.isEmpty else { return nil }
+    trace?.raw = raw
     let edited = TurkishPolish.apply(raw, source: line)
-    return AddressForm.harmonizeLine(edited)
+    let harmonized = AddressForm.harmonizeLine(edited)
+    if let trace {
+      if edited != raw { trace.steps.append("polish") }
+      if harmonized != edited { trace.steps.append("address-form") }
+    }
+    return harmonized
   }
 
   /// Birden çok konuşmalı altyazı ([SpeakerTurns]): her konuşma kendi satırında çevrilir, satırlar "\n" ile birleşir
   /// (TV satır sonunu gösterir). Disk önbelleğinin anahtarı satır sonlu metindir: tek satıra düzleştirilmiş eski birleşik
   /// çeviriler geri gelmez. Hazır cevap ve kısa satır bağlamı bu yolda yoktur. [remember]: konuşmacı belleği uygulanır
   /// (ana hat). Çevrilemezse metin nil.
-  private func translateTurns(_ turns: [String], options: PipelineOptions, remember: Bool) -> (text: String?, origin: String) {
+  private func translateTurns(_ turns: [String], options: PipelineOptions, remember: Bool,
+                              trace: DiagTrace? = nil) -> (text: String?, origin: String) {
     let natural = options.sourceLanguage == "en" && options.targetLanguage == "tr"
     let gemini = options.engineId == "gemini" && !geminiBypassed()
     let diskKey: String? = options.cache != nil ? options.cacheKey(turns.joined(separator: "\n")) : nil
@@ -410,7 +519,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     }
     if parts == nil {
       FallbackSignal.reset()
-      parts = translateTurnsEngine(turns, natural: natural, gemini: gemini, options: options)
+      parts = translateTurnsEngine(turns, natural: natural, gemini: gemini, options: options, trace: trace)
       origin = SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: FallbackSignal.marked,
                                              answeredBy: FallbackSignal.answeredBy)
       // Yedek motorun çevirisi asıl motorun anahtarıyla diske yazılmaz.
@@ -427,7 +536,8 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// gibi geri konur; gövdeler tek istekte, satır satır ("\n") gider. Motor satır sayısını korumazsa (satır sonlarını
   /// yuttuysa) her gövde ayrı istekle çevrilir. İngilizce→Türkçe adımları ([translateEngine] ile aynı) gövde başına
   /// uygulanır. Çevrilemezse nil; dönen dizi [turns] ile aynı boydadır.
-  private func translateTurnsEngine(_ turns: [String], natural: Bool, gemini: Bool, options: PipelineOptions) -> [String]? {
+  private func translateTurnsEngine(_ turns: [String], natural: Bool, gemini: Bool, options: PipelineOptions,
+                                    trace: DiagTrace? = nil) -> [String]? {
     var heads: [String] = []
     var bodies: [String] = []
     for turn in turns {
@@ -450,17 +560,24 @@ final class SubtitlePipeline: @unchecked Sendable {
       }
       nameMemory.remember(names)
       if !names.isEmpty { engine = GlossaryTranslator(NameProtection.glossary(for: names), translator) }
+      if let trace, !names.isEmpty {
+        trace.steps.append("names")
+        trace.names.append(contentsOf: names)
+      }
     }
     TranslationContext.set(nil)
     var outputs: [String] = []
     if inputs.count > 1 {
       // Motor hiç çeviremediyse gövde gövde yeniden denenmez (boşa istek).
+      trace?.calls += 1
       guard let raw = engine.translate(inputs.joined(separator: "\n")) else { return nil }
+      trace?.raw = raw
       let lines = SpeakerTurns.lines(raw)
-      if lines.count == inputs.count { outputs = lines }
+      if lines.count == inputs.count { outputs = lines } else { trace?.steps.append("turn-lines-mismatch") }
     }
     if outputs.isEmpty {
       for input in inputs {
+        trace?.calls += 1
         guard let raw = engine.translate(input).map({ KotlinText.trim($0) }), !raw.isEmpty else { return nil }
         outputs.append(raw)
       }
@@ -478,9 +595,17 @@ final class SubtitlePipeline: @unchecked Sendable {
   /// Kilit altında çağrılır. Yerine yenisi gelmiş satırın geç kalan çevirisi gösterilmez.
   private func deliver(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?, _ layout: ReadLayout?,
                        origin: String) {
-    if number != latest { return }
+    if number != latest {
+      Diag.emit("pipeline") { ["what": .string("deliver"), "result": .string("stale"), "number": .int(number), "latest": .int(latest)] }
+      return
+    }
     // Çeviri kaynağıyla neredeyse aynıysa metin zaten hedef dildedir.
-    if !stabilizer.shouldSend(source, translated) { return }
+    if !stabilizer.shouldSend(source, translated) {
+      Diag.emit("pipeline") {
+        ["what": .string("deliver"), "result": .string("same-as-source"), "number": .int(number), "text": .string(translated)]
+      }
+      return
+    }
     let duration = number == onScreen ? SubtitlePipeline.ON_SCREEN_MS : SubtitlePipeline.readingTime(translated)
     show(number, source, translated, box, layout, duration, replaces: revises(source), origin: origin)
   }
@@ -516,6 +641,16 @@ final class SubtitlePipeline: @unchecked Sendable {
     }
     displayed = (number: number, text: translated, box: box, rows: rows, durationMs: duration, at: now)
     screenMark += 1
+    Diag.emit("pipeline") {
+      var fields: DiagFields = ["what": .string("show"), "number": .int(number), "source": .string(source), "text": .string(translated)]
+      fields["origin"] = .string(origin)
+      fields["durationMs"] = .int(duration)
+      fields["replaces"] = .bool(replaces)
+      fields["box"] = DiagValue.box(box)
+      fields["layoutLines"] = layout.map { DiagValue.strings($0.lines) } ?? .null
+      fields["rows"] = rows.map { DiagRead.boxes($0) } ?? .null
+      return fields
+    }
     sink.show(translated, durationMs: duration, box: box, replaces: replaces, rows: rows)
     onPair?(source, translated)
     onShown?(source, translated, origin, replaces)
@@ -552,8 +687,17 @@ final class SubtitlePipeline: @unchecked Sendable {
   func showAside(_ text: String, durationMs: Int, unlessResetSince resetsBefore: Int) -> Int? {
     lock.lock()
     defer { lock.unlock() }
-    guard resets == resetsBefore else { return nil }
+    guard resets == resetsBefore else {
+      Diag.emit("extra") {
+        ["what": .string("aside"), "shown": .bool(false), "reason": .string("pipeline-reset"), "resets": .int(resets),
+         "resetsBefore": .int(resetsBefore)]
+      }
+      return nil
+    }
     screenMark += 1
+    Diag.emit("extra") {
+      ["what": .string("aside"), "shown": .bool(true), "text": .string(text), "durationMs": .int(durationMs), "mark": .int(screenMark)]
+    }
     sink.show(text, durationMs: durationMs, box: nil, replaces: false)
     return screenMark
   }
@@ -565,10 +709,20 @@ final class SubtitlePipeline: @unchecked Sendable {
   func resumeAfterAside(_ mark: Int) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    guard mark == screenMark, let current = displayed, current.number == onScreen, current.number == latest else { return false }
+    guard mark == screenMark, let current = displayed, current.number == onScreen, current.number == latest else {
+      Diag.emit("extra") {
+        let reason = mark != screenMark ? "screen-changed" : displayed == nil ? "nothing-displayed" : "line-gone"
+        return ["what": .string("resume"), "resumed": .bool(false), "reason": .string(reason)]
+      }
+      return false
+    }
     let elapsed = Int(((contextClock() - current.at) * 1000).rounded())
     let remaining = current.durationMs - max(0, elapsed)
-    guard remaining >= SubtitlePipeline.RESUME_MIN_MS else { return false }
+    guard remaining >= SubtitlePipeline.RESUME_MIN_MS else {
+      Diag.emit("extra") { ["what": .string("resume"), "resumed": .bool(false), "reason": .string("expired"), "remainingMs": .int(remaining)] }
+      return false
+    }
+    Diag.emit("extra") { ["what": .string("resume"), "resumed": .bool(true), "text": .string(current.text), "remainingMs": .int(remaining)] }
     screenMark += 1
     sink.show(current.text, durationMs: remaining, box: current.box, replaces: false, rows: current.rows)
     return true
@@ -582,6 +736,8 @@ final class SubtitlePipeline: @unchecked Sendable {
     defer { lock.unlock() }
     latest += 1
     resets += 1
+    Diag.emit("pipeline") { ["what": .string("reset"), "resets": .int(resets)] }
+    diagLastDecision = ""
     onScreen = -1
     displayed = nil
     screenMark += 1

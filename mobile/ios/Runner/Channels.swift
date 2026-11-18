@@ -163,6 +163,34 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
         let (ok, detail) = DeepLTranslator.check(key: key)
         DispatchQueue.main.async { result(["ok": ok, "detail": detail]) }
       }
+    case "diagStatus":
+      background.async {
+        let status = Diagnostics.shared.status()
+        DispatchQueue.main.async { result(status) }
+      }
+    case "diagStart":
+      // Bağımsız değişken: {"replaceOldest": Bool} (en eski kayıt silinip yenisi açılır).
+      let replace = args?["replaceOldest"] as? Bool ?? false
+      background.async {
+        let outcome = Diagnostics.shared.start(replaceOldest: replace)
+        DispatchQueue.main.async { result(outcome) }
+      }
+    case "diagStop":
+      background.async {
+        Diagnostics.shared.stop()
+        let status = Diagnostics.shared.status()
+        DispatchQueue.main.async { result(status) }
+      }
+    case "diagDelete":
+      let id = args?["id"] as? String ?? call.arguments as? String ?? ""
+      background.async {
+        let ok = Diagnostics.shared.delete(id)
+        DispatchQueue.main.async { result(ok) }
+      }
+    case "diagShare":
+      // Kayıt zip'e paketlenir ve paylaşım sayfası açılır; dönüş {"ok": Bool, "error"?: String}.
+      let id = args?["id"] as? String ?? call.arguments as? String ?? ""
+      Diagnostics.shared.share(id) { outcome in result(outcome) }
     case "openUrl":
       // Yalnız https adresleri (ör. Gemini anahtar sayfası) Safari'de açılır.
       guard let text = call.arguments as? String, let url = URL(string: text), url.scheme == "https" else { return result(false) }

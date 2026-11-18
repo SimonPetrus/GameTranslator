@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
+import 'diagnostics_page.dart';
 import 'guide_page.dart';
 import 'history_page.dart';
 import 'l10n.dart';
@@ -56,11 +57,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat(reverse: true);
     subscription = Bridge.states.listen((next) {
       if (!mounted) return;
+      final diag = next.diagnostics;
+      final before = state.diagnostics;
       setState(() {
         state = next;
         final waiting = next.phase == 'streaming' && next.tvClients == 0;
         tvWaitingSince = waiting ? (tvWaitingSince ?? DateTime.now()) : null;
       });
+      // Tanı kaydı sınır dolunca kendiliğinden durdu: kullanıcı bilsin (yalnız iOS'ta alan var).
+      if (diag != null && before != null && before.recording && !diag.recording && diag.stops > before.stops && diag.stoppedByLimit) {
+        toast(
+          context,
+          diag.lastStop == 'failed'
+              ? L.t('Tanı kaydı durdu: dosya yazılamadı.', 'Diagnostics recording stopped: the file could not be written.')
+              : L.t('Tanı kaydı sınıra ulaştı ve durdu. Ayarlar › Tanı Kaydı\'ndan paylaşabilirsin.',
+                  'Diagnostics recording reached its limit and stopped. You can share it from Settings › Diagnostics Recording.'),
+        );
+      }
     });
     loadSettings();
     // Önizleme yalnız görüntü akarken yenilenir. Aynı sayaç, TV bekleme süresi dolunca uyarının değişmesini sağlar.
@@ -314,6 +327,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           textAlign: TextAlign.center,
           style: Txt.subhead.copyWith(color: failed ? Tokens.danger : Tokens.textSecondary),
         ),
+        // Tanı kaydı sürerken küçük, dikkat dağıtmayan gösterge (yalnız iOS; dokununca tanı sayfası açılır).
+        if (state.diagnostics?.recording ?? false) ...[
+          const SizedBox(height: 10),
+          Center(
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const DiagnosticsPage())),
+              child: Pill(text: L.t('Tanı kaydı', 'Diagnostics'), color: Tokens.danger, icon: CupertinoIcons.circle_fill),
+            ),
+          ),
+        ],
         const SizedBox(height: 26),
         FlowRow(nodes: nodes),
         if (!state.nativeAvailable) ...[

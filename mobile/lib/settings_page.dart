@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'bridge.dart';
+import 'diagnostics_page.dart';
 import 'extra_region_page.dart';
 import 'health_page.dart';
 import 'history_page.dart';
@@ -1326,6 +1327,14 @@ class _SettingsTabState extends State<SettingsTab> {
                 title: L.t('Sistem Durumu', 'System Status'),
                 chevron: true,
                 onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const HealthPage())),
+              ),
+              Cell(
+                icon: CupertinoIcons.circle_fill,
+                iconColor: Tokens.danger,
+                title: L.t('Tanı Kaydı', 'Diagnostics Recording'),
+                subtitle: L.t('Sorunu kaydedip geliştiriciye gönder', 'Record a problem and send it to the developer'),
+                chevron: true,
+                onTap: () => Navigator.of(context).push(appleRoute<void>((_) => const DiagnosticsPage())),
               ),
             ],
           ),

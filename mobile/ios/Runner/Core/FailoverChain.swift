@@ -199,22 +199,33 @@ final class FailoverTranslator: TextTranslator {
 
   func translate(_ text: String) -> String? {
     for (index, member) in members.enumerated() {
-      if cooldowns.isPaused(member.id, now: clock()) { continue }
+      if cooldowns.isPaused(member.id, now: clock()) {
+        Diag.emit("engine") { ["what": .string("chain"), "engine": .string(member.id), "result": .string("skipped-paused")] }
+        continue
+      }
       switch member.attempt(text) {
       case .translated(let result):
         cooldowns.noteAnswer(member.id)
         FallbackSignal.answered(by: member.id)
         if index > 0 { FallbackSignal.mark() }
+        if index > 0 { Diag.emit("engine") { ["what": .string("chain"), "engine": .string(member.id), "result": .string("answered"), "position": .int(index)] } }
         return result
       case .pause(let pause):
         cooldowns.pause(member.id, pause, now: clock())
+        Diag.emit("engine") {
+          ["what": .string("cooldown"), "engine": .string(member.id), "reason": .string(pause.reason.rawValue), "seconds": .double(pause.seconds)]
+        }
       case .unreachable:
         // Son üye (Google) beklemeye alınmaz: başka seçenek kalmaz.
-        if index < members.count - 1 { cooldowns.noteUnreachable(member.id, now: clock()) }
+        var paused = false
+        if index < members.count - 1 { paused = cooldowns.noteUnreachable(member.id, now: clock()) }
+        Diag.emit("engine") { ["what": .string("chain"), "engine": .string(member.id), "result": .string("unreachable"), "paused": .bool(paused)] }
       case .failed:
+        Diag.emit("engine") { ["what": .string("chain"), "engine": .string(member.id), "result": .string("failed")] }
         continue
       }
     }
+    Diag.emit("engine") { ["what": .string("chain"), "result": .string("all-failed")] }
     return nil
   }
 }

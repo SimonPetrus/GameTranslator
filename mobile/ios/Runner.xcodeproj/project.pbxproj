@@ -34,6 +34,10 @@
 		AF0200000000000000000005 /* FailoverChain.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0200000000000000000005 /* FailoverChain.swift */; };
 		AF0200000000000000000006 /* SubtitleRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0200000000000000000006 /* SubtitleRows.swift */; };
 		AD0200000000000000000005 /* CrashLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0200000000000000000005 /* CrashLog.swift */; };
+		B10200000000000000000001 /* DiagnosticFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000001 /* DiagnosticFormat.swift */; };
+		B10200000000000000000002 /* DiagnosticRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000002 /* DiagnosticRecorder.swift */; };
+		B10200000000000000000003 /* StoredZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000003 /* StoredZip.swift */; };
+		B10200000000000000000004 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000004 /* Diagnostics.swift */; };
 		AA0200000000000000000007 /* FlickerHold.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000007 /* FlickerHold.swift */; };
 		2F375C9B1D24C831D8D6D5F9 /* GamePacks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -138,6 +142,10 @@
 		AE0200000000000000000005 /* FailoverChain.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FailoverChain.swift; sourceTree = "<group>"; };
 		AE0200000000000000000006 /* SubtitleRows.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleRows.swift; sourceTree = "<group>"; };
 		AC0200000000000000000005 /* CrashLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CrashLog.swift; sourceTree = "<group>"; };
+		B00200000000000000000001 /* DiagnosticFormat.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiagnosticFormat.swift; sourceTree = "<group>"; };
+		B00200000000000000000002 /* DiagnosticRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiagnosticRecorder.swift; sourceTree = "<group>"; };
+		B00200000000000000000003 /* StoredZip.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoredZip.swift; sourceTree = "<group>"; };
+		B00200000000000000000004 /* Diagnostics.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		AB0200000000000000000007 /* FlickerHold.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FlickerHold.swift; sourceTree = "<group>"; };
 		6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GamePacks.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -214,6 +222,9 @@
 				AE0200000000000000000004 /* DeepLCheck.swift */,
 				AE0200000000000000000005 /* FailoverChain.swift */,
 				AE0200000000000000000006 /* SubtitleRows.swift */,
+				B00200000000000000000001 /* DiagnosticFormat.swift */,
+				B00200000000000000000002 /* DiagnosticRecorder.swift */,
+				B00200000000000000000003 /* StoredZip.swift */,
 				AB0200000000000000000007 /* FlickerHold.swift */,
 				6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */,
 				34B46C77A9D8F98B1B1FAAF2 /* PackFuzzy.swift */,
@@ -308,6 +319,7 @@
 				407C42CC22B3E271B89FBD45 /* BackgroundKeeper.swift */,
 				A67E8D5159FE7C82481D432C /* Packs.swift */,
 				AC0200000000000000000005 /* CrashLog.swift */,
+				B00200000000000000000004 /* Diagnostics.swift */,
 				B8660D70772C73423AED9503 /* packs */,
 				E8FACE6924BA544DE9B6B11B /* GeminiTranslator.swift */,
 				D49FFD04407055D8838CE7C5 /* CommunityPatches.swift */,
@@ -528,6 +540,10 @@
 				AF0200000000000000000005 /* FailoverChain.swift in Sources */,
 				AF0200000000000000000006 /* SubtitleRows.swift in Sources */,
 				AD0200000000000000000005 /* CrashLog.swift in Sources */,
+				B10200000000000000000001 /* DiagnosticFormat.swift in Sources */,
+				B10200000000000000000002 /* DiagnosticRecorder.swift in Sources */,
+				B10200000000000000000003 /* StoredZip.swift in Sources */,
+				B10200000000000000000004 /* Diagnostics.swift in Sources */,
 				AA0200000000000000000007 /* FlickerHold.swift in Sources */,
 				2F375C9B1D24C831D8D6D5F9 /* GamePacks.swift in Sources */,
 				DF29B45AB48AB2EB6280A055 /* PackFuzzy.swift in Sources */,

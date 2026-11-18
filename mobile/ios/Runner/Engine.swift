@@ -146,6 +146,7 @@ final class Engine: Native.Listener {
     // Uygulama arka plandan dönünce (çeviri kapalıyken iOS uygulamayı askıya almış olabilir) dinleyici bozulmuş olabilir;
     // TV "bekleniyor"da kalıyordu, çeviriyi kapatıp açmak düzeltiyordu. Dönüşte sunucu yeniden kurulur.
     NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
+      Diag.emit("engine") { ["what": .string("app"), "state": .string("foreground")] }
       self?.onControl {
         guard let self else { return }
         if !self.running || !self.server.isReady {
@@ -156,8 +157,21 @@ final class Engine: Native.Listener {
       }
     }
     // Geçmişin bekleyen yazımı arka plana giderken diske iner (iOS uygulamayı sonra askıya alabilir).
-    NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { _ in
+    NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
+      Diag.emit("engine") {
+        ["what": .string("app"), "state": .string("background"), "running": .bool(self?.running ?? false)]
+      }
       Engine.history.flush()
+    }
+    NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: nil) { _ in
+      Diag.emit("engine") { ["what": .string("app"), "state": .string("active")] }
+    }
+    NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: nil) { _ in
+      Diag.emit("engine") { ["what": .string("app"), "state": .string("inactive")] }
+    }
+    // Uygulama kapanırken süren tanı kaydı düzgün kapanır (öldürülürse bir sonraki açılışta mühürlenir).
+    NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+      Diagnostics.shared.terminate()
     }
     server.onChanged = { [weak self] in self?.notifyChanged() }
     server.onLog = { [weak self] level, text in self?.log(level, text) }
@@ -189,6 +203,8 @@ final class Engine: Native.Listener {
       "demo": demoActive,
       // Otomatik alan kilitliyse bulunan şerit (0–1 oranlar); değilse nil.
       "autoRegion": reader?.autoRegion.map { ["top": $0.top, "bottom": $0.bottom, "left": $0.left, "right": $0.right] as [String: Double] },
+      // Tanı kaydı (yalnız iOS): kayıt sürüyor mu, sayaçlar, son duruşun nedeni.
+      "diagnostics": Diagnostics.shared.stateMap(),
     ]
   }
 
@@ -247,6 +263,7 @@ final class Engine: Native.Listener {
   func log(_ level: Int, _ text: String) {
     let line = "\(level == 0 ? "E" : level == 1 ? "W" : "I") \(text)"
     NSLog("GameTranslator %@", line)
+    Diag.emit("log") { ["level": .int(level), "text": .string(text)] }
     logLock.lock()
     logs.append(line)
     if logs.count > Self.logLimit { logs.removeFirst(logs.count - Self.logLimit) }
@@ -257,6 +274,10 @@ final class Engine: Native.Listener {
     phase = value
     message = text
     messagePair = nil
+    Diag.emit("engine") {
+      ["what": .string("phase"), "phase": .string(value), "message": .string(logText ?? text), "running": .bool(running),
+       "tvClients": .int(server.connectedClients)]
+    }
     log(value == "failed" ? 0 : 2, "durum: \(value) \(logText ?? text)".trimmingCharacters(in: .whitespaces))
     notifyChanged()
   }
@@ -355,6 +376,7 @@ final class Engine: Native.Listener {
       let before = self.settings
       let now = Store.shared.settings
       self.settings = now
+      Diagnostics.shared.settingsChanged(before: before, after: now)
       if now.uiLanguage != before.uiLanguage, let pair = self.messagePair {
         self.message = Lang.t(pair.tr, pair.en)
         self.notifyChanged()
@@ -371,9 +393,11 @@ final class Engine: Native.Listener {
       if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.geminiStyleNote != before.geminiStyleNote || now.engineFailover != before.engineFailover || now.sourceLanguage != before.sourceLanguage
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled
         || now.packChoice != before.packChoice {
+        Diag.emit("engine") { ["what": .string("settings-apply"), "action": .string("rebuild")] }
         self.reader?.rebuild(settings: now)
       } else if now.region != before.region || now.hideButtonHints != before.hideButtonHints
         || now.autoRegion != before.autoRegion {
+        Diag.emit("engine") { ["what": .string("settings-apply"), "action": .string("reset")] }
         self.reader?.reset()
       }
     }
@@ -457,11 +481,33 @@ final class Engine: Native.Listener {
 
   /// Ek alanı son karede bir kez okuyup çevirir ve TV'ye gönderir (bloklar; arka plan iş parçacığında çağrılır).
   func readExtra(index: Int) -> [String: Any] {
-    func failure(_ message: String) -> [String: Any] { ["ok": false, "source": "", "text": "", "error": message] }
-    guard running, phase == "streaming", let reader = reader else { return failure(Lang.t("Akış çalışmıyor; önce çeviriyi başlatın.", "The stream is not running; start translation first.")) }
     let regions = Store.shared.settings.extraRegions
-    guard index >= 0, index < regions.count else { return failure(Lang.t("Geçersiz okuma alanı.", "Invalid reading area.")) }
-    guard let frame = currentFrame() else { return failure(Lang.t("Henüz görüntü gelmedi; biraz bekleyin.", "No image has arrived yet; wait a moment.")) }
+    // Tanı kaydı: basıldı; o anki kare de kaydedilir (okunacak olan kare).
+    Diag.emit("extra", frame: "extra") {
+      var fields: DiagFields = ["what": .string("pressed"), "index": .int(index), "running": .bool(running), "phase": .string(phase)]
+      fields["hasReader"] = .bool(reader != nil)
+      fields["hasFrame"] = .bool(currentFrame() != nil)
+      fields["frames"] = .int(frameCount)
+      fields["regionCount"] = .int(regions.count)
+      if index >= 0, index < regions.count {
+        let r = regions[index]
+        fields["region"] = .string(r.name)
+        fields["regionBox"] = DiagValue.box(TextBox(left: r.left, top: r.top, right: r.right, bottom: r.bottom))
+      }
+      fields["tvClients"] = .int(server.connectedClients)
+      return fields
+    }
+    func failure(_ step: String, _ message: String) -> [String: Any] {
+      Diag.emit("extra") { ["what": .string("fail"), "step": .string(step), "error": .string(message)] }
+      return ["ok": false, "source": "", "text": "", "error": message]
+    }
+    guard running, phase == "streaming", let reader = reader else {
+      return failure("no-stream", Lang.t("Akış çalışmıyor; önce çeviriyi başlatın.", "The stream is not running; start translation first."))
+    }
+    guard index >= 0, index < regions.count else { return failure("bad-region", Lang.t("Geçersiz okuma alanı.", "Invalid reading area.")) }
+    guard let frame = currentFrame() else {
+      return failure("no-frame", Lang.t("Henüz görüntü gelmedi; biraz bekleyin.", "No image has arrived yet; wait a moment."))
+    }
     let outcome = reader.readExtra(frame, region: regions[index])
     return ["ok": outcome.ok, "source": outcome.source, "text": outcome.text, "error": outcome.error]
   }
@@ -549,6 +595,7 @@ final class Engine: Native.Listener {
   private func scheduleRetry(_ reason: ReconnectPolicy.Reason = .generic) {
     guard running else { return }
     let seconds = reconnect.nextDelay(reason, at: ProcessInfo.processInfo.systemUptime)
+    Diag.emit("engine") { ["what": .string("retry"), "attempt": .int(reconnect.attempt), "seconds": .double(seconds)] }
     log(2, "yeniden bağlanma \(reconnect.attempt). deneme, \(Int(seconds)) sn sonra")
     retry?.cancel()
     let item = DispatchWorkItem { [weak self] in
@@ -569,6 +616,10 @@ final class Engine: Native.Listener {
   }
 
   func onEvent(_ event: Int32, quitReason: Int32, reasonText: String?) {
+    Diag.emit("engine") {
+      ["what": .string("session-event"), "event": .int(Int(event)), "quitReason": .int(Int(quitReason)),
+       "reasonText": DiagValue.optional(reasonText)]
+    }
     switch event {
     case Native.eventConnected:
       onControl {

@@ -14,6 +14,8 @@ import UIKit
     // Yerel metinlerin dili her çağrıda ayardan okunur (değişince yeniden başlatma gerekmez).
     Lang.provider = { Lang.effective(setting: Store.shared.settings.uiLanguage, preferred: Locale.preferredLanguages) }
     CrashLog.start()
+    // Tanı kaydı: önceki çalıştırmada yarım kalan kayıt mühürlenir (arka planda; paylaşılabilir ya da silinebilir).
+    Diagnostics.shared.bootstrap()
     Engine.shared.openServer()
     if ProcessInfo.processInfo.arguments.contains("--gt-test-subtitle") {
       Engine.shared.sendTestSubtitle()

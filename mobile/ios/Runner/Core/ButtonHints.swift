@@ -265,19 +265,36 @@ enum ButtonHints {
   /// Satırlar [ReadingSelector.rows] ile kurulur; Vision ipucunu simgenin iki yanında iki parça okusa da satır tek bakılır.
   /// Hemen altındaki satır küçük harfle başlıyorsa satır sarılmış bir cümlenin başıdır (simgesiz kalıpta ipucu sayılmaz).
   static func dropHintRows(_ input: [TextObservation], english: Bool) -> [TextObservation] {
+    dropHintRowsExplained(input, english: english).kept
+  }
+
+  /// [dropHintRows] ve atılan her satırın metni ile neden atıldığı: harfsiz satır, yalnız düğme yazısı ya da tuş ipucu
+  /// (sırasıyla "no-letters", "only-buttons", "prompt"). Tanı kaydı içindir; karar aynı hesaptan çıkar.
+  static func dropHintRowsExplained(_ input: [TextObservation],
+                                    english: Bool) -> (kept: [TextObservation], dropped: [(text: String, reason: String)]) {
     let rows = ReadingSelector.rows(input)
     var kept: [TextObservation] = []
+    var dropped: [(text: String, reason: String)] = []
     for (index, row) in rows.enumerated() {
       let text = row.map(\.text).joined(separator: " ")
-      if !text.unicodeScalars.contains(where: { CharacterSet.alphanumerics.contains($0) }) { continue }
-      if strip(text).isEmpty { continue }
+      if !text.unicodeScalars.contains(where: { CharacterSet.alphanumerics.contains($0) }) {
+        dropped.append((text, "no-letters"))
+        continue
+      }
+      if strip(text).isEmpty {
+        dropped.append((text, "only-buttons"))
+        continue
+      }
       if english {
         let continues = index + 1 < rows.count && continuesInto(row, rows[index + 1])
-        if isPrompt(text, continues: continues) { continue }
+        if isPrompt(text, continues: continues) {
+          dropped.append((text, "prompt"))
+          continue
+        }
       }
       kept.append(contentsOf: row)
     }
-    return kept
+    return (kept, dropped)
   }
 
   /// [next] satırı [row]'un hemen altında (aradaki boşluk bir satır yüksekliğini aşmıyor) ve küçük harfle başlıyor mu.

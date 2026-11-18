@@ -37,9 +37,33 @@ final class SubtitleServer {
   private final class Client {
     let connection: NWConnection
     let viewer: Bool
+    let openedAt = ProcessInfo.processInfo.systemUptime
     init(connection: NWConnection, viewer: Bool) {
       self.connection = connection
       self.viewer = viewer
+    }
+  }
+
+  /// Tanı kaydı: /hello isteklerinin sayımı (her istek yazılmaz; nabızda özet olarak alınır). Sunucu kuyruğunda.
+  private var helloCount = 0
+  private var helloPeers: [String] = []
+  private var helloSince = ProcessInfo.processInfo.systemUptime
+
+  /// Bağlantının karşı adresi ("192.168.1.20"), tanı kaydı için.
+  private static func peer(_ connection: NWConnection) -> String {
+    if case let .hostPort(host, _) = connection.endpoint { return "\(host)" }
+    return "\(connection.endpoint)"
+  }
+
+  /// Son çağrıdan bu yana gelen /hello istekleri (sayı, süre sn, farklı adresler); sayaç sıfırlanır.
+  func takeHelloSummary() -> (count: Int, seconds: Double, peers: [String]) {
+    queue.sync { () -> (count: Int, seconds: Double, peers: [String]) in
+      let now = ProcessInfo.processInfo.systemUptime
+      let out = (count: helloCount, seconds: now - helloSince, peers: helloPeers)
+      helloCount = 0
+      helloPeers = []
+      helloSince = now
+      return out
     }
   }
 
@@ -100,6 +124,7 @@ final class SubtitleServer {
   /// eski dinleyici henüz kapanmadıysa) birkaç saniyede bir yeniden denenir.
   func start() {
     queue.async {
+      if Diag.on, self.listener == nil { Diag.emit("tv") { ["what": .string("server-start")] } }
       self.wanted = true
       self.startLocked()
     }
@@ -108,6 +133,7 @@ final class SubtitleServer {
   /// Dinleyiciyi ve bağlantıları kapatıp yeniden kurar (uygulama arka plandan dönünce dinleyici bozulmuş olabilir).
   func restart() {
     queue.async {
+      Diag.emit("tv") { ["what": .string("server-restart"), "clientsDropped": .int(self.clients.count)] }
       self.closeLocked()
       self.wanted = true
       self.startLocked()
@@ -116,6 +142,7 @@ final class SubtitleServer {
 
   func stop() {
     queue.async {
+      Diag.emit("tv") { ["what": .string("server-stop")] }
       self.wanted = false
       self.closeLocked()
       self.updateCount()
@@ -209,10 +236,12 @@ final class SubtitleServer {
       case .ready:
         self.ready = true
         self._boundPort = created.port?.rawValue ?? 0
+        Diag.emit("tv") { ["what": .string("listener"), "state": .string("ready"), "port": .int(Int(self._boundPort))] }
         self.onLog?(2, "altyazı sunucusu dinliyor: \(self._boundPort)")
         self.onChanged?()
       case .failed(let error), .waiting(let error):
         // Port dolu, ağ değişti ya da iOS dinleyiciyi kapattı: kapatılıp birkaç saniye sonra yeniden kurulur.
+        Diag.emit("tv") { ["what": .string("listener"), "state": .string("failed"), "error": .string("\(error)")] }
         self.onLog?(1, "altyazı sunucusu düştü (\(error)); yeniden kuruluyor")
         created.cancel()
         self.listener = nil
@@ -280,6 +309,19 @@ final class SubtitleServer {
     let method = parts.count > 0 ? parts[0] : ""
     let target = parts.count > 1 ? parts[1] : ""
     let path = target.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    if Diag.on {
+      if method == "GET" && path == "/hello" {
+        helloCount += 1
+        let from = Self.peer(connection)
+        if !helloPeers.contains(from) && helloPeers.count < 16 { helloPeers.append(from) }
+      } else {
+        // Sorgu kısmı yazılmaz; yalnız yöntem ve yol.
+        Diag.emit("tv") {
+          ["what": .string("request"), "method": .string(method), "path": .string(String(path.prefix(64))),
+           "from": .string(Self.peer(connection))]
+        }
+      }
+    }
     switch (method, path) {
     case ("OPTIONS", _): respondAndClose(connection, status: "204 No Content", body: "")
     case ("GET", "/events"): openStream(connection, viewer: target.contains("viewer=obs"))
@@ -317,6 +359,10 @@ final class SubtitleServer {
     clients[ObjectIdentifier(connection)] = client
     write(client, head)
     updateCount()
+    Diag.emit("tv") {
+      ["what": .string("client-connected"), "from": .string(Self.peer(connection)), "viewer": .bool(viewer),
+       "tvClients": .int(_connected), "styleSent": .bool(lastStyle != nil)]
+    }
     onChanged?()
     connection.stateUpdateHandler = { [weak self] state in
       switch state {
@@ -339,12 +385,24 @@ final class SubtitleServer {
     guard clients.removeValue(forKey: ObjectIdentifier(client.connection)) != nil else { return }
     client.connection.cancel()
     updateCount()
+    Diag.emit("tv") {
+      ["what": .string("client-disconnected"), "from": .string(Self.peer(client.connection)), "viewer": .bool(client.viewer),
+       "connectedSeconds": .double(ProcessInfo.processInfo.systemUptime - client.openedAt), "tvClients": .int(_connected)]
+    }
     onChanged?()
   }
 
   private func updateCount() { _connected = clients.values.filter { !$0.viewer }.count }
 
-  private func broadcast(_ frame: String) { queue.async { self.broadcastLocked(frame) } }
+  private func broadcast(_ frame: String) {
+    queue.async {
+      // Tanı kaydı: TV'ye giden çerçevenin tam metni ve o anki alıcı sayısı.
+      Diag.emit("tv") {
+        ["what": .string("send"), "wire": .string(frame), "tvClients": .int(self._connected), "clients": .int(self.clients.count)]
+      }
+      self.broadcastLocked(frame)
+    }
+  }
 
   /// Gönderim hatası alan bağlantı kopmuş sayılır ve listeden çıkarılır.
   private func broadcastLocked(_ frame: String) {
