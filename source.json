@@ -31,6 +31,14 @@
       },
       "versions": [
         {
+          "version": "1.8.3",
+          "date": "2026-11-18T19:39:30Z",
+          "size": 46249723,
+          "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.3/GameTranslator-iOS-1.8.3.ipa",
+          "minOSVersion": "15.0",
+          "localizedDescription": "Önemli düzeltme: 1.8.0, 1.8.1 ve 1.8.2 sürümlerinde ana ekran durum bilgisini alamıyordu; telefon Wi-Fi'a bağlıyken \"Wi-Fi yok\" yazıyor, başlat düğmesi tepkisiz görünüyor, ekran güncellenmiyordu. Düzeltildi; uygulama arka plandan dönünce durum da tazeleniyor. 1.8.0–1.8.2 kullananların güncellemesi gerekir. Diğer düzeltmeler: ek okuma alanı artık TV'deki diyalog altyazısını silmiyor, çeviri durdurulunca son altyazı TV'de yeniden belirmiyor, \"Tuş yazılarını gizle\" ayarı akış sürerken de hemen etkili, deneme altyazısı gönderirken yapılan ayar değişikliği kaybolmuyor, okuma alanı sürgüleri uçta doğru çerçeveyi gösteriyor. Yenilik: Gemini için ek talimat kutusu (kısa üslup notu, en çok 200 karakter) ve dört hazır seçenek: Samimi, Argo, Resmî, Kısa."
+        },
+        {
           "version": "1.8.2",
           "date": "2026-11-18T13:21:59Z",
           "size": 46231684,
@@ -63,10 +71,10 @@
           "localizedDescription": "GameTranslator iPhone sürümü 1.0.6."
         }
       ],
-      "version": "1.8.2",
-      "versionDate": "2026-11-18T13:21:59Z",
-      "size": 46231684,
-      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.2/GameTranslator-iOS-1.8.2.ipa"
+      "version": "1.8.3",
+      "versionDate": "2026-11-18T19:39:30Z",
+      "size": 46249723,
+      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.3/GameTranslator-iOS-1.8.3.ipa"
     }
   ],
   "news": []
