@@ -20,10 +20,11 @@ final class Diagnostics {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     let root = support.appendingPathComponent("GameTranslator", isDirectory: true).appendingPathComponent("tani", isDirectory: true)
     recorder = DiagnosticRecorder(root: root)
-    recorder.frameGrabber = {
+    recorder.frameGrabber = { () -> DiagnosticFrameEncoder? in
       // Kilit altında çağrılır: yalnız son karenin kopyası alınır (veri paylaşılır), kodlama kare kuyruğunda.
-      guard let frame = Engine.shared.currentFrame() else { return nil }
-      return { Diagnostics.jpeg(frame) }
+      guard let frame: Frame = Engine.shared.currentFrame() else { return nil }
+      let encoder: DiagnosticFrameEncoder = { () -> Data? in Diagnostics.jpeg(frame) }
+      return encoder
     }
     recorder.onPulse = { [weak self] in self?.pulse() }
     recorder.onChange = { Engine.shared.notifyChanged() }
@@ -62,10 +63,11 @@ final class Diagnostics {
               "detail": Lang.t("En çok \(recorder.limits.maxSessions) kayıt saklanır; yenisi için en eskisi silinmeli.",
                                "At most \(recorder.limits.maxSessions) recordings are kept; the oldest must be deleted for a new one.")]
     case .lowDisk(let free):
-      let mb = max(0, free / (1024 * 1024))
+      let mb: Int64 = max(0, free / (1024 * 1024))
+      let need: Int64 = recorder.limits.minFreeBytes / (1024 * 1024)
       return ["ok": false, "error": "disk",
-              "detail": Lang.t("Telefonda yeterli boş alan yok (\(mb) MB). En az 200 MB gerekli.",
-                               "Not enough free space on the phone (\(mb) MB). At least 200 MB is needed.")]
+              "detail": Lang.t("Telefonda yeterli boş alan yok (\(mb) MB). En az \(need) MB gerekli.",
+                               "Not enough free space on the phone (\(mb) MB). At least \(need) MB is needed.")]
     case .failed(let detail):
       engine.log(1, "tanı kaydı açılamadı: \(detail)")
       return ["ok": false, "error": "io", "detail": Lang.t("Kayıt dosyası açılamadı.", "The recording file could not be opened.")]
@@ -198,14 +200,14 @@ final class Diagnostics {
     let health = engine.reader?.health ?? ReaderHealth()
     Diag.emit("pulse", frame: "pulse") {
       var fields: DiagFields = ["phase": .string(engine.phase), "running": .bool(engine.running), "demo": .bool(engine.demoActive)]
-      fields["tvClients"] = .int(engine.server.connectedClients)
-      fields["serverReady"] = .bool(engine.server.isReady)
-      fields["framesTotal"] = .int(frames)
-      fields["framesSinceLastPulse"] = .int(max(0, frames - framesBefore))
-      fields["frameSize"] = .array([.int(engine.frameWidth), .int(engine.frameHeight)])
-      fields["lastOcrMs"] = .int(health.lastReadMs)
-      fields["stuckRecoveries"] = .int(health.stuckRecoveries)
-      fields["lastRead"] = .string(engine.lastRead)
+      fields["tvClients"] = DiagValue.int(engine.server.connectedClients)
+      fields["serverReady"] = DiagValue.bool(engine.server.isReady)
+      fields["framesTotal"] = DiagValue.int(frames)
+      fields["framesSinceLastPulse"] = DiagValue.int(max(0, frames - framesBefore))
+      fields["frameSize"] = DiagValue.array([.int(engine.frameWidth), .int(engine.frameHeight)])
+      fields["lastOcrMs"] = DiagValue.int(health.lastReadMs)
+      fields["stuckRecoveries"] = DiagValue.int(health.stuckRecoveries)
+      fields["lastRead"] = DiagValue.string(engine.lastRead)
       fields["address"] = DiagValue.optional(address)
       return fields
     }
@@ -238,20 +240,27 @@ final class Diagnostics {
     let store = Store.shared
     let os = ProcessInfo.processInfo.operatingSystemVersion
     var fields: DiagFields = ["app": .object(["version": .string(Self.version), "build": .string(Self.build)])]
-    fields["os"] = .object(["name": .string("iOS"), "version": .string("\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)")])
-    fields["device"] = .string(Self.deviceModel)
-    fields["frameSize"] = .array([.int(engine.frameWidth), .int(engine.frameHeight)])
-    fields["uiLanguage"] = .object(["setting": .string(settings.uiLanguage), "effective": .string(Lang.provider())])
-    fields["effectiveEngine"] = .string(Engine.effectiveEngine(settings))
-    fields["settings"] = DiagnosticPrivacy.settings(settings.toJson())
+    fields["os"] = DiagValue.object(["name": .string("iOS"), "version": .string("\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)")])
+    fields["device"] = DiagValue.string(Self.deviceModel)
+    fields["frameSize"] = DiagValue.array([.int(engine.frameWidth), .int(engine.frameHeight)])
+    fields["uiLanguage"] = DiagValue.object(["setting": .string(settings.uiLanguage), "effective": .string(Lang.provider())])
+    fields["effectiveEngine"] = DiagValue.string(Engine.effectiveEngine(settings))
+    let settingsJson: [String: Any] = settings.toJson()
+    fields["settings"] = DiagnosticPrivacy.settings(settingsJson)
+    // Çalışma anı denetimi: Settings'e izin listesinde olmayan alan eklendiyse değeri yazılmaz, burada adı listelenir.
+    let unclassified: [String] = DiagnosticPrivacy.unclassifiedPaths(settingsJson)
+    fields["unclassifiedSettings"] = DiagValue.strings(unclassified)
+    if !unclassified.isEmpty {
+      Engine.shared.log(1, "tanı kaydı: sınıflanmamış ayar alanları (değerleri yazılmadı): \(unclassified.joined(separator: ", "))")
+    }
     let console = store.console
-    fields["console"] = .object(["paired": .bool(console != nil), "name": DiagValue.optional(console?.name),
+    fields["console"] = DiagValue.object(["paired": .bool(console != nil), "name": DiagValue.optional(console?.name),
                                  "host": DiagValue.optional(console?.host)])
-    fields["psnAccount"] = .object(["set": .bool(store.accountId != nil)])
-    fields["engine"] = .object(["phase": .string(engine.phase), "running": .bool(engine.running), "demo": .bool(engine.demoActive),
+    fields["psnAccount"] = DiagValue.object(["set": .bool(store.accountId != nil)])
+    fields["engine"] = DiagValue.object(["phase": .string(engine.phase), "running": .bool(engine.running), "demo": .bool(engine.demoActive),
                                 "tvClients": .int(engine.server.connectedClients), "serverReady": .bool(engine.server.isReady),
                                 "address": DiagValue.optional(Network.localAddress())])
-    fields["frameJpeg"] = .object(["longEdge": .int(Self.jpegLongEdge), "quality": .double(Self.jpegQuality)])
+    fields["frameJpeg"] = DiagValue.object(["longEdge": .int(Self.jpegLongEdge), "quality": .double(Self.jpegQuality)])
     return fields
   }
 
@@ -273,7 +282,12 @@ final class Diagnostics {
       let end = console.registKey.firstIndex(of: 0) ?? console.registKey.endIndex
       if let text = String(data: console.registKey[console.registKey.startIndex..<end], encoding: .ascii) { out.append(text) }
     }
-    return out.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { $0.count >= 4 }
+    var usable: [String] = []
+    for value in out {
+      let trimmed: String = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.count >= DiagnosticPrivacy.minSecretLength { usable.append(trimmed) }
+    }
+    return usable
   }
 
   // MARK: - Kare

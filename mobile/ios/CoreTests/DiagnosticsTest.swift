@@ -13,10 +13,19 @@ private func tempRoot() -> URL {
   URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("gt-diag-\(UUID().uuidString)", isDirectory: true)
 }
 
-private func le16(_ data: Data, _ at: Int) -> Int { Int(data[data.startIndex + at]) | Int(data[data.startIndex + at + 1]) << 8 }
+private func le16(_ data: Data, _ at: Int) -> Int {
+  let low: Int = Int(data[data.startIndex + at])
+  let high: Int = Int(data[data.startIndex + at + 1])
+  return low | (high << 8)
+}
 
 private func le32(_ data: Data, _ at: Int) -> UInt32 {
-  (0..<4).reduce(UInt32(0)) { $0 | UInt32(data[data.startIndex + at + $1]) << UInt32(8 * $1) }
+  var value: UInt32 = 0
+  for i in 0..<4 {
+    let byte: UInt32 = UInt32(data[data.startIndex + at + i])
+    value |= byte << UInt32(8 * i)
+  }
+  return value
 }
 
 private func text(_ url: URL) -> String { (try? String(contentsOf: url, encoding: .utf8)) ?? "" }
@@ -68,8 +77,8 @@ enum DiagnosticFormatTest {
       let line = DiagnosticLine.encode(seq: 1, t: 0, type: "tv", fields: ["seq": .int(99), "b": .int(1), "a": .bool(true), "type": .string("x")])
       assertEquals("{\"seq\":1,\"t\":0,\"type\":\"tv\",\"b\":1,\"a\":true}\n", line)
       var fields: DiagFields = ["x": .null]
-      fields["y"] = .array([.int(1), .string("z")])
-      fields["x"] = .double(0.5)
+      fields["y"] = DiagValue.array([.int(1), .string("z")])
+      fields["x"] = DiagValue.double(0.5)
       assertEquals("{\"x\":0.5,\"y\":[1,\"z\"]}", fields.json)
     }
     TestRun.test("DiagnosticFormatTest.numbers") {
@@ -127,6 +136,31 @@ enum DiagnosticFormatTest {
       assertFalse(tall.inRange)
       assertNull(tall.result)
       assertEquals(0.2, tall.ratio, accuracy: 1e-9)
+      // Sıcak yoldaki estimate ile tanıdaki explain ayrı yazılı: LineHeightTest'in bütün örneklerinde sonuçlar aynı.
+      func o(_ text: String, _ l: Int, _ t: Int, _ r: Int, _ b: Int) -> TextObservation {
+        TextObservation(text: text, confidence: 0.9, left: l, top: t, right: r, bottom: b)
+      }
+      let line1 = "We need to leave right now"
+      let samples: [[TextObservation]] = [
+        [o(line1, 300, 900, 700, 940)],
+        [o(line1, 300, 850, 700, 890), o(line1, 300, 900, 700, 940)],
+        [o("We need to leave right now before they find us here", 300, 860, 700, 945)],
+        [o("Hey", 450, 820, 550, 860), o("Hey you", 430, 870, 570, 950)],
+        [o(line1, 300, 800, 700, 838), o(line1, 300, 850, 700, 890), o(line1, 300, 900, 700, 942)],
+        [o(line1, 300, 800, 700, 840), o(line1, 300, 850, 700, 890), o("OK", 480, 700, 520, 820)],
+        [o(line1, 300, 850, 700, 890), o(line1, 300, 900, 700, 944)],
+        [o(line1, 300, 800, 700, 840), o(line1, 300, 860, 700, 944)],
+        [o(line1, 300, 900, 700, 944), o("me", 490, 950, 510, 963)],
+        [o(line1, 300, 900, 700, 944), o("Go now", 460, 950, 540, 984)],
+        [], [o("OK", 450, 700, 550, 900)], [o("OK", 450, 900, 550, 905)], [o("", 0, 0, 0, 0)],
+      ]
+      for (index, sample) in samples.enumerated() {
+        for height in [1000, 1080, 0] {
+          let fast: Double? = LineHeight.estimate(sample, frameHeight: height)
+          let traced: Double? = LineHeight.explain(sample, frameHeight: height).result
+          assertEquals(fast ?? -1, traced ?? -1, accuracy: 0, "örnek \(index), yükseklik \(height)")
+        }
+      }
     }
     TestRun.test("DiagnosticFormatTest.hintDropsAreExplained") {
       func o(_ text: String, _ top: Int) -> TextObservation {
@@ -180,7 +214,9 @@ enum DiagnosticPrivacyTest {
       }
       assertTrue(out.contains("\"deepLKey\":{\"set\":true}"), out)
       assertTrue(out.contains("\"geminiKey\":{\"set\":true}"), out)
-      assertTrue(out.contains("\"accountId\":{\"set\":true}"), out)
+      // İzin listesinde olmayan alanın değeri yazılmaz; yalnız dolu olduğu ve sınıflanmadığı.
+      assertTrue(out.contains("\"accountId\":{\"set\":true,\"unclassified\":true}"), out)
+      assertTrue(out.contains("\"registKeyHex\":{\"set\":true,\"unclassified\":true}"), out)
       assertTrue(out.contains("\"glossary\":{\"set\":true,\"lines\":1,\"terms\":1,\"keep\":1}"), out)
       // Kullanıcının kendi üslup notu gizli değil.
       assertTrue(out.contains("\"geminiStyleNote\":\"samimi konuş\""), out)
@@ -194,6 +230,52 @@ enum DiagnosticPrivacyTest {
       assertTrue(blank.contains("\"deepLKey\":{\"set\":false}"), blank)
       assertTrue(blank.contains("\"glossary\":{\"set\":false,\"lines\":0}"), blank)
     }
+    TestRun.test("DiagnosticPrivacyTest.unknownFieldsAreHiddenByDefault") {
+      // İleride eklenecek bir alan (ör. yeni bir anahtar) izin listesinde olmadığı için değeri hiçbir zaman yazılmaz.
+      var json = settingsJson()
+      json["openRouterKey"] = "sk-or-FUTURESECRET42"
+      json["style"] = ["fontSize": 46, "outlineToken": "STYLESECRET77"] as [String: Any]
+      json["extraRegions"] = [["name": "Görev", "apiHint": "REGIONSECRET9"] as [String: Any]]
+      let out = DiagnosticPrivacy.settings(json).json
+      for secret in ["FUTURESECRET42", "STYLESECRET77", "REGIONSECRET9"] { assertFalse(out.contains(secret), secret) }
+      assertTrue(out.contains("\"openRouterKey\":{\"set\":true,\"unclassified\":true}"), out)
+      assertTrue(out.contains("\"style\":{\"fontSize\":46,\"outlineToken\":{\"set\":true,\"unclassified\":true}}"), out)
+      assertEquals(["accountId", "extraRegions.apiHint", "openRouterKey", "registKeyHex", "style.outlineToken"],
+                   DiagnosticPrivacy.unclassifiedPaths(json).sorted())
+      // Değişiklik olayında da aynı kural.
+      let values = DiagValue.object(DiagnosticPrivacy.values(json, paths: ["openRouterKey", "style.outlineToken"])).json
+      assertFalse(values.contains("SECRET"), values)
+    }
+    TestRun.test("DiagnosticPrivacyTest.everySettingsKeyIsClassified") {
+      // Core'daki gerçek tür: ek okuma alanının bütün alanları izin listesinde.
+      assertEquals([], DiagnosticPrivacy.unclassifiedPaths(["extraRegions": [ExtraRegion().toJson()]]))
+      // Settings Runner'da (Store.swift; Security/UIKit'e bağlı dosya, burada derlenmez): Settings.toJson gövdesindeki
+      // bütün anahtar adları kaynak metinden çıkarılır; her biri izin, kapsayıcı, özet ya da gizli listesinde olmalı.
+      // Yeni bir alan eklenince bu test kırılır ve alanın sınıfına karar vermeye zorlar.
+      guard let dir = ProcessInfo.processInfo.environment["GT_RUNNER_DIR"] else {
+        return TestRun.fail("GT_RUNNER_DIR ayarlı değil (run.sh ayarlar)", #fileID, #line)
+      }
+      let source = (try? String(contentsOf: URL(fileURLWithPath: dir).appendingPathComponent("Store.swift"), encoding: .utf8)) ?? ""
+      guard let start = source.range(of: "func toJson() -> [String: Any] {"),
+            let end = source.range(of: "func toJsonString()", range: start.upperBound..<source.endIndex) else {
+        return TestRun.fail("Store.swift içinde Settings.toJson bulunamadı", #fileID, #line)
+      }
+      let body = String(source[start.upperBound..<end.lowerBound])
+      guard let pattern = try? NSRegularExpression(pattern: "\"([A-Za-z][A-Za-z0-9]*)\"\\s*:") else {
+        return TestRun.fail("desen kurulamadı", #fileID, #line)
+      }
+      var names: [String] = []
+      for match in pattern.matches(in: body, range: NSRange(body.startIndex..., in: body)) {
+        if let range = Range(match.range(at: 1), in: body) { names.append(String(body[range])) }
+      }
+      // Kaynak okuması sağlam mı: bilinen alanlar bulundu.
+      assertTrue(names.count >= 30, "\(names.count) anahtar")
+      for known in ["deepLKey", "geminiKey", "glossary", "fontSize", "extraRegions", "uiLanguage"] {
+        assertTrue(names.contains(known), known)
+      }
+      let classified = DiagnosticPrivacy.classifiedNames
+      for name in names { assertTrue(classified.contains(name), "Settings.toJson'daki \"\(name)\" alanı sınıflanmamış") }
+    }
     TestRun.test("DiagnosticPrivacyTest.changedFieldsWithoutSecretValues") {
       let before = settingsJson()
       let after = settingsJson(geminiKey: "AIzaSyNEWSECRET77", fontSize: 50)
@@ -205,28 +287,106 @@ enum DiagnosticPrivacyTest {
       assertEquals([], DiagnosticPrivacy.changes(before: before, after: before))
     }
     TestRun.test("DiagnosticPrivacyTest.scrubRemovesKnownSecretsAndUrlKeys") {
-      let line = "{\"text\":\"GET https://x/v1?key=AIzaOTHER123&alt=json \(deepL) Authorization: DeepL-Auth-Key abc-777 ab\"}"
-      let out = DiagnosticPrivacy.scrub(line, secrets: [deepL, "ab", "   "])
+      let text = "GET https://x/v1?key=AIzaOTHER123&alt=json \(deepL) Authorization: DeepL-Auth-Key abc-777 ab"
+      let out = DiagnosticPrivacy.scrub(text, secrets: [deepL, "ab", "   "])
       assertFalse(out.contains("AIzaOTHER123"), out)
       assertFalse(out.contains(deepL), out)
       assertFalse(out.contains("abc-777"), out)
       assertTrue(out.contains("?key=[gizli]&alt=json"), out)
       assertTrue(out.contains("DeepL-Auth-Key [gizli]"), out)
-      // 4 karakterden kısa "gizli" değer silinmez (her yerde geçen kısa dizgeler bozulmasın).
-      assertTrue(out.hasSuffix(" ab\"}"), out)
-      // JSON'a kaçışlı yazılmış gizli değer de silinir.
-      let escaped = DiagnosticLine.encode(seq: 1, t: 0, type: "log", fields: ["text": .string("k=se\"cret/1")])
-      assertFalse(DiagnosticPrivacy.scrub(escaped, secrets: ["se\"cret/1"]).contains("cret/1"))
+      // 8 karakterden kısa "gizli" değer silinmez.
+      assertTrue(out.hasSuffix(" ab"), out)
+      // JSON'a kaçışlı yazılmış gizli değer de silinir (gömülü JSON metni, ör. TV çerçevesi).
+      assertFalse(DiagnosticPrivacy.scrub("data: {\"t\":\"se\\\"cret/1\"}", secrets: ["se\"cret/1"]).contains("cret/1"))
+    }
+    TestRun.test("DiagnosticPrivacyTest.scrubKeepsKeysNumbersAndStructure") {
+      // Kısa ya da sözcük benzeri "anahtar": alan adları, sayılar ve true/null dokunulmaz; satır geçerli JSON kalır.
+      let fields: DiagFields = ["durationMs": .int(1234), "text": .string("text true null 1234 durationMs"), "ok": .bool(true),
+                                "n": .null]
+      let clean = DiagnosticPrivacy.scrub(fields: fields, secrets: ["1234", "true", "null", "text", "durationMs"])
+      let line = DiagnosticLine.encode(seq: 1, t: 0, type: "x", fields: clean)
+      assertEquals("{\"seq\":1,\"t\":0,\"type\":\"x\",\"durationMs\":1234,\"text\":\"text true null 1234 [gizli]\",\"ok\":true,\"n\":null}\n", line)
+      let parsed = DiagnosticReader.events(Data(line.utf8))
+      assertEquals(1, parsed.events.count)
+      assertEquals(0, parsed.skipped)
+    }
+    TestRun.test("DiagnosticPrivacyTest.scrubRemovesLongSecretEverywhere") {
+      let secret = "AIzaSyLONGSECRET1234567"
+      let quoted = "ab\"cdEFGH12"
+      var fields: DiagFields = ["a": .string("k=" + secret)]
+      fields["nested"] = DiagValue.object(["b": .array([.string("x " + secret + " y"), .int(5)])])
+      fields["wire"] = DiagValue.string("data: {\"text\":\"?key=" + secret + "\",\"t\":\"ab\\\"cdEFGH12\"}")
+      fields["plain"] = DiagValue.string("önce " + quoted + " sonra")
+      let clean = DiagnosticPrivacy.scrub(fields: fields, secrets: [secret, quoted])
+      let line = DiagnosticLine.encode(seq: 1, t: 0, type: "x", fields: clean)
+      assertFalse(line.contains("LONGSECRET"), line)
+      assertFalse(line.contains("cdEFGH12"), line)
+      assertTrue(line.contains("\"b\":[\"x [gizli] y\",5]"), line)
+      let parsed = DiagnosticReader.events(Data(line.utf8))
+      assertEquals(1, parsed.events.count, "geçerli JSON")
+      assertEquals(0, parsed.skipped)
     }
   }
 }
 
 enum DiagnosticRecorderTest {
   private static func make(_ clock: DiagTestClock, limits: DiagnosticLimits = DiagnosticLimits(),
-                           free: Int64? = 10_000_000_000) -> DiagnosticRecorder {
-    let recorder = DiagnosticRecorder(root: tempRoot(), limits: limits, clock: { clock.now }, freeSpace: { _ in free })
+                           free: Int64? = 10_000_000_000,
+                           output: ((URL) -> DiagnosticOutput?)? = nil) -> DiagnosticRecorder {
+    let now: () -> Double = { () -> Double in clock.now }
+    let space: (URL) -> Int64? = { (_: URL) -> Int64? in free }
+    let recorder = DiagnosticRecorder(root: tempRoot(), limits: limits, clock: now, freeSpace: space, openOutput: output)
     Diag.recorder = recorder
     return recorder
+  }
+
+  /// İlk [allowed] yazımı kabul edip sonra yazamayan hedef (disk dolu benzeri).
+  private final class LimitedOutput: DiagnosticOutput {
+    private var allowed: Int
+    init(allowed: Int) { self.allowed = allowed }
+    func write(_ data: Data) -> Bool {
+      if allowed <= 0 { return false }
+      allowed -= 1
+      return true
+    }
+    func sync() {}
+    func close() {}
+  }
+
+  /// Kare sınırı senaryosu (3 kare): olayların hepsi, karelerin hepsi yazılır ve kayıt "frames" ile durur.
+  private static func runFrameLimit(_ round: Int) {
+    let clock = DiagTestClock()
+    var limits = DiagnosticLimits()
+    limits.maxFrames = 3
+    let r = make(clock, limits: limits)
+    defer { finish(r) }
+    let encoder: DiagnosticFrameEncoder = { () -> Data? in Data(repeating: 0xFF, count: 100) }
+    r.frameGrabber = { () -> DiagnosticFrameEncoder? in encoder }
+    let id = startedId(r.start(version: "1"))
+    for index in 0..<6 {
+      Diag.emit("tv", frame: "tv") { ["what": .string("show"), "index": .int(index)] }
+      r.waitIdle()
+    }
+    assertFalse(r.isRecording, "tur \(round)")
+    assertEquals(DiagnosticStop.frames, r.status.lastStop, "tur \(round)")
+    let framesDir = folder(r, id).appendingPathComponent("frames").path
+    let names: [String] = ((try? FileManager.default.contentsOfDirectory(atPath: framesDir)) ?? []).sorted()
+    assertEquals(["0001.jpg", "0002.jpg", "0003.jpg"], names, "tur \(round)")
+    let list = events(folder(r, id))
+    let written: [[String: Any]] = list.filter { (event: [String: Any]) -> Bool in event["type"] as? String == "frame" && event["ok"] as? Bool == true }
+    assertEquals(3, written.count, "tur \(round)")
+    // Kareyi isteyen üç olayın üçü de yazıldı (sınırı dolduran kareyi isteyen dahil) ve her biri karesinden önce.
+    let shows: [[String: Any]] = list.filter { (event: [String: Any]) -> Bool in event["type"] as? String == "tv" }
+    assertEquals(["0001.jpg", "0002.jpg", "0003.jpg"], shows.compactMap { (event: [String: Any]) -> String? in event["frame"] as? String },
+                 "tur \(round)")
+    for name in ["0001.jpg", "0002.jpg", "0003.jpg"] {
+      let show: [String: Any]? = shows.first(where: { (event: [String: Any]) -> Bool in event["frame"] as? String == name })
+      let frame: [String: Any]? = written.first(where: { (event: [String: Any]) -> Bool in event["name"] as? String == name })
+      let showSeq: Int = (show?["seq"] as? Int) ?? Int.max
+      let frameSeq: Int = (frame?["seq"] as? Int) ?? -1
+      assertTrue(showSeq < frameSeq, "tur \(round): \(name) olayı karesinden önce")
+    }
+    assertEquals(3, r.sessions().first?.frames ?? 0, "tur \(round)")
   }
 
   private static func finish(_ recorder: DiagnosticRecorder) {
@@ -315,31 +475,15 @@ enum DiagnosticRecorderTest {
       assertTrue(size >= 2000 && size < 2600, "\(size)")
     }
     TestRun.test("DiagnosticRecorderTest.frameLimitStops") {
-      let clock = DiagTestClock()
-      var limits = DiagnosticLimits()
-      limits.maxFrames = 3
-      let r = make(clock, limits: limits)
-      defer { finish(r) }
-      r.frameGrabber = { { Data(repeating: 0xFF, count: 100) } }
-      let id = startedId(r.start(version: "1"))
-      for index in 0..<6 {
-        Diag.emit("tv", frame: "tv") { ["what": .string("show"), "index": .int(index)] }
-        r.waitIdle()
-      }
-      assertFalse(r.isRecording)
-      assertEquals(DiagnosticStop.frames, r.status.lastStop)
-      let names = (try? FileManager.default.contentsOfDirectory(atPath: folder(r, id).appendingPathComponent("frames").path))?.sorted() ?? []
-      assertEquals(["0001.jpg", "0002.jpg", "0003.jpg"], names)
-      let list = events(folder(r, id))
-      assertEquals(3, list.filter { $0["type"] as? String == "frame" && $0["ok"] as? Bool == true }.count)
-      assertEquals(["0001.jpg", "0002.jpg", "0003.jpg"], list.filter { $0["type"] as? String == "tv" }.compactMap { $0["frame"] as? String })
-      assertEquals(3, r.sessions().first?.frames ?? 0)
+      // Olay kare kodlamasından önce seri kuyruğa girer; karenin yazımı kodlamadan sonra aynı kuyruğa girdiği için
+      // olaydan önce olamaz. Sıra zamanlamaya bağlı değil: senaryo 25 kez aynı sonucu vermeli.
+      for round in 1...25 { runFrameLimit(round) }
     }
     TestRun.test("DiagnosticRecorderTest.frameSkippedWhenNoImage") {
       let clock = DiagTestClock()
       let r = make(clock)
       defer { finish(r) }
-      r.frameGrabber = { nil }
+      r.frameGrabber = { () -> DiagnosticFrameEncoder? in nil }
       let id = startedId(r.start(version: "1"))
       Diag.emit("extra", frame: "extra") { ["what": .string("pressed")] }
       r.waitIdle()
@@ -368,7 +512,8 @@ enum DiagnosticRecorderTest {
       assertFalse(manager.fileExists(atPath: folder(r, "20200101-000000").path))
       assertTrue(manager.fileExists(atPath: folder(r, replaced).path))
       assertEquals(3, r.sessions().count)
-      let low = DiagnosticRecorder(root: tempRoot(), clock: { clock.now }, freeSpace: { _ in 10 })
+      let low = DiagnosticRecorder(root: tempRoot(), clock: { () -> Double in clock.now },
+                                   freeSpace: { (_: URL) -> Int64? in 10 })
       assertEquals(DiagnosticRecorder.StartResult.lowDisk(10), low.start(version: "1"))
       assertFalse(low.isRecording)
       try? manager.removeItem(at: low.root)
@@ -421,11 +566,66 @@ enum DiagnosticRecorderTest {
         assertFalse(content.contains(value), "gizli değer kayıtta: \(value)")
       }
     }
+    TestRun.test("DiagnosticRecorderTest.unwritableSessionLineDoesNotStart") {
+      let clock = DiagTestClock()
+      let r = make(clock, output: { (_: URL) -> DiagnosticOutput? in LimitedOutput(allowed: 0) })
+      defer { finish(r) }
+      let result = r.start(version: "1")
+      if case .failed = result {} else { TestRun.fail("başarısız dönmeliydi: \(result)", #fileID, #line) }
+      assertFalse(Diag.on, "bayrak açılmamalı")
+      assertFalse(r.isRecording)
+      assertFalse(r.status.recording)
+      assertEquals(0, r.status.stops, "açılmayan kayıt 'durdu' sayılmaz")
+      assertEquals(0, r.sessions().count, "yarım klasör kalmamalı")
+      // Olay gelirse yazılmaz (kayıt yok).
+      Diag.emit("log") { ["text": .string("x")] }
+      r.waitIdle()
+      assertFalse(r.isRecording)
+    }
+    TestRun.test("DiagnosticRecorderTest.writeFailureWhileRecordingStops") {
+      let clock = DiagTestClock()
+      let r = make(clock, output: { (_: URL) -> DiagnosticOutput? in LimitedOutput(allowed: 1) })
+      defer { finish(r) }
+      let id = startedId(r.start(version: "1"))
+      assertTrue(Diag.on)
+      Diag.emit("log") { ["text": .string("yazılamayacak")] }
+      r.waitIdle()
+      assertFalse(r.isRecording)
+      assertFalse(Diag.on)
+      assertEquals(DiagnosticStop.failed, r.status.lastStop)
+      assertEquals("failed", r.summary(for: id)?.reason ?? "")
+    }
+    TestRun.test("DiagnosticRecorderTest.unsavedSealIsDoneOnlyOnce") {
+      let clock = DiagTestClock()
+      let r = make(clock)
+      defer { finish(r) }
+      let id = "20200101-130000"
+      let dir = folder(r, id)
+      let manager = FileManager.default
+      try? manager.createDirectory(at: dir, withIntermediateDirectories: true)
+      let events = dir.appendingPathComponent("events.jsonl")
+      try? Data("{\"seq\":1,\"t\":0,\"type\":\"session\",\"version\":\"1.8.5\"}\n{\"seq\":2,\"t\":9,\"ty".utf8).write(to: events)
+      // summary.json yerinde bir klasör var: özet yazılamaz (disk dolu benzeri), okunamaz.
+      try? manager.createDirectory(at: dir.appendingPathComponent("summary.json/engel"), withIntermediateDirectories: true)
+      for _ in 0..<3 {
+        let summary = r.sessions().first
+        assertEquals(id, summary?.id ?? "")
+        assertTrue(summary?.interrupted ?? false)
+        assertEquals(2, summary?.events ?? 0)
+      }
+      // Mühür satırı bir kez eklendi; dosya her yoklamada yeniden onarılmadı.
+      let data: Data = (try? Data(contentsOf: events)) ?? Data()
+      assertEquals(2, DiagnosticReader.lineCount(data))
+      assertEquals(["session", "recovered"], DiagnosticReader.events(data).events.map { (event: [String: Any]) -> String in
+        event["type"] as? String ?? ""
+      })
+    }
     TestRun.test("DiagnosticRecorderTest.deleteAndExport") {
       let clock = DiagTestClock()
       let r = make(clock)
       defer { finish(r) }
-      r.frameGrabber = { { Data([0xFF, 0xD8, 0xFF, 0xD9]) } }
+      let jpeg: DiagnosticFrameEncoder = { () -> Data? in Data([0xFF, 0xD8, 0xFF, 0xD9]) }
+      r.frameGrabber = { () -> DiagnosticFrameEncoder? in jpeg }
       let id = startedId(r.start(version: "1.8.4"))
       assertFalse(r.delete(id), "süren kayıt silinmez")
       assertNull(r.folder(for: id), "süren kayıt paylaşılmaz")

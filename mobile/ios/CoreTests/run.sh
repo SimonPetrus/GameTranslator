@@ -13,6 +13,8 @@ REPO="$(cd "$HERE/../../.." && pwd)"
 export GT_FIXTURES_DIR="${GT_FIXTURES_DIR:-$REPO/mobile/android/app/src/test/resources/fixtures}"
 export GT_PACKS_DIR="${GT_PACKS_DIR-$REPO/windows/src/GameTranslator.Core/Resources/packs}"
 [ -n "$GT_PACKS_DIR" ] || unset GT_PACKS_DIR
+# Tanı kaydı testi Settings.toJson anahtarlarını Runner/Store.swift kaynağından okur (Store.swift burada derlenmez).
+export GT_RUNNER_DIR="$RUNNER"
 
 if [ $# -ge 1 ]; then
   BUILD="$1"

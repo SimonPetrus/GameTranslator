@@ -26,9 +26,9 @@ enum DiagValue {
 
   static func doubles(_ list: [Double]) -> DiagValue { .array(list.map { .double($0) }) }
 
-  static func optional(_ value: Double?) -> DiagValue { value.map { .double($0) } ?? .null }
+  static func optional(_ value: Double?) -> DiagValue { value.map { .double($0) } ?? DiagValue.null }
 
-  static func optional(_ value: String?) -> DiagValue { value.map { .string($0) } ?? .null }
+  static func optional(_ value: String?) -> DiagValue { value.map { .string($0) } ?? DiagValue.null }
 
   /// JSON metni.
   var json: String {
@@ -146,23 +146,71 @@ final class DiagTrace {
   var names: [String] = []
 }
 
-/// Gizli bilgilerin kayda girmemesi: ayarlardaki anahtarlar yalnız "dolu/boş" olarak, sözlük yalnız sayılarla yazılır;
-/// bilinen gizli değerler ve URL'deki anahtar parametreleri her satırdan silinir.
+/// Gizli bilgilerin kayda girmemesi. Ayar dökümü İZİN listesiyle yazılır: yalnız bilinen güvenli alanların değeri
+/// yazılır; anahtarlar ve listede olmayan (ileride eklenecek) her alan yalnız "dolu/boş" olarak, sözlük yalnız sayılarla.
+/// Ayrıca bilinen gizli değerler ve URL/üst bilgi anahtarları her olayın DİZGE DEĞERLERİNDEN silinir.
 enum DiagnosticPrivacy {
-  static let secretFields: Set<String> = ["deepLKey", "geminiKey"]
-  /// Adında bunlardan biri geçen alan da gizli sayılır (ileride eklenecek alanlara karşı).
-  static let secretWords = ["key", "token", "secret", "password", "passwd", "account", "regist", "morning", "credential",
-                            "auth", "cookie"]
+  /// Değeri olduğu gibi yazılan ayar yolları ("style.fontSize"; dizideki nesnelerin alanları "extraRegions.name").
+  static let safeSettingPaths: Set<String> = [
+    "sourceLanguage", "targetLanguage", "engine", "geminiModel", "geminiStyleNote", "engineFailover", "autoWake",
+    "packsEnabled", "hideButtonHints", "matchGameTextSize", "packChoice", "autoRegion", "uiLanguage",
+    "region.top", "region.bottom", "region.left", "region.right",
+    "style.fontSize", "style.bottomPercent", "style.placement", "style.background", "style.bold", "style.textColor",
+    "style.displayMode", "style.stackPrevious", "style.speakerColor",
+    "extraRegions.top", "extraRegions.bottom", "extraRegions.left", "extraRegions.right", "extraRegions.name",
+  ]
+  /// İçine girilen (nesne ya da nesne dizisi) ayar yolları.
+  static let containerSettingPaths: Set<String> = ["region", "style", "extraRegions"]
+  /// İçeriği değil yalnız büyüklüğü yazılan alanlar.
+  static let summarizedSettingPaths: Set<String> = ["glossary"]
+  /// Bilinen gizli alanlar: yalnız {"set": dolu mu}.
+  static let secretSettingPaths: Set<String> = ["deepLKey", "geminiKey"]
+  /// Bundan kısa "gizli" değer silinmez: "1234", "true", "text" gibi her yerde geçen dizgeler bozulmasın.
+  static let minSecretLength = 8
   static let masked = "[gizli]"
 
-  static func isSecretField(_ name: String) -> Bool {
-    if secretFields.contains(name) { return true }
-    let lower = name.lowercased()
-    return secretWords.contains { lower.contains($0) }
+  /// Yolun bilinen sınıfı var mı (güvenli, kapsayıcı, özet ya da gizli).
+  static func isClassified(_ path: String) -> Bool {
+    safeSettingPaths.contains(path) || containerSettingPaths.contains(path) || summarizedSettingPaths.contains(path)
+      || secretSettingPaths.contains(path)
   }
 
-  /// Ayar JSON'u (Settings.toJson) gizli alanlar süzülmüş olarak; alanlar alfabetik.
-  static func settings(_ json: [String: Any]) -> DiagValue { .object(redactedObject(json)) }
+  /// Bilinen yolların son bileşenleri ("fontSize", "region"...): kaynak metinden çıkarılan anahtar adları bunlarla denetlenir.
+  static var classifiedNames: Set<String> {
+    let all: Set<String> = safeSettingPaths.union(containerSettingPaths).union(summarizedSettingPaths).union(secretSettingPaths)
+    var names = Set<String>()
+    for path in all {
+      let parts: [Substring] = path.split(separator: ".")
+      let last: String = parts.last.map { (part: Substring) -> String in String(part) } ?? path
+      names.insert(last)
+    }
+    return names
+  }
+
+  /// Ayar JSON'unda hiçbir sınıfa girmeyen yollar (yeni eklenmiş alan): kayıtta değeri yazılmaz, oturum olayında listelenir.
+  static func unclassifiedPaths(_ json: [String: Any], prefix: String = "") -> [String] {
+    var out: [String] = []
+    for key in json.keys.sorted() {
+      let path: String = prefix.isEmpty ? key : prefix + "." + key
+      let value: Any = json[key] as Any
+      if containerSettingPaths.contains(path) {
+        if let map = value as? [String: Any] {
+          out.append(contentsOf: unclassifiedPaths(map, prefix: path))
+        } else if let list = value as? [Any] {
+          for item in list {
+            if let map = item as? [String: Any] { out.append(contentsOf: unclassifiedPaths(map, prefix: path)) }
+          }
+        }
+      } else if !isClassified(path) {
+        out.append(path)
+      }
+    }
+    var seen = Set<String>()
+    return out.filter { (path: String) -> Bool in seen.insert(path).inserted }
+  }
+
+  /// Ayar JSON'u (Settings.toJson) izin listesine göre; alanlar alfabetik.
+  static func settings(_ json: [String: Any]) -> DiagValue { DiagValue.object(redactedObject(json, prefix: "")) }
 
   /// Değişen ayar yolları ("engine", "style.fontSize"); alfabetik. Değerler karşılaştırılır, yazılmaz.
   static func changes(before: [String: Any], after: [String: Any]) -> [String] {
@@ -170,41 +218,36 @@ enum DiagnosticPrivacy {
     var new: [String: String] = [:]
     for (path, value) in flatten(before, prefix: "") { old[path] = convert(value).json }
     for (path, value) in flatten(after, prefix: "") { new[path] = convert(value).json }
-    return Set(old.keys).union(new.keys).filter { old[$0] != new[$0] }.sorted()
+    let keys: Set<String> = Set(old.keys).union(new.keys)
+    return keys.filter { (path: String) -> Bool in old[path] != new[path] }.sorted()
   }
 
-  /// [paths] yollarındaki yeni değerler, gizliler süzülmüş (ayar değişikliği olayı için).
+  /// [paths] yollarındaki yeni değerler, izin listesine göre (ayar değişikliği olayı için).
   static func values(_ json: [String: Any], paths: [String]) -> DiagFields {
-    let flat = Dictionary(flatten(json, prefix: ""), uniquingKeysWith: { first, _ in first })
+    var flat: [String: Any] = [:]
+    for (path, value) in flatten(json, prefix: "") where flat[path] == nil { flat[path] = value }
     var out = DiagFields()
     for path in paths {
-      let leaf = path.split(separator: ".").last.map(String.init) ?? path
       guard let value = flat[path] else {
-        out[path] = .null
+        out[path] = DiagValue.null
         continue
       }
-      out[path] = redacted(leaf, value)
+      out[path] = redacted(path: path, value)
     }
     return out
   }
 
-  /// Satırdaki bilinen gizli değerleri ve URL/üst bilgi anahtarlarını [masked] ile değiştirir. 4 karakterden kısa
-  /// "gizli" değer yok sayılır (her yerde geçen kısa dizgeler silinmesin).
-  static func scrub(_ line: String, secrets: [String]) -> String {
-    var out = line
-    for secret in secrets {
-      let value = secret.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard value.count >= 4 else { continue }
-      out = out.replacingOccurrences(of: value, with: masked)
-      // JSON'a kaçışlı yazılmış hali de (ör. "/" ya da "\"" içeren anahtar).
-      let escaped = String(SubtitleWire.jsonString(value).dropFirst().dropLast())
-      if escaped != value { out = out.replacingOccurrences(of: escaped, with: masked) }
-    }
-    for pattern in patterns {
-      let range = NSRange(out.startIndex..., in: out)
-      out = pattern.stringByReplacingMatches(in: out, options: [], range: range, withTemplate: "$1" + masked)
-    }
-    return out
+  /// Olay alanlarındaki DİZGE DEĞERLERİNDEN gizli değerleri siler (iç içe nesne ve diziler dahil). Alan adlarına,
+  /// sayılara ve yapıya dokunulmaz; çıktı her zaman geçerli JSON'dur.
+  static func scrub(fields: DiagFields, secrets: [String]) -> DiagFields {
+    let forms: [String] = usableSecrets(secrets)
+    return scrubFields(fields, forms)
+  }
+
+  /// Tek bir metinden (dizge değeri) bilinen gizli değerleri ve URL/üst bilgi anahtarlarını [masked] ile değiştirir.
+  /// [minSecretLength]'ten kısa "gizli" değer yok sayılır.
+  static func scrub(_ text: String, secrets: [String]) -> String {
+    scrubText(text, usableSecrets(secrets))
   }
 
   /// `?key=...`, `&key=...`, `DeepL-Auth-Key ...`, `x-goog-api-key: ...`, `Bearer ...`.
@@ -213,68 +256,146 @@ enum DiagnosticPrivacy {
     "(?i)(DeepL-Auth-Key\\s+)[^\\s\"\\\\]+",
     "(?i)(x-goog-api-key\\s*[:=]\\s*)[^\\s\"\\\\]+",
     "(?i)(Bearer\\s+)[^\\s\"\\\\]+",
-  ].compactMap { try? NSRegularExpression(pattern: $0) }
+  ].compactMap { (pattern: String) -> NSRegularExpression? in try? NSRegularExpression(pattern: pattern) }
 
-  // MARK: - Dönüştürme
+  /// Silinecek biçimler: kırpılmış değer ve (farklıysa) JSON'a kaçışlı yazılmış hali (gömülü JSON metinleri için,
+  /// ör. TV çerçevesi). Uzundan kısaya: biri ötekini içeriyorsa önce uzunu silinsin.
+  private static func usableSecrets(_ secrets: [String]) -> [String] {
+    var forms: [String] = []
+    for secret in secrets {
+      let value: String = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard value.count >= minSecretLength else { continue }
+      forms.append(value)
+      let quoted: String = SubtitleWire.jsonString(value)
+      let escaped: String = String(quoted.dropFirst().dropLast())
+      if escaped != value { forms.append(escaped) }
+    }
+    return forms.sorted { (a: String, b: String) -> Bool in a.count > b.count }
+  }
 
-  private static func redactedObject(_ json: [String: Any]) -> DiagFields {
-    var out = DiagFields()
-    for key in json.keys.sorted() { out[key] = redacted(key, json[key] as Any) }
+  private static func scrubText(_ text: String, _ forms: [String]) -> String {
+    var out: String = text
+    for form in forms where out.contains(form) { out = out.replacingOccurrences(of: form, with: masked) }
+    for pattern in patterns {
+      let range = NSRange(out.startIndex..., in: out)
+      out = pattern.stringByReplacingMatches(in: out, options: [], range: range, withTemplate: "$1" + masked)
+    }
     return out
   }
 
-  private static func redacted(_ key: String, _ value: Any) -> DiagValue {
-    if key == "glossary" { return glossarySummary(value as? String ?? "") }
-    if isSecretField(key) {
-      let filled = !((value as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      return .object(["set": .bool(filled)])
+  private static func scrubFields(_ fields: DiagFields, _ forms: [String]) -> DiagFields {
+    var out = DiagFields()
+    for item in fields.items { out[item.key] = scrubValue(item.value, forms) }
+    return out
+  }
+
+  private static func scrubValue(_ value: DiagValue, _ forms: [String]) -> DiagValue {
+    switch value {
+    case .string(let text):
+      return DiagValue.string(scrubText(text, forms))
+    case .array(let items):
+      return DiagValue.array(items.map { (item: DiagValue) -> DiagValue in scrubValue(item, forms) })
+    case .object(let inner):
+      return DiagValue.object(scrubFields(inner, forms))
+    default:
+      return value
     }
-    if let map = value as? [String: Any] { return .object(redactedObject(map)) }
-    if let list = value as? [Any] {
-      return .array(list.map { item -> DiagValue in
-        if let map = item as? [String: Any] { return .object(redactedObject(map)) }
-        return convert(item)
-      })
+  }
+
+  // MARK: - Dönüştürme
+
+  private static func redactedObject(_ json: [String: Any], prefix: String) -> DiagFields {
+    var out = DiagFields()
+    for key in json.keys.sorted() {
+      let path: String = prefix.isEmpty ? key : prefix + "." + key
+      out[key] = redacted(path: path, json[key] as Any)
     }
-    return convert(value)
+    return out
+  }
+
+  /// Yolun sınıfına göre: özet, kapsayıcı (içine girilir), güvenli (değer) ya da gizli/bilinmeyen (yalnız dolu mu).
+  private static func redacted(path: String, _ value: Any) -> DiagValue {
+    if summarizedSettingPaths.contains(path) { return glossarySummary(value as? String ?? "") }
+    if containerSettingPaths.contains(path) {
+      if let map = value as? [String: Any] { return DiagValue.object(redactedObject(map, prefix: path)) }
+      if let list = value as? [Any] {
+        var items: [DiagValue] = []
+        for item in list {
+          if let map = item as? [String: Any] {
+            items.append(DiagValue.object(redactedObject(map, prefix: path)))
+          } else {
+            items.append(hidden(item, known: false))
+          }
+        }
+        return DiagValue.array(items)
+      }
+      return hidden(value, known: false)
+    }
+    if safeSettingPaths.contains(path) { return convert(value) }
+    return hidden(value, known: secretSettingPaths.contains(path))
+  }
+
+  /// Değeri yazılmayan alan: {"set": dolu mu}; bilinen gizli alan değilse "unclassified": true da eklenir.
+  private static func hidden(_ value: Any, known: Bool) -> DiagValue {
+    let filled: Bool
+    if let text = value as? String {
+      filled = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    } else if let map = value as? [String: Any] {
+      filled = !map.isEmpty
+    } else if let list = value as? [Any] {
+      filled = !list.isEmpty
+    } else {
+      filled = !(value is NSNull)
+    }
+    var fields: DiagFields = ["set": DiagValue.bool(filled)]
+    if !known { fields["unclassified"] = DiagValue.bool(true) }
+    return DiagValue.object(fields)
   }
 
   /// Sözlüğün içeriği değil yalnız büyüklüğü: satır, terim ve korunan terim sayısı.
   static func glossarySummary(_ text: String) -> DiagValue {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    var fields: DiagFields = ["set": .bool(!trimmed.isEmpty)]
-    fields["lines"] = .int(trimmed.isEmpty ? 0 : trimmed.split(separator: "\n", omittingEmptySubsequences: true).count)
+    let trimmed: String = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let lineCount: Int = trimmed.isEmpty ? 0 : trimmed.split(separator: "\n", omittingEmptySubsequences: true).count
+    var fields: DiagFields = ["set": DiagValue.bool(!trimmed.isEmpty)]
+    fields["lines"] = DiagValue.int(lineCount)
     if let data = trimmed.data(using: .utf8), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-      fields["terms"] = .int((root["terms"] as? [String: Any])?.count ?? 0)
-      fields["keep"] = .int((root["keep"] as? [Any])?.count ?? 0)
+      let terms: Int = (root["terms"] as? [String: Any])?.count ?? 0
+      let keep: Int = (root["keep"] as? [Any])?.count ?? 0
+      fields["terms"] = DiagValue.int(terms)
+      fields["keep"] = DiagValue.int(keep)
     } else if !trimmed.isEmpty {
-      fields["valid"] = .bool(false)
+      fields["valid"] = DiagValue.bool(false)
     }
-    return .object(fields)
+    return DiagValue.object(fields)
   }
 
-  /// Gizli alan süzmesi olmadan düz dönüşüm (yalnız karşılaştırma ve gizli olmayan değerler için).
+  /// Süzme olmadan düz dönüşüm (yalnız karşılaştırma ve güvenli değerler için).
   static func convert(_ value: Any) -> DiagValue {
-    if JsonNumber.isBoolean(value), let flag = value as? Bool { return .bool(flag) }
-    if let text = value as? String { return .string(text) }
-    if type(of: value) == Int.self, let number = value as? Int { return .int(number) }
-    if type(of: value) == Double.self, let number = value as? Double { return .double(number) }
+    if JsonNumber.isBoolean(value), let flag = value as? Bool { return DiagValue.bool(flag) }
+    if let text = value as? String { return DiagValue.string(text) }
+    if type(of: value) == Int.self, let number = value as? Int { return DiagValue.int(number) }
+    if type(of: value) == Double.self, let number = value as? Double { return DiagValue.double(number) }
     if let number = value as? NSNumber {
-      return CFNumberIsFloatType(number as CFNumber) ? .double(number.doubleValue) : .int(number.intValue)
+      let isFloat: Bool = CFNumberIsFloatType(number as CFNumber)
+      return isFloat ? DiagValue.double(number.doubleValue) : DiagValue.int(number.intValue)
     }
     if let map = value as? [String: Any] {
       var out = DiagFields()
       for key in map.keys.sorted() { out[key] = convert(map[key] as Any) }
-      return .object(out)
+      return DiagValue.object(out)
     }
-    if let list = value as? [Any] { return .array(list.map(convert)) }
-    return .null
+    if let list = value as? [Any] {
+      var items: [DiagValue] = []
+      for item in list { items.append(convert(item)) }
+      return DiagValue.array(items)
+    }
+    return DiagValue.null
   }
 
   private static func flatten(_ json: [String: Any], prefix: String) -> [(String, Any)] {
     var out: [(String, Any)] = []
     for key in json.keys.sorted() {
-      let path = prefix.isEmpty ? key : prefix + "." + key
+      let path: String = prefix.isEmpty ? key : prefix + "." + key
       if let map = json[key] as? [String: Any] {
         out.append(contentsOf: flatten(map, prefix: path))
       } else {
@@ -423,25 +544,25 @@ enum DiagRead {
     }
     var fields: DiagFields = ["lowConfidence": DiagValue.strings(input.filter { !confident.contains($0) }.map(\.text))]
     fields["edgeCut"] = DiagValue.strings(confident.filter { !uncut.contains($0) }.map(\.text))
-    fields["blocks"] = .array(list)
-    fields["chosenBlock"] = .int(best)
+    fields["blocks"] = DiagValue.array(list)
+    fields["chosenBlock"] = DiagValue.int(best)
     return .object(fields)
   }
 
   /// Satır yüksekliği hesabının ara değerleri.
   static func lineHeight(_ t: LineHeight.Trace) -> DiagValue {
     var fields: DiagFields = ["frameHeight": .int(t.frameHeight), "onlyLong": .bool(t.onlyLong)]
-    fields["pieces"] = .array(t.pieces.map { p -> DiagValue in
+    fields["pieces"] = DiagValue.array(t.pieces.map { p -> DiagValue in
       .object(["text": .string(p.text), "chars": .int(p.characters), "hPx": .int(p.heightPx), "wPx": .int(p.widthPx),
                "ratio": DiagValue.optional(p.ratio), "lines": DiagValue.optional(p.linesGuess), "perLine": .double(p.perLine)])
     })
-    fields["typical"] = .double(t.typical)
+    fields["typical"] = DiagValue.double(t.typical)
     fields["single"] = DiagValue.doubles(t.single)
-    fields["upperMedianPx"] = .double(t.upper)
-    fields["ratio"] = .double(t.ratio)
-    fields["inRange"] = .bool(t.inRange)
-    fields["min"] = .double(LineHeight.MIN_RATIO)
-    fields["max"] = .double(LineHeight.MAX_RATIO)
+    fields["upperMedianPx"] = DiagValue.double(t.upper)
+    fields["ratio"] = DiagValue.double(t.ratio)
+    fields["inRange"] = DiagValue.bool(t.inRange)
+    fields["min"] = DiagValue.double(LineHeight.MIN_RATIO)
+    fields["max"] = DiagValue.double(LineHeight.MAX_RATIO)
     fields["estimate"] = DiagValue.optional(t.result)
     return .object(fields)
   }
@@ -458,15 +579,31 @@ enum DiagnosticNames {
 
   /// gametranslator-tani-<sürüm>-<yyyyMMdd-HHmm>; sürümdeki dosya adına uygun olmayan karakterler atılır.
   static func exportBase(version: String, sessionId: String) -> String {
-    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
-    let cleanVersion = String(version.unicodeScalars.filter { allowed.contains($0) && $0.isASCII })
-    let minute = sessionId.count >= 13 ? String(sessionId.prefix(13)) : sessionId
-    return "gametranslator-tani-\(cleanVersion.isEmpty ? "0" : cleanVersion)-\(minute)"
+    var cleanVersion = ""
+    for scalar in version.unicodeScalars where isFileNameScalar(scalar) { cleanVersion.unicodeScalars.append(scalar) }
+    let minute: String = sessionId.count >= 13 ? String(sessionId.prefix(13)) : sessionId
+    let shown: String = cleanVersion.isEmpty ? "0" : cleanVersion
+    return "gametranslator-tani-" + shown + "-" + minute
+  }
+
+  /// Dosya adında kalan karakter: ASCII harf, rakam, ".", "-", "_".
+  private static func isFileNameScalar(_ scalar: Unicode.Scalar) -> Bool {
+    let v: UInt32 = scalar.value
+    let digit: Bool = v >= 48 && v <= 57
+    let upper: Bool = v >= 65 && v <= 90
+    let lower: Bool = v >= 97 && v <= 122
+    return digit || upper || lower || v == 46 || v == 45 || v == 95
   }
 
   /// Kayıt kimliği yalnız rakam ve tireden oluşmalı (klasör dışına çıkılmasın).
   static func isValidId(_ id: String) -> Bool {
-    !id.isEmpty && id.count <= 32 && id.unicodeScalars.allSatisfy { ("0"..."9").contains($0) || $0 == "-" }
+    guard !id.isEmpty, id.count <= 32 else { return false }
+    for scalar in id.unicodeScalars {
+      let v: UInt32 = scalar.value
+      let digit: Bool = v >= 48 && v <= 57
+      if !digit && v != 45 { return false }
+    }
+    return true
   }
 
   private static func stamp(_ date: Date, _ format: String, _ timeZone: TimeZone) -> String {

@@ -485,16 +485,16 @@ final class Engine: Native.Listener {
     // Tanı kaydı: basıldı; o anki kare de kaydedilir (okunacak olan kare).
     Diag.emit("extra", frame: "extra") {
       var fields: DiagFields = ["what": .string("pressed"), "index": .int(index), "running": .bool(running), "phase": .string(phase)]
-      fields["hasReader"] = .bool(reader != nil)
-      fields["hasFrame"] = .bool(currentFrame() != nil)
-      fields["frames"] = .int(frameCount)
-      fields["regionCount"] = .int(regions.count)
+      fields["hasReader"] = DiagValue.bool(reader != nil)
+      fields["hasFrame"] = DiagValue.bool(currentFrame() != nil)
+      fields["frames"] = DiagValue.int(frameCount)
+      fields["regionCount"] = DiagValue.int(regions.count)
       if index >= 0, index < regions.count {
         let r = regions[index]
-        fields["region"] = .string(r.name)
+        fields["region"] = DiagValue.string(r.name)
         fields["regionBox"] = DiagValue.box(TextBox(left: r.left, top: r.top, right: r.right, bottom: r.bottom))
       }
-      fields["tvClients"] = .int(server.connectedClients)
+      fields["tvClients"] = DiagValue.int(server.connectedClients)
       return fields
     }
     func failure(_ step: String, _ message: String) -> [String: Any] {

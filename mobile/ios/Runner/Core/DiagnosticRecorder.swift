@@ -58,8 +58,21 @@ struct DiagnosticSummary: Equatable {
   }
 }
 
+/// events.jsonl'in yazıldığı yer (uygulamada POSIX dosyası; testte yazılamayan sahte hedef verilebilir).
+protocol DiagnosticOutput: AnyObject {
+  /// Yazıldıysa true.
+  func write(_ data: Data) -> Bool
+  func sync()
+  func close()
+}
+
+/// Kare kodlayıcısı: çağrıldığında JPEG verir (kare kuyruğunda çalışır).
+typealias DiagnosticFrameEncoder = () -> Data?
+/// O anki karenin kodlayıcısını veren işlev; kare yoksa nil.
+typealias DiagnosticFrameGrabber = () -> DiagnosticFrameEncoder?
+
 /// Satır satır eklenen dosya (POSIX; hata istisna değil).
-private final class AppendFile {
+private final class AppendFile: DiagnosticOutput {
   private var fd: Int32
 
   init?(url: URL) {
@@ -146,14 +159,14 @@ final class DiagnosticRecorder: @unchecked Sendable {
   private var framesInFlight = 0
   private var published = Status()
   private var secretValues: [String] = []
-  private var grabber: (() -> (() -> Data?)?)?
+  private var grabber: DiagnosticFrameGrabber?
 
   // yalnız kuyrukta
   private final class OpenSession {
     let id: String
     let folder: URL
     let frames: URL
-    let file: AppendFile
+    let file: DiagnosticOutput
     let token: Int
     let startUptime: Double
     let startedAt: Date
@@ -164,7 +177,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
     var lastPulse: Double
     var dirty = false
 
-    init(id: String, folder: URL, file: AppendFile, token: Int, startUptime: Double, startedAt: Date, version: String,
+    init(id: String, folder: URL, file: DiagnosticOutput, token: Int, startUptime: Double, startedAt: Date, version: String,
          limits: DiagnosticLimits) {
       self.id = id
       self.folder = folder
@@ -183,6 +196,9 @@ final class DiagnosticRecorder: @unchecked Sendable {
   private var session: OpenSession?
   private var nextToken = 0
   private var timer: DispatchSourceTimer?
+  /// Mühürlenip özeti diske yazılamayan kayıtlar (yalnız kuyrukta): her yoklamada dosya yeniden okunmasın.
+  private var sealedInMemory: [String: DiagnosticSummary] = [:]
+  private let openOutput: (URL) -> DiagnosticOutput?
 
   /// Kayıt sürerken [DiagnosticLimits.pulseSeconds]'de bir, yardımcı kuyrukta çağrılır (uygulama durum özeti ve kare yazar).
   var onPulse: (() -> Void)?
@@ -192,17 +208,23 @@ final class DiagnosticRecorder: @unchecked Sendable {
   init(root: URL, limits: DiagnosticLimits = DiagnosticLimits(),
        clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime },
        wallClock: @escaping () -> Date = { Date() },
-       freeSpace: @escaping (URL) -> Int64? = DiagnosticRecorder.availableCapacity) {
+       freeSpace: @escaping (URL) -> Int64? = DiagnosticRecorder.availableCapacity,
+       openOutput: ((URL) -> DiagnosticOutput?)? = nil) {
     self.root = root
     self.limits = limits
     self.clock = clock
     self.wallClock = wallClock
     self.freeSpace = freeSpace
+    if let openOutput {
+      self.openOutput = openOutput
+    } else {
+      self.openOutput = { (url: URL) -> DiagnosticOutput? in AppendFile(url: url) }
+    }
   }
 
   /// O anki karenin kodlayıcısını veren işlev: kare yoksa nil; varsa çağrıldığında JPEG üreten kapanış (kare kuyruğunda
   /// çalışır). Kilit altında çağrılır; hızlı olmalı, kodlama yapmamalı.
-  var frameGrabber: (() -> (() -> Data?)?)? {
+  var frameGrabber: DiagnosticFrameGrabber? {
     get { lock.lock(); defer { lock.unlock() }; return grabber }
     set { lock.lock(); grabber = newValue; lock.unlock() }
   }
@@ -242,7 +264,11 @@ final class DiagnosticRecorder: @unchecked Sendable {
       var existing = listIds()
       if existing.count >= limits.maxSessions {
         guard replaceOldest else { return .full(oldest: existing[0]) }
-        while existing.count >= limits.maxSessions { try? manager.removeItem(at: folderURL(existing.removeFirst())) }
+        while existing.count >= limits.maxSessions {
+          let oldest: String = existing.removeFirst()
+          sealedInMemory[oldest] = nil
+          try? manager.removeItem(at: folderURL(oldest))
+        }
       }
       if let free = freeSpace(root), free < limits.minFreeBytes { return .lowDisk(free) }
       let startedAt = wallClock()
@@ -259,7 +285,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
         return .failed("klasör: \(error.localizedDescription)")
       }
       Self.excludeFromBackup(folder)
-      guard let file = AppendFile(url: folder.appendingPathComponent("events.jsonl")) else {
+      guard let file = openOutput(folder.appendingPathComponent("events.jsonl")) else {
         try? manager.removeItem(at: folder)
         return .failed("events.jsonl açılamadı")
       }
@@ -267,6 +293,21 @@ final class DiagnosticRecorder: @unchecked Sendable {
       let now = clock()
       let opened = OpenSession(id: id, folder: folder, file: file, token: nextToken, startUptime: now, startedAt: startedAt,
                                version: version, limits: limits)
+      var head: DiagFields = ["format": DiagValue.int(Self.formatVersion), "id": DiagValue.string(id),
+                              "version": DiagValue.string(version)]
+      head["startedAt"] = DiagValue.int(Int(startedAt.timeIntervalSince1970 * 1000))
+      let limitFields: DiagFields = ["seconds": DiagValue.double(limits.maxSeconds), "bytes": DiagValue.int(limits.maxBytes),
+                                     "frames": DiagValue.int(limits.maxFrames), "pulseSeconds": DiagValue.double(limits.pulseSeconds)]
+      head["limits"] = DiagValue.object(limitFields)
+      for item in fields.items { head[item.key] = item.value }
+      // Oturum satırı yazılamazsa kayıt hiç açılmaz: oturum yayımlanmaz, bayrak açılmaz, klasör silinir.
+      // (append, oturum henüz [session] olmadığı için hata durumunda finish çağırmaz.)
+      guard append(opened, type: "session", fields: head, at: now) else {
+        opened.file.close()
+        try? manager.removeItem(at: folder)
+        return .failed("events.jsonl yazılamadı")
+      }
+      opened.file.sync()
       session = opened
       lock.lock()
       liveToken = opened.token
@@ -274,15 +315,9 @@ final class DiagnosticRecorder: @unchecked Sendable {
       pending = 0
       reservedFrames = 0
       let previous = published
-      published = Status(recording: true, id: id, lastStop: previous.lastStop, lastStopId: previous.lastStopId, stops: previous.stops)
+      published = Status(recording: true, id: id, events: opened.budget.events, bytes: opened.budget.bytes,
+                         lastStop: previous.lastStop, lastStopId: previous.lastStopId, stops: previous.stops)
       lock.unlock()
-      var head: DiagFields = ["format": .int(Self.formatVersion), "id": .string(id), "version": .string(version),
-                              "startedAt": .int(Int(startedAt.timeIntervalSince1970 * 1000))]
-      head["limits"] = .object(["seconds": .double(limits.maxSeconds), "bytes": .int(limits.maxBytes),
-                                "frames": .int(limits.maxFrames), "pulseSeconds": .double(limits.pulseSeconds)])
-      for item in fields.items { head[item.key] = item.value }
-      _ = append(opened, type: "session", fields: head, at: now)
-      opened.file.sync()
       if Diag.recorder === self { Diag.on = true }
       startTimer()
       onChange?()
@@ -299,11 +334,10 @@ final class DiagnosticRecorder: @unchecked Sendable {
 
   /// Bir olay (Diag.emit üzerinden). [frameReason] verildiyse o anki kare de istenir.
   func record(_ type: String, _ fields: DiagFields, frameReason: String?) {
-    let t = clock()
-    var fields = fields
-    if let reason = frameReason, let name = reserveFrame(reason: reason) { fields["frame"] = .string(name) }
+    let t: Double = clock()
+    var fields: DiagFields = fields
     lock.lock()
-    guard let token = liveToken else {
+    guard let token: Int = liveToken else {
       lock.unlock()
       return
     }
@@ -313,33 +347,41 @@ final class DiagnosticRecorder: @unchecked Sendable {
       return
     }
     pending += 1
+    // Kare adı kilit altında ayrılır; kodlama olay sıraya girdikten SONRA kare kuyruğuna verilir. Böylece karenin yazımı
+    // (kare kuyruğundan sonra aynı seri kuyruğa girer) olaydan hiç önce olamaz: kare sınırını dolduran kare kaydı
+    // durdurduğunda onu isteyen olay çoktan yazılmıştır.
+    let frame: (name: String, encode: DiagnosticFrameEncoder)? = frameReason == nil ? nil : reserveFrameLocked()
     lock.unlock()
+    if let frame { fields["frame"] = DiagValue.string(frame.name) }
+    let event: DiagFields = fields
     queue.async { [self] in
       lock.lock()
       pending -= 1
       lock.unlock()
       guard let s = session, s.token == token else { return }
-      _ = append(s, type: type, fields: fields, at: t)
+      _ = append(s, type: type, fields: event, at: t)
       if let stop = s.budget.exceeded(now: clock()) { finish(stop) }
     }
+    if let frame, let reason = frameReason { encodeFrame(frame.name, frame.encode, reason: reason, token: token) }
   }
 
-  /// Kare kotası ve kuyruğu uygunsa kare adı ayırır ve kodlamayı kare kuyruğuna verir; değilse nil (olay karesiz yazılır).
-  private func reserveFrame(reason: String) -> String? {
-    lock.lock()
-    guard let token = liveToken, let grab = grabber, framesInFlight < Self.maxFramesInFlight,
-          reservedFrames < limits.maxFrames, let encode = grab() else {
-      lock.unlock()
-      return nil
-    }
+  /// Kilit altında: kare kotası ve kuyruğu uygunsa kare adı ayırır (kodlama henüz başlamaz); değilse nil (olay karesiz
+  /// yazılır). Kodlayıcı da burada alınır: olayın anındaki kare.
+  private func reserveFrameLocked() -> (name: String, encode: DiagnosticFrameEncoder)? {
+    guard let grab: DiagnosticFrameGrabber = grabber, framesInFlight < Self.maxFramesInFlight,
+          reservedFrames < limits.maxFrames, let encode: DiagnosticFrameEncoder = grab() else { return nil }
     reservedFrames += 1
     framesInFlight += 1
-    let name = String(format: "%04ld.jpg", reservedFrames)
-    lock.unlock()
+    let name: String = String(format: "%04ld.jpg", reservedFrames)
+    return (name: name, encode: encode)
+  }
+
+  /// Kareyi kare kuyruğunda kodlar, sonucu seri kuyrukta yazar.
+  private func encodeFrame(_ name: String, _ encode: @escaping DiagnosticFrameEncoder, reason: String, token: Int) {
     frameQueue.async { [self] in
-      let started = clock()
-      let data = encode()
-      let ms = Int(((clock() - started) * 1000).rounded())
+      let started: Double = clock()
+      let data: Data? = encode()
+      let ms: Int = Int(((clock() - started) * 1000).rounded())
       queue.async { [self] in
         lock.lock()
         framesInFlight -= 1
@@ -347,7 +389,6 @@ final class DiagnosticRecorder: @unchecked Sendable {
         writeFrame(name, data, reason: reason, encodeMs: ms, token: token)
       }
     }
-    return name
   }
 
   /// Kuyrukta.
@@ -355,14 +396,14 @@ final class DiagnosticRecorder: @unchecked Sendable {
     guard let s = session, s.token == token else { return }
     var fields: DiagFields = ["name": .string(name), "reason": .string(reason), "encodeMs": .int(encodeMs)]
     guard let data, !data.isEmpty else {
-      fields["ok"] = .bool(false)
-      fields["error"] = .string("kodlanamadı")
+      fields["ok"] = DiagValue.bool(false)
+      fields["error"] = DiagValue.string("kodlanamadı")
       _ = append(s, type: "frame", fields: fields, at: clock())
       return
     }
     guard s.budget.fitsFrame(bytes: data.count) else {
-      fields["ok"] = .bool(false)
-      fields["error"] = .string("boyut sınırı")
+      fields["ok"] = DiagValue.bool(false)
+      fields["error"] = DiagValue.string("boyut sınırı")
       _ = append(s, type: "frame", fields: fields, at: clock())
       finish(.size)
       return
@@ -370,14 +411,14 @@ final class DiagnosticRecorder: @unchecked Sendable {
     do {
       try data.write(to: s.frames.appendingPathComponent(name))
     } catch {
-      fields["ok"] = .bool(false)
-      fields["error"] = .string(error.localizedDescription)
+      fields["ok"] = DiagValue.bool(false)
+      fields["error"] = DiagValue.string(error.localizedDescription)
       _ = append(s, type: "frame", fields: fields, at: clock())
       return
     }
     s.budget.addFrame(bytes: data.count)
-    fields["ok"] = .bool(true)
-    fields["bytes"] = .int(data.count)
+    fields["ok"] = DiagValue.bool(true)
+    fields["bytes"] = DiagValue.int(data.count)
     _ = append(s, type: "frame", fields: fields, at: clock())
     if let stop = s.budget.exceeded(now: clock()) { finish(stop) }
   }
@@ -387,8 +428,10 @@ final class DiagnosticRecorder: @unchecked Sendable {
   private func append(_ s: OpenSession, type: String, fields: DiagFields, at t: Double) -> Bool {
     s.seq += 1
     let ms = max(0, Int(((t - s.startUptime) * 1000).rounded()))
-    let line = DiagnosticLine.encode(seq: s.seq, t: ms, type: type, fields: fields)
-    let data = Data(DiagnosticPrivacy.scrub(line, secrets: secrets).utf8)
+    // Gizli değerler yalnız dizge değerlerinden silinir (alan adları, sayılar ve JSON yapısı korunur).
+    let clean: DiagFields = DiagnosticPrivacy.scrub(fields: fields, secrets: secrets)
+    let line: String = DiagnosticLine.encode(seq: s.seq, t: ms, type: type, fields: clean)
+    let data = Data(line.utf8)
     guard s.file.write(data) else {
       if session === s { finish(.failed, writable: false) }
       return false
@@ -444,7 +487,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
     s.seq += 1
     let line = DiagnosticLine.encode(seq: s.seq, t: max(0, Int(((clock() - s.startUptime) * 1000).rounded())), type: "stop",
                                      fields: fields)
-    let data = Data(DiagnosticPrivacy.scrub(line, secrets: secrets).utf8)
+    let data = Data(line.utf8)
     guard s.file.write(data) else { return false }
     s.budget.addEvent(bytes: data.count)
     return true
@@ -532,6 +575,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
       guard DiagnosticNames.isValidId(id), session?.id != id else { return false }
       let url = folderURL(id)
       guard FileManager.default.fileExists(atPath: url.path) else { return false }
+      sealedInMemory[id] = nil
       return (try? FileManager.default.removeItem(at: url)) != nil
     }
   }
@@ -553,7 +597,12 @@ final class DiagnosticRecorder: @unchecked Sendable {
        let summary = DiagnosticSummary.fromJson(try? JSONSerialization.jsonObject(with: data) as? [String: Any]) {
       return summary
     }
-    return Self.seal(folder: folder, id: id)
+    // Özet diske yazılamadıysa (ör. disk dolu) mühür bir kez yapılır; sonraki yoklamalar bellekteki özeti kullanır,
+    // dosya yeniden okunmaz ve ikinci bir "recovered" satırı eklenmez.
+    if let known = sealedInMemory[id] { return known }
+    let sealed = Self.seal(folder: folder, id: id)
+    if let sealed { sealedInMemory[id] = sealed }
+    return sealed
   }
 
   /// Yarım kalmış kaydı onarır ve özetini yazar (saf dosya işi; test edilir).

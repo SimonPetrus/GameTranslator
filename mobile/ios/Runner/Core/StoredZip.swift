@@ -8,14 +8,12 @@ import Foundation
 /// ZIP'in CRC-32'si: GamePacks.swift'teki CRC32 (gzip ile aynı, IEEE 802.3) kullanılır.
 enum ZipChecksum {
   static func of(_ data: Data) -> UInt32 {
-    data.withUnsafeBytes { CRC32.checksum($0.bindMemory(to: UInt8.self)) }
+    data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> UInt32 in CRC32.checksum(raw.bindMemory(to: UInt8.self)) }
   }
 
   /// Parça parça okunan veri için süren hesap.
   static func add(_ crc: inout CRC32, _ data: Data) {
-    data.withUnsafeBytes { raw in
-      for byte in raw { crc.update(byte) }
-    }
+    for byte: UInt8 in data { crc.update(byte) }
   }
 }
 
@@ -104,17 +102,17 @@ final class StoredZipWriter {
   func add(name: String, file: URL, modified: Date) throws {
     var first = CRC32()
     var size = 0
-    try Self.readChunks(file) { chunk in
+    try Self.readChunks(file) { (chunk: Data) throws -> Void in
       ZipChecksum.add(&first, chunk)
       size += chunk.count
     }
     try header(name: name, crc: first.value, size: size, modified: modified)
     var copied = 0
     var check = CRC32()
-    try Self.readChunks(file) { chunk in
+    try Self.readChunks(file) { (chunk: Data) throws -> Void in
       ZipChecksum.add(&check, chunk)
       copied += chunk.count
-      try emit(chunk)
+      try self.emit(chunk)
     }
     // Dosya iki geçiş arasında değiştiyse ZIP bozuk olur.
     if copied != size || check.value != first.value { throw ZipError.changed(file.lastPathComponent) }
@@ -197,11 +195,17 @@ final class StoredZipWriter {
   static func dosTime(_ date: Date, timeZone: TimeZone = .current) -> (time: UInt16, date: UInt16) {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
-    let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-    let year = min(max((c.year ?? 1980) - 1980, 0), 127)
-    let time = UInt16((c.hour ?? 0) << 11 | (c.minute ?? 0) << 5 | (c.second ?? 0) / 2)
-    let day = UInt16(year << 9 | (c.month ?? 1) << 5 | (c.day ?? 1))
-    return (time, day)
+    let c: DateComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+    let fullYear: Int = c.year ?? 1980
+    let year: Int = min(max(fullYear - 1980, 0), 127)
+    let month: Int = c.month ?? 1
+    let dayOfMonth: Int = c.day ?? 1
+    let hour: Int = c.hour ?? 0
+    let minute: Int = c.minute ?? 0
+    let second: Int = c.second ?? 0
+    let timeBits: Int = (hour << 11) | (minute << 5) | (second / 2)
+    let dateBits: Int = (year << 9) | (month << 5) | dayOfMonth
+    return (time: UInt16(timeBits), date: UInt16(dateBits))
   }
 
   static func u16(_ data: inout Data, _ value: UInt16) {

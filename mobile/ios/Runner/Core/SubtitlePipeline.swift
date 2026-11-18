@@ -344,10 +344,10 @@ final class SubtitlePipeline: @unchecked Sendable {
                                                  trace: trace, started: started, translated: finalText, turns: [])
           fields["packId"] = DiagValue.optional(packed?.packId)
           fields["context"] = DiagValue.optional(context)
-          fields["fallbackAnswered"] = .bool(path == "engine" && fallback)
+          fields["fallbackAnswered"] = DiagValue.bool(path == "engine" && fallback)
           fields["answeredBy"] = path == "engine" ? DiagValue.optional(answered) : .null
-          fields["gemini"] = .bool(gemini)
-          fields["natural"] = .bool(natural)
+          fields["gemini"] = DiagValue.bool(gemini)
+          fields["natural"] = DiagValue.bool(natural)
           return fields
         }
       }
@@ -381,11 +381,11 @@ final class SubtitlePipeline: @unchecked Sendable {
     let ms = Int((DispatchTime.now().uptimeNanoseconds &- started) / 1_000_000)
     var fields: DiagFields = ["what": .string("translate"), "number": .int(number), "source": .string(source), "path": .string(path)]
     if !turns.isEmpty { fields["turns"] = DiagValue.strings(turns) }
-    fields["origin"] = .string(origin)
-    fields["engine"] = .string(options.engineId)
-    fields["model"] = .string(options.model)
-    fields["requests"] = .int(trace.calls)
-    fields["ms"] = .int(ms)
+    fields["origin"] = DiagValue.string(origin)
+    fields["engine"] = DiagValue.string(options.engineId)
+    fields["model"] = DiagValue.string(options.model)
+    fields["requests"] = DiagValue.int(trace.calls)
+    fields["ms"] = DiagValue.int(ms)
     fields["steps"] = DiagValue.strings(trace.steps)
     if !trace.names.isEmpty { fields["protectedNames"] = DiagValue.strings(trace.names) }
     fields["raw"] = DiagValue.optional(trace.raw)
@@ -423,7 +423,7 @@ final class SubtitlePipeline: @unchecked Sendable {
           var fields = SubtitlePipeline.diagPath(number: -1, source: source, path: value.origin.isEmpty ? "none" : value.origin,
                                                  origin: value.origin, options: options, trace: trace, started: started,
                                                  translated: value.text, turns: [])
-          fields["what"] = .string("translate-once")
+          fields["what"] = DiagValue.string("translate-once")
           return fields
         }
       }
@@ -643,12 +643,12 @@ final class SubtitlePipeline: @unchecked Sendable {
     screenMark += 1
     Diag.emit("pipeline") {
       var fields: DiagFields = ["what": .string("show"), "number": .int(number), "source": .string(source), "text": .string(translated)]
-      fields["origin"] = .string(origin)
-      fields["durationMs"] = .int(duration)
-      fields["replaces"] = .bool(replaces)
+      fields["origin"] = DiagValue.string(origin)
+      fields["durationMs"] = DiagValue.int(duration)
+      fields["replaces"] = DiagValue.bool(replaces)
       fields["box"] = DiagValue.box(box)
-      fields["layoutLines"] = layout.map { DiagValue.strings($0.lines) } ?? .null
-      fields["rows"] = rows.map { DiagRead.boxes($0) } ?? .null
+      fields["layoutLines"] = layout.map { DiagValue.strings($0.lines) } ?? DiagValue.null
+      fields["rows"] = rows.map { DiagRead.boxes($0) } ?? DiagValue.null
       return fields
     }
     sink.show(translated, durationMs: duration, box: box, replaces: replaces, rows: rows)

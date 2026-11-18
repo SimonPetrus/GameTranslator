@@ -216,10 +216,31 @@ enum LineHeight {
   /// yazının gerçek boyundan alçaktır. Komşularının [TALL_FACTOR] katından uzun parça satır sayısına bölünür; kalanlardan
   /// üstteki ortanca alınır (alt çıkıntılı satır çıkıntısızdan biraz yüksektir; gerçek boy büyüğe yakındır).
   static func estimate(_ pieces: [TextObservation], frameHeight: Int) -> Double? {
-    explain(pieces, frameHeight: frameHeight).result
+    // Sıcak yol (her okumada): ara değer dizisi kurulmaz. [explain] aynı hesabı ara değerleriyle yapar; ikisinin aynı
+    // sonucu verdiği CoreTests'te (DiagnosticFormatTest.lineHeightTraceMatchesEstimate) denetlenir.
+    guard frameHeight > 0 else { return nil }
+    let measured = pieces.filter { $0.height > 0 }
+    let long = measured.filter { $0.text.count >= MIN_CHARACTERS && $0.width > 0 }
+    let used = long.isEmpty ? measured : long
+    let heights = used.map { piece -> Double in
+      let h = Double(piece.height)
+      guard piece.text.count >= MIN_CHARACTERS, piece.width > 0 else { return h }
+      let ratio = h / (Double(piece.width) / Double(piece.text.count))
+      let lines = (ratio / SINGLE_LINE_RATIO).squareRoot().rounded()
+      return lines >= 2 ? h / lines : h
+    }
+    guard !heights.isEmpty else { return nil }
+    let typical = lowerMedian(heights)
+    // Komşularından belirgin uzun parça kaç satırsa ona bölünür.
+    let single = heights.map { h -> Double in
+      guard typical > 0, h >= typical * TALL_FACTOR else { return h }
+      return h / (h / typical).rounded()
+    }
+    let ratio = upperMedian(single) / Double(frameHeight)
+    return ratio >= MIN_RATIO && ratio <= MAX_RATIO ? ratio : nil
   }
 
-  /// [estimate]'in bütün ara değerleri (tanı kaydı): tahmin yalnız bu hesaptan çıkar, ikisi ayrışamaz.
+  /// [estimate]'in bütün ara değerleri (yalnız tanı kaydı açıkken): aynı hesap, sonuç [Trace.result].
   struct Trace {
     struct Piece {
       let text: String

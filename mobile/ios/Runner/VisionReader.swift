@@ -179,14 +179,14 @@ final class VisionReader: FrameReader {
       Diag.emit("engine") {
         var fields: DiagFields = ["what": .string("reader-rebuild"), "ocrLanguage": DiagValue.optional(self.ocrLanguage)]
         fields["chain"] = DiagValue.strings(chainOrder)
-        fields["engine"] = .string(s.engine)
-        fields["effectiveEngine"] = .string(Engine.effectiveEngine(s))
-        fields["glossaryTerms"] = .int(glossary.count)
-        fields["packs"] = .bool(s.packsEnabled && PackTranslation.applies(s.sourceLanguage, s.targetLanguage))
-        fields["hideButtonHints"] = .bool(s.hideButtonHints)
-        fields["matchGameTextSize"] = .bool(s.matchGameTextSize)
-        fields["placement"] = .string(s.style.placement)
-        fields["autoRegion"] = .bool(s.autoRegion)
+        fields["engine"] = DiagValue.string(s.engine)
+        fields["effectiveEngine"] = DiagValue.string(Engine.effectiveEngine(s))
+        fields["glossaryTerms"] = DiagValue.int(glossary.count)
+        fields["packs"] = DiagValue.bool(s.packsEnabled && PackTranslation.applies(s.sourceLanguage, s.targetLanguage))
+        fields["hideButtonHints"] = DiagValue.bool(s.hideButtonHints)
+        fields["matchGameTextSize"] = DiagValue.bool(s.matchGameTextSize)
+        fields["placement"] = DiagValue.string(s.style.placement)
+        fields["autoRegion"] = DiagValue.bool(s.autoRegion)
         fields["region"] = DiagValue.box(TextBox(left: s.region.left, top: s.region.top, right: s.region.right, bottom: s.region.bottom))
         return fields
       }
@@ -441,7 +441,7 @@ final class VisionReader: FrameReader {
       Diag.emit("extra") {
         var fields: DiagFields = ["what": .string("fail"), "step": .string(step), "region": .string(r.name)]
         for item in detail.items { fields[item.key] = item.value }
-        fields["error"] = .string(failed.error)
+        fields["error"] = DiagValue.string(failed.error)
         return fields
       }
     }
@@ -526,9 +526,9 @@ final class VisionReader: FrameReader {
     Diag.emit("extra") {
       var f: DiagFields = ["what": .string("ocr"), "region": .string(r.name),
                            "regionBox": DiagValue.box(TextBox(left: r.left, top: r.top, right: r.right, bottom: r.bottom))]
-      f["crop"] = .array([.int(cropX), .int(cropY), .int(w), .int(h)])
-      f["frame"] = .array([.int(fullWidth), .int(fullHeight)])
-      f["ocrMs"] = .int(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
+      f["crop"] = DiagValue.array([.int(cropX), .int(cropY), .int(w), .int(h)])
+      f["frame"] = DiagValue.array([.int(fullWidth), .int(fullHeight)])
+      f["ocrMs"] = DiagValue.int(Int((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000))
       f["ocrLanguage"] = DiagValue.optional(ocrLanguage)
       f["raw"] = DiagRead.observations(found, cropX: cropX, cropY: cropY, frameWidth: fullWidth, frameHeight: fullHeight)
       f["selection"] = DiagRead.selection(found, width: w, height: h)
@@ -614,17 +614,18 @@ final class VisionReader: FrameReader {
         let better = ReadingSelector.isBetter(retried, than: selected)
         if better { selected = retried }
         if diagOn {
-          reread = .object(["done": .bool(true), "scale": .double(scale), "better": .bool(better),
+          reread = DiagValue.object(["done": .bool(true), "scale": .double(scale), "better": .bool(better),
                             "raw": DiagRead.observations(rereadRaw, cropX: cropX, cropY: cropY, frameWidth: fullWidth, frameHeight: fullHeight)])
         }
       } else if diagOn {
-        reread = .object(["done": .bool(false), "scale": .double(scale), "error": .string("büyütülmüş okuma yapılamadı")])
+        reread = DiagValue.object(["done": .bool(false), "scale": .double(scale), "error": .string("büyütülmüş okuma yapılamadı")])
       }
     }
     let pieces: [Piece] = selected.map { Piece(text: $0.text, left: $0.left, top: $0.top, right: $0.right, bottom: $0.bottom) }
     var (lines, box, lineBoxes) = Self.rowsWithBoxes(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth,
                                                      fullHeight: fullHeight)
-    let rowLines = lines
+    // Tanı kaydı için düğme yazısı atılmadan önceki satırlar (kapalıyken boş; kopya alınmaz).
+    let rowLines: [String] = diagOn ? lines : []
     if hideButtonHints {
       // Oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye karışmasın. Satır kutuları satırlarla birlikte süzülür.
       let stripped = lines.map(ButtonHints.strip)
@@ -636,14 +637,19 @@ final class VisionReader: FrameReader {
     var tracked: Double?
     if let box, !pieces.isEmpty {
       // Satır yüksekliği: iki satırı ya da simgeyi kapsayan parçaya karşı sağlam tahmin, son okumaların ortancası;
-      // güvenilir ölçüm yoksa gönderilmez (TV ayardaki boyu kullanır). Tahmin LineHeight.estimate ile aynı hesaptır.
-      let trace = LineHeight.explain(selected, frameHeight: fullHeight)
-      let line = lineTracker.add(trace.result)
-      sink.remember(box, line: line, characters: lines.reduce(0) { $0 + $1.count })
+      // güvenilir ölçüm yoksa gönderilmez (TV ayardaki boyu kullanır). Tanı kaydı açıkken aynı hesap ara değerleriyle
+      // yapılır (explain(...).result == estimate(...)); kapalıyken iz kurulmaz.
+      let estimate: Double?
       if diagOn {
+        let trace: LineHeight.Trace = LineHeight.explain(selected, frameHeight: fullHeight)
         lineTrace = trace
-        tracked = line
+        estimate = trace.result
+      } else {
+        estimate = LineHeight.estimate(selected, frameHeight: fullHeight)
       }
+      let line = lineTracker.add(estimate)
+      sink.remember(box, line: line, characters: lines.reduce(0) { $0 + $1.count })
+      if diagOn { tracked = line }
     }
     // Kurtarmadan önce başlamış eski okumanın bayat satırları hatta ve ortak duruma gitmez.
     guard isCurrent(token) else { return }
@@ -665,12 +671,12 @@ final class VisionReader: FrameReader {
         Diag.emit("read") {
           var f: DiagFields = ["region": .string(regionName),
                                "regionBox": DiagValue.box(TextBox(left: r.left, top: r.top, right: r.right, bottom: r.bottom))]
-          f["crop"] = .array([.int(cropX), .int(cropY), .int(w), .int(h)])
-          f["frame"] = .array([.int(fullWidth), .int(fullHeight)])
-          f["ocrMs"] = .int(ocrMs)
+          f["crop"] = DiagValue.array([.int(cropX), .int(cropY), .int(w), .int(h)])
+          f["frame"] = DiagValue.array([.int(fullWidth), .int(fullHeight)])
+          f["ocrMs"] = DiagValue.int(ocrMs)
           f["raw"] = DiagRead.observations(raw, cropX: cropX, cropY: cropY, frameWidth: fullWidth, frameHeight: fullHeight)
-          f["hideButtonHints"] = .bool(hideButtonHints)
-          f["hintRowsDropped"] = .array(hintDrops.map { drop -> DiagValue in
+          f["hideButtonHints"] = DiagValue.bool(hideButtonHints)
+          f["hintRowsDropped"] = DiagValue.array(hintDrops.map { drop -> DiagValue in
             .object(["text": .string(drop.text), "reason": .string(drop.reason)])
           })
           f["selection"] = DiagRead.selection(first, width: w, height: h)
@@ -681,10 +687,10 @@ final class VisionReader: FrameReader {
           f["lineBoxes"] = DiagRead.boxes(lineBoxes)
           f["box"] = DiagValue.box(box)
           var height: DiagFields = ["trackerWindow": DiagValue.doubles(window), "trackerMedian": DiagValue.optional(tracked)]
-          height["calc"] = lineTrace.map { DiagRead.lineHeight($0) } ?? .null
-          height["matchGameTextSize"] = .bool(match)
+          height["calc"] = lineTrace.map { DiagRead.lineHeight($0) } ?? DiagValue.null
+          height["matchGameTextSize"] = DiagValue.bool(match)
           height["toSend"] = DiagValue.optional(LineHeight.toSend(tracked, matchGameTextSize: match))
-          f["lineHeight"] = .object(height)
+          f["lineHeight"] = DiagValue.object(height)
           return f
         }
       }
@@ -879,9 +885,9 @@ private final class ServerSink: SubtitleSink {
         // Yazı boyu kararının girdileri: okumadan bilinen satır yüksekliği ve karakter sayısı, ayar, giden değer.
         var f: DiagFields = ["knownBox": .bool(known != nil), "knownLine": DiagValue.optional(known?.line)]
         f["knownCharacters"] = known.map { DiagValue.int($0.characters) } ?? DiagValue.null
-        f["matchGameTextSize"] = .bool(match)
-        f["cover"] = .bool(covering)
-        if let known, known.characters > 0 { f["widenRatio"] = .double(Double(text.count) / Double(known.characters)) }
+        f["matchGameTextSize"] = DiagValue.bool(match)
+        f["cover"] = DiagValue.bool(covering)
+        if let known, known.characters > 0 { f["widenRatio"] = DiagValue.double(Double(text.count) / Double(known.characters)) }
         diag = f
       }
     }

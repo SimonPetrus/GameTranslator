@@ -48,7 +48,7 @@ class _DiagnosticsPageState extends State<DiagnosticsPage> {
       if (next != null) {
         final before = seenStops;
         if (before != null && next.stops > before && !next.recording) {
-          limitNotice = stopReasonText(next.lastStop, automatic: true);
+          limitNotice = stopReasonText(next.lastStop, next);
         }
         seenStops = next.stops;
       }
@@ -57,19 +57,26 @@ class _DiagnosticsPageState extends State<DiagnosticsPage> {
     });
   }
 
-  /// Duruş nedeninin metni; [automatic]: yalnız sınır ya da hata yüzünden duruşta metin döner.
-  static String? stopReasonText(String reason, {bool automatic = false}) {
+  /// Sınırların metni: köprüden gelen değerlerden (dakika, MB, kare).
+  static int limitMinutes(DiagnosticsStatus s) => (s.maxSeconds / 60).round();
+  static int limitMegabytes(DiagnosticsStatus s) => (s.maxBytes / (1024 * 1024)).round();
+
+  /// Kendiliğinden (sınır ya da hata yüzünden) duruşun metni; elle durdurulduysa null.
+  static String? stopReasonText(String reason, DiagnosticsStatus s) {
+    final minutes = limitMinutes(s);
+    final megabytes = limitMegabytes(s);
+    final frames = s.maxFrames;
     switch (reason) {
       case 'duration':
-        return L.t('Süre sınırı (15 dakika) doldu; kayıt kendiliğinden durdu.', 'The time limit (15 minutes) was reached; the recording stopped by itself.');
+        return L.t('Süre sınırı ($minutes dakika) doldu; kayıt kendiliğinden durdu.', 'The time limit ($minutes minutes) was reached; the recording stopped by itself.');
       case 'size':
-        return L.t('Boyut sınırı (40 MB) doldu; kayıt kendiliğinden durdu.', 'The size limit (40 MB) was reached; the recording stopped by itself.');
+        return L.t('Boyut sınırı ($megabytes MB) doldu; kayıt kendiliğinden durdu.', 'The size limit ($megabytes MB) was reached; the recording stopped by itself.');
       case 'frames':
-        return L.t('Görüntü sınırı (600 kare) doldu; kayıt kendiliğinden durdu.', 'The image limit (600 frames) was reached; the recording stopped by itself.');
+        return L.t('Görüntü sınırı ($frames kare) doldu; kayıt kendiliğinden durdu.', 'The image limit ($frames frames) was reached; the recording stopped by itself.');
       case 'failed':
         return L.t('Kayıt dosyası yazılamadı; kayıt durdu.', 'The recording file could not be written; the recording stopped.');
       default:
-        return automatic ? null : '';
+        return null;
     }
   }
 
@@ -222,10 +229,12 @@ class _DiagnosticsPageState extends State<DiagnosticsPage> {
               Notice(icon: CupertinoIcons.exclamationmark_circle_fill, color: Tokens.warning, text: limitNotice!),
             ],
             GroupFooter(L.t(
-              'Kaydı başlat, oyunu oynarken sorunu yaşa, sonra durdur ve dosyayı paylaş. En çok 15 dakika, 40 MB ya da 600 kare; '
-                  'hangisi önce dolarsa kayıt kendiliğinden durur. Kayıt çeviri başlamadan da açılabilir.',
-              'Start the recording, play until the problem happens, then stop it and share the file. At most 15 minutes, 40 MB or 600 frames; '
-                  'whichever comes first stops the recording by itself. You can start it before translation too.',
+              'Kaydı başlat, oyunu oynarken sorunu yaşa, sonra durdur ve dosyayı paylaş. En çok ${limitMinutes(s)} dakika, '
+                  '${limitMegabytes(s)} MB ya da ${s.maxFrames} kare; hangisi önce dolarsa kayıt kendiliğinden durur. '
+                  'Kayıt çeviri başlamadan da açılabilir.',
+              'Start the recording, play until the problem happens, then stop it and share the file. At most ${limitMinutes(s)} minutes, '
+                  '${limitMegabytes(s)} MB or ${s.maxFrames} frames; whichever comes first stops the recording by itself. '
+                  'You can start it before translation too.',
             )),
             GroupHeader(L.t('KAYITLAR', 'RECORDINGS')),
             if (s.sessions.isEmpty)
