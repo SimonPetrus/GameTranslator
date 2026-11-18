@@ -20,7 +20,16 @@ struct FunctionTranslator: TextTranslator {
 /// Çevirinin gittiği yer (TV sunucusu ve telefondaki ekran).
 protocol SubtitleSink {
   func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool)
+  /// [rows]: birden çok konuşmalı satırda her satırın (konuşmanın) oyundaki kutusu, sırası ve sayısı metnin
+  /// satırlarıyla aynı ([TurnRows]); yoksa nil. Varsayılanı rows'u yok sayar.
+  func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool, rows: [TextBox]?)
   func clear()
+}
+
+extension SubtitleSink {
+  func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool, rows: [TextBox]?) {
+    show(text, durationMs: durationMs, box: box, replaces: replaces)
+  }
 }
 
 /// Oyun paketinden bulunan satır (Android'deki GamePacks.kt: `data class PackMatch(val text: String, val packId: String? = null)`).
@@ -94,8 +103,8 @@ final class SubtitlePipeline: @unchecked Sendable {
   private var recentSpeakers: [String] = []
   private static let RECENT_SPEAKERS = 32
   private var lastPackId: String?
-  /// TV'ye hattın en son gönderdiği satır (numarası, çevirisi, kutusu, süresi, gönderildiği an); kalkınca ya da sıfırlanınca nil.
-  private var displayed: (number: Int, text: String, box: TextBox?, durationMs: Int, at: Double)?
+  /// TV'ye hattın en son gönderdiği satır (numarası, çevirisi, kutusu, satır kutuları, süresi, gönderildiği an); kalkınca ya da sıfırlanınca nil.
+  private var displayed: (number: Int, text: String, box: TextBox?, rows: [TextBox]?, durationMs: Int, at: Double)?
   /// TV'deki gösterim her değiştiğinde (satır, temizleme, ek gösterim, sıfırlama) artar.
   private var screenMark = 0
   private var resets = 0
@@ -159,8 +168,22 @@ final class SubtitlePipeline: @unchecked Sendable {
   }
 
   /// Bir karenin okuması: [lines] yukarıdan aşağı satırlar, [box] yazının ekrandaki yeri.
-  func onRead(_ lines: [String], _ box: TextBox?) {
-    let text = lines.map { OcrNoise.clean($0) }.filter { !$0.isEmpty }.joined(separator: "\n")
+  func onRead(_ lines: [String], _ box: TextBox?) { onRead(lines, box, lineBoxes: nil) }
+
+  /// [lineBoxes]: her satırın ekrandaki yeri ([lines] ile aynı sıra ve sayıda; tutmuyorsa yok sayılır). Birden çok
+  /// konuşmalı satırda TV'ye her konuşmanın kutusu gider ([TurnRows]).
+  func onRead(_ lines: [String], _ box: TextBox?, lineBoxes: [TextBox]?) {
+    let aligned = box != nil && lineBoxes?.count == lines.count
+    var kept: [String] = []
+    var keptBoxes: [TextBox] = []
+    for (index, line) in lines.enumerated() {
+      let cleaned = OcrNoise.clean(line)
+      if cleaned.isEmpty { continue }
+      kept.append(cleaned)
+      if aligned, let lineBoxes { keptBoxes.append(lineBoxes[index]) }
+    }
+    let text = kept.joined(separator: "\n")
+    let layout = aligned ? ReadLayout(lines: kept, boxes: keptBoxes) : nil
     onReadText?(text)
     lock.lock()
     defer { lock.unlock() }
@@ -179,20 +202,24 @@ final class SubtitlePipeline: @unchecked Sendable {
       let number = latest
       onScreen = number
       if let cached = cache.get(key(source)) {
-        show(number, source, cached, box, SubtitlePipeline.ON_SCREEN_MS, replaces: revises(source), origin: "cache")
+        show(number, source, cached, box, layout, SubtitlePipeline.ON_SCREEN_MS, replaces: revises(source), origin: "cache")
       } else {
-        request(number, source, box)
+        request(number, source, box, layout)
       }
     case .translate:
       guard let source = action.text else { return }
       latest += 1
       let number = latest
       onScreen = number
-      if let cached = cache.get(key(source)) { deliver(number, source, cached, box, origin: "cache") } else { request(number, source, box) }
+      if let cached = cache.get(key(source)) {
+        deliver(number, source, cached, box, layout, origin: "cache")
+      } else {
+        request(number, source, box, layout)
+      }
     }
   }
 
-  private func request(_ number: Int, _ source: String, _ box: TextBox?) {
+  private func request(_ number: Int, _ source: String, _ box: TextBox?, _ layout: ReadLayout?) {
     // Kısa satırın bağlamı: bu an gösterilmiş olan satır ve ne zaman gösterildiği (kilit altında okunur).
     let previous = lastShownSource
     let previousAt = lastShownAt
@@ -204,7 +231,7 @@ final class SubtitlePipeline: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         _skipped += 1
-        deliver(number, source, source, box, origin: "")
+        deliver(number, source, source, box, layout, origin: "")
         return
       }
       let packed: PackMatch? = (try? packLookup?(source)).flatMap { KotlinText.isBlank($0.text) ? nil : $0 }
@@ -221,7 +248,7 @@ final class SubtitlePipeline: @unchecked Sendable {
           return
         }
         cache.set(key(source), translated)
-        deliver(number, source, translated, box, origin: result.origin)
+        deliver(number, source, translated, box, layout, origin: result.origin)
         return
       }
       // İki satırlık altyazı tek cümledir; çevirmene tek satır olarak gider.
@@ -285,7 +312,7 @@ final class SubtitlePipeline: @unchecked Sendable {
         return
       }
       if context == nil { cache.set(key(source), translated) }
-      deliver(number, source, translated, box, origin: origin)
+      deliver(number, source, translated, box, layout, origin: origin)
     }
   }
 
@@ -449,12 +476,13 @@ final class SubtitlePipeline: @unchecked Sendable {
   }
 
   /// Kilit altında çağrılır. Yerine yenisi gelmiş satırın geç kalan çevirisi gösterilmez.
-  private func deliver(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?, origin: String) {
+  private func deliver(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?, _ layout: ReadLayout?,
+                       origin: String) {
     if number != latest { return }
     // Çeviri kaynağıyla neredeyse aynıysa metin zaten hedef dildedir.
     if !stabilizer.shouldSend(source, translated) { return }
     let duration = number == onScreen ? SubtitlePipeline.ON_SCREEN_MS : SubtitlePipeline.readingTime(translated)
-    show(number, source, translated, box, duration, replaces: revises(source), origin: origin)
+    show(number, source, translated, box, layout, duration, replaces: revises(source), origin: origin)
   }
 
   /// Kilit altında çağrılır. [source], az önce gösterilen satırın uzamış ya da düzelmiş okuması mı (TV öncekinin
@@ -476,14 +504,19 @@ final class SubtitlePipeline: @unchecked Sendable {
     return TextMatch.normalize(afterName)
   }
 
-  private func show(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?, _ duration: Int, replaces: Bool,
-                    origin: String) {
+  /// Kilit altında çağrılır. [layout] [source]'un okumasıysa ve satırlar konuşmalara ayrılabiliyorsa her satırın kutusu
+  /// da gider (önbellekten, paketten ya da motordan gelen çeviride aynı kural; satır sayısı tutmazsa gitmez).
+  private func show(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?, _ layout: ReadLayout?,
+                    _ duration: Int, replaces: Bool, origin: String) {
     lastShownSource = source
     let now = contextClock()
     lastShownAt = now
-    displayed = (number: number, text: translated, box: box, durationMs: duration, at: now)
+    let rows: [TextBox]? = box == nil ? nil : layout.flatMap {
+      TurnRows.rows(source: source, layout: $0, translated: translated, known: Set(recentSpeakers))
+    }
+    displayed = (number: number, text: translated, box: box, rows: rows, durationMs: duration, at: now)
     screenMark += 1
-    sink.show(translated, durationMs: duration, box: box, replaces: replaces)
+    sink.show(translated, durationMs: duration, box: box, replaces: replaces, rows: rows)
     onPair?(source, translated)
     onShown?(source, translated, origin, replaces)
   }
@@ -537,7 +570,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     let remaining = current.durationMs - max(0, elapsed)
     guard remaining >= SubtitlePipeline.RESUME_MIN_MS else { return false }
     screenMark += 1
-    sink.show(current.text, durationMs: remaining, box: current.box, replaces: false)
+    sink.show(current.text, durationMs: remaining, box: current.box, replaces: false, rows: current.rows)
     return true
   }
 

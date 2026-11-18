@@ -33,8 +33,6 @@ struct SubtitleStyle: Equatable {
 final class SubtitleServer {
   static let defaultPort: UInt16 = 8787
   static let pingFrame = ": ping\n\nevent: ping\ndata: {}\n\n"
-  /// TV uygulaması yanıtta küçük harfle "gametranslator" arar.
-  static let helloBody = "{\"app\":\"gametranslator\"}"
 
   private final class Client {
     let connection: NWConnection
@@ -61,6 +59,8 @@ final class SubtitleServer {
   private var wanted = false
   private var ready = false
   private var retryScheduled = false
+  /// Çeviri çalışıyor mu (/hello yanıtındaki "active"); yalnız sunucu kuyruğunda okunur/yazılır.
+  private var _active = false
 
   /// Bağlı TV sayısı ya da dinlenen port değişince çağrılır (sunucu kuyruğunda).
   var onChanged: (() -> Void)?
@@ -85,6 +85,13 @@ final class SubtitleServer {
   var connectedClients: Int { queue.sync { _connected } }
 
   var isStarted: Bool { queue.sync { listener != nil } }
+
+  /// /hello yanıtında "active": çeviri (akış ya da demo) çalışırken true. TV 1.0.7+ boştaki sunucuyu bırakıp çeviri
+  /// yapanı arar. Her iş parçacığından ayarlanabilir; sunucu kuyruğunda sırayla uygulanır.
+  var active: Bool {
+    get { queue.sync { _active } }
+    set { queue.async { self._active = newValue } }
+  }
 
   /// Dinleyici kurulmuş ve bağlantı kabul ediyor mu.
   var isReady: Bool { queue.sync { listener != nil && ready } }
@@ -132,66 +139,24 @@ final class SubtitleServer {
   }
 
   func sendSubtitle(_ text: String, durationMs: Int = 15000, box: TextBox? = nil, replaces: Bool = false,
-                    source: TextBox? = nil, line: Double? = nil) {
+                    source: TextBox? = nil, line: Double? = nil, rows: [SubtitleRow]? = nil) {
     let at = Int64(Date().timeIntervalSince1970 * 1000)
-    broadcast(Self.subtitleFrame(text, durationMs: durationMs, box: box, replaces: replaces, at: at, source: source, line: line))
+    broadcast(SubtitleWire.subtitleFrame(text, durationMs: durationMs, box: box, replaces: replaces, at: at, source: source,
+                                         line: line, rows: rows))
   }
 
-  func clear() { broadcast(Self.frame("clear", "{}")) }
+  func clear() { broadcast(SubtitleWire.frame("clear", "{}")) }
 
   func sendStyle(_ style: SubtitleStyle) {
     queue.async { self.lastStyle = style }
     broadcast(Self.styleFrame(style))
   }
 
-  // MARK: - Çerçeveler (Android'dekiyle bayt bayt aynı)
+  // MARK: - Çerçeveler (Android'dekiyle bayt bayt aynı; altyazı çerçevesi ve /hello: Core/SubtitleRows.swift'teki SubtitleWire)
 
-  static func jsonString(_ text: String) -> String {
-    var out = "\""
-    for scalar in text.unicodeScalars {
-      switch scalar {
-      case "\"": out += "\\\""
-      case "\\": out += "\\\\"
-      case "\n": out += "\\n"
-      case "\r": out += "\\r"
-      case "\t": out += "\\t"
-      default:
-        if scalar.value < 0x20 {
-          out += String(format: "\\u%04x", scalar.value)
-        } else {
-          out.unicodeScalars.append(scalar)
-        }
-      }
-    }
-    return out + "\""
-  }
+  static func jsonString(_ text: String) -> String { SubtitleWire.jsonString(text) }
 
-  /// Dört basamağa yuvarlanır, sondaki sıfırlar atılır (0.8750 → 0.875).
-  static func number(_ value: Double) -> String {
-    var text = String(format: "%.4f", locale: Locale(identifier: "en_US_POSIX"), min(1.0, max(0.0, value)))
-    while text.hasSuffix("0") { text.removeLast() }
-    if text.hasSuffix(".") { text.removeLast() }
-    return text.isEmpty ? "0" : text
-  }
-
-  static func boxJson(_ b: TextBox) -> String {
-    "{\"bottom\":\(number(b.bottom)),\"left\":\(number(b.left)),\"right\":\(number(b.right)),\"top\":\(number(b.top))}"
-  }
-
-  static func frame(_ name: String, _ json: String) -> String { "event: \(name)\ndata: \(json)\n\n" }
-
-  /// Alanlar alfabetik sırada (Windows'taki SortedDictionary gibi); source ve line yalnız verildiyse yazılır.
-  static func subtitleFrame(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool, at: Int64,
-                            source: TextBox? = nil, line: Double? = nil) -> String {
-    var json = "{\"at\":\(at)"
-    if let box { json += ",\"box\":" + boxJson(box) }
-    json += ",\"duration\":\(durationMs)"
-    if let line, line > 0 { json += ",\"line\":" + number(line) }
-    if replaces { json += ",\"replace\":true" }
-    if let source { json += ",\"source\":" + boxJson(source) }
-    json += ",\"text\":" + jsonString(text) + "}"
-    return frame("subtitle", json)
-  }
+  static func frame(_ name: String, _ json: String) -> String { SubtitleWire.frame(name, json) }
 
   /// Yazı rengi adının CSS karşılığı (TV uygulamaları `color` alanını okur); bilinmeyen ad beyazdır.
   static func colorHex(_ name: String) -> String {
@@ -318,7 +283,7 @@ final class SubtitleServer {
     switch (method, path) {
     case ("OPTIONS", _): respondAndClose(connection, status: "204 No Content", body: "")
     case ("GET", "/events"): openStream(connection, viewer: target.contains("viewer=obs"))
-    case ("GET", "/hello"): respondAndClose(connection, status: "200 OK", body: Self.helloBody)
+    case ("GET", "/hello"): respondAndClose(connection, status: "200 OK", body: SubtitleWire.helloBody(active: _active))
     case ("GET", "/obs"):
       if let page { respondPage(connection, page) } else { respondAndClose(connection, status: "404 Not Found", body: "") }
     default: respondAndClose(connection, status: "404 Not Found", body: "")

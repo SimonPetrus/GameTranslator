@@ -18,7 +18,11 @@ final class Engine: Native.Listener {
   private(set) var message = ""
   /// Son durum metninin (Türkçe, İngilizce) çifti; arayüz dili değişince mesaj yeniden üretilir.
   private var messagePair: (tr: String, en: String)?
-  private(set) var running = false
+  /// Gerçek akış istendi (start → stop; bağlanma, yeniden bağlanma beklemesi ve hata sonrası yeniden deneme dahil).
+  /// Yalnız denetim kuyruğunda değişir; her değişimde TV'ye /hello'da bildirilen "active" güncellenir.
+  private(set) var running = false {
+    didSet { updateServerActive() }
+  }
   var lastSource = ""
   var lastTranslation = ""
   var lastRead = ""
@@ -94,11 +98,18 @@ final class Engine: Native.Listener {
   private var demoScript = DemoScript()
   private let demoLock = NSLock()
   private var _demo = false
-  /// Demo çalışıyor mu (her iş parçacığından okunur).
+  /// Demo çalışıyor mu (her iş parçacığından okunur; yalnız denetim kuyruğunda yazılır).
   var demoActive: Bool {
     get { demoLock.lock(); defer { demoLock.unlock() }; return _demo }
-    set { demoLock.lock(); _demo = newValue; demoLock.unlock() }
+    set {
+      demoLock.lock(); _demo = newValue; demoLock.unlock()
+      updateServerActive()
+    }
   }
+
+  /// TV'ye /hello yanıtında bildirilen "çeviri çalışıyor": gerçek akış ya da demo. [running] ve [demoActive]'in her
+  /// yazımından sonra çağrılır; ikisinin dışında bir yerden ayarlanmaz, böylece bayrak durumdan ayrı kalamaz.
+  private func updateServerActive() { server.active = running || demoActive }
 
   /// Sistem sağlığı için: okumaya verilen karelerin hızı ve son çeviri sonucu (kilit altında).
   private let healthLock = NSLock()
@@ -352,6 +363,9 @@ final class Engine: Native.Listener {
       // Yazı boyu seçimi bir sonraki satırdan geçerli; hat yeniden kurulmaz.
       if now.matchGameTextSize != before.matchGameTextSize {
         (self.reader as? VisionReader)?.setMatchGameTextSize(now.matchGameTextSize)
+      }
+      if now.style.placement != before.style.placement {
+        (self.reader as? VisionReader)?.setCoverPlacement(now.style.placement == "cover")
       }
       guard self.running || self.demoTimer != nil else { return }
       if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.geminiStyleNote != before.geminiStyleNote || now.engineFailover != before.engineFailover || now.sourceLanguage != before.sourceLanguage

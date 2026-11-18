@@ -35,7 +35,7 @@ xcrun swiftc -swift-version "${SWIFT_VERSION:-5}" -O \
   "$RUNNER"/Core/*.swift "$BUILD/TextBox.swift" \
   "$HERE/Harness.swift" "$HERE/CoreTest.swift" "$HERE/GlossaryTest.swift" "$HERE/SpeakerNameTest.swift" "$HERE/ButtonHintsTest.swift" \
   "$HERE/ReconnectPolicyTest.swift" "$HERE/TurkishDetectTest.swift" "$HERE/GeminiRateLimitTest.swift" "$HERE/TranslationCacheTest.swift" \
-  "$HERE/GamePacksTest.swift" "$HERE/PackFuzzyTest.swift" "$HERE/PackPipelineTest.swift" "$HERE/PackStoreTest.swift" "$HERE/NaturalTurkishTest.swift" "$HERE/FlickerHoldTest.swift" "$HERE/StuckDetectorTest.swift" "$HERE/ReadingSelectorTest.swift" "$HERE/Paket3Test.swift" "$HERE/Paket4Test.swift" "$HERE/DeepLCheckTest.swift" "$HERE/FailoverChainTest.swift" "$HERE/GeminiStyleNoteTest.swift" "$HERE/ExtraAsideTest.swift" \
+  "$HERE/GamePacksTest.swift" "$HERE/PackFuzzyTest.swift" "$HERE/PackPipelineTest.swift" "$HERE/PackStoreTest.swift" "$HERE/NaturalTurkishTest.swift" "$HERE/FlickerHoldTest.swift" "$HERE/StuckDetectorTest.swift" "$HERE/ReadingSelectorTest.swift" "$HERE/Paket3Test.swift" "$HERE/Paket4Test.swift" "$HERE/DeepLCheckTest.swift" "$HERE/FailoverChainTest.swift" "$HERE/GeminiStyleNoteTest.swift" "$HERE/ExtraAsideTest.swift" "$HERE/SubtitleRowsTest.swift" \
   "$HERE/main.swift" \
   -o "$BUILD/coretests"
 

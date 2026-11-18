@@ -35,6 +35,7 @@ final class VisionReader: FrameReader {
   private var lineTracker = LineHeightTracker()
   private var lastLines: [String] = []
   private var lastBox: TextBox?
+  private var lastLineBoxes: [TextBox] = []
   private var ocrTimes: [Int] = []
   /// Sağlık ekranı için (busyLock altında): son okumanın süresi, kullanılan tanıma dili, takılma kurtarma sayısı.
   private var lastOcrMs = 0
@@ -76,6 +77,7 @@ final class VisionReader: FrameReader {
       self.hideButtonHints = s.hideButtonHints
       self.lineTracker.reset()
       self.sink.matchGameTextSize = s.matchGameTextSize
+      self.sink.coverPlacement = s.style.placement == "cover"
       // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
       let local = AppleTranslator(source: s.sourceLanguage, target: s.targetLanguage) { level, text in self.engine.log(level, text) }
       self.translating.async { _ = local.prepare() }
@@ -169,12 +171,16 @@ final class VisionReader: FrameReader {
       self.scheduler.reset()
       self.lastLines = []
       self.lastBox = nil
+      self.lastLineBoxes = []
       self.pipeline = built
     }
   }
 
   /// "Oyunun yazı boyuna uy" değişti: bir sonraki satırdan geçerli (hat yeniden kurulmaz).
   func setMatchGameTextSize(_ on: Bool) { sink.matchGameTextSize = on }
+
+  /// TV yerleşimi değişti: satır kutuları (rows) yalnız örtme (cover) yerleşiminde gider; bir sonraki satırdan geçerli.
+  func setCoverPlacement(_ on: Bool) { sink.coverPlacement = on }
 
   func reset(clearScreen: Bool) {
     let target = currentQueue()
@@ -186,6 +192,7 @@ final class VisionReader: FrameReader {
       self.hideButtonHints = settings.hideButtonHints
       self.lineTracker.reset()
       self.sink.matchGameTextSize = settings.matchGameTextSize
+      self.sink.coverPlacement = settings.style.placement == "cover"
       self.scheduler.reset()
       _ = self.whenCurrent(target.token) { self.retryLimiter.reset() }
       self.pipeline?.reset()
@@ -494,7 +501,7 @@ final class VisionReader: FrameReader {
     if let signature = Self.signature(crop) {
       guard let reuse = whenCurrent(token, { scheduler.canReuse(signature) }) else { return }
       if reuse {
-        if isCurrent(token) { pipeline.onRead(lastLines, lastBox) }
+        if isCurrent(token) { pipeline.onRead(lastLines, lastBox, lineBoxes: lastLineBoxes) }
         return
       }
     }
@@ -523,10 +530,13 @@ final class VisionReader: FrameReader {
       }
     }
     let pieces: [Piece] = selected.map { Piece(text: $0.text, left: $0.left, top: $0.top, right: $0.right, bottom: $0.bottom) }
-    var (lines, box) = Self.rows(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight)
+    var (lines, box, lineBoxes) = Self.rowsWithBoxes(pieces, cropX: cropX, cropY: cropY, fullWidth: fullWidth,
+                                                     fullHeight: fullHeight)
     if hideButtonHints {
-      // Oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye karışmasın.
-      lines = lines.map(ButtonHints.strip).filter { !$0.isEmpty }
+      // Oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye karışmasın. Satır kutuları satırlarla birlikte süzülür.
+      let stripped = lines.map(ButtonHints.strip)
+      lineBoxes = stripped.indices.filter { !stripped[$0].isEmpty }.map { lineBoxes[$0] }
+      lines = stripped.filter { !$0.isEmpty }
       if lines.isEmpty { box = nil }
     }
     if let box, !pieces.isEmpty {
@@ -543,7 +553,8 @@ final class VisionReader: FrameReader {
     }
     lastLines = lines
     lastBox = box
-    pipeline.onRead(lines, box)
+    lastLineBoxes = lineBoxes
+    pipeline.onRead(lines, box, lineBoxes: lineBoxes)
   }
 
   /// Görüntüyü okur; her çağrıda taze bir istek kurulur. Parçalar bölge pikselinde (sol üstten) döner;
@@ -607,8 +618,19 @@ final class VisionReader: FrameReader {
   /// Tanınan satırları yukarıdan aşağı sıralar, aynı hizadakileri birleştirir; yazının tüm ekrandaki yerini verir
   /// (Android'deki Engine.rows ile aynı kural).
   static func rows(_ input: [Piece], cropX: Int, cropY: Int, fullWidth: Int, fullHeight: Int) -> ([String], TextBox?) {
+    let result = rowsWithBoxes(input, cropX: cropX, cropY: cropY, fullWidth: fullWidth, fullHeight: fullHeight)
+    return (result.lines, result.box)
+  }
+
+  /// [rows] ve her satırın (aynı hizadaki parçaların) tüm ekrandaki kutusu; satırlarla aynı sıra ve sayıda.
+  static func rowsWithBoxes(_ input: [Piece], cropX: Int, cropY: Int, fullWidth: Int,
+                            fullHeight: Int) -> (lines: [String], box: TextBox?, lineBoxes: [TextBox]) {
     let pieces = input.sorted { $0.top < $1.top }
-    guard !pieces.isEmpty else { return ([], nil) }
+    guard !pieces.isEmpty else { return ([], nil, []) }
+    func screen(_ left: Int, _ top: Int, _ right: Int, _ bottom: Int) -> TextBox {
+      TextBox(left: Double(cropX + left) / Double(fullWidth), top: Double(cropY + top) / Double(fullHeight),
+              right: Double(cropX + right) / Double(fullWidth), bottom: Double(cropY + bottom) / Double(fullHeight))
+    }
     var grouped: [[Piece]] = []
     for piece in pieces {
       if let reference = grouped.last?.first,
@@ -622,9 +644,11 @@ final class VisionReader: FrameReader {
     let lines = grouped.map { row in row.sorted { $0.left < $1.left }.map(\.text).joined(separator: " ") }
     let left = pieces.map(\.left).min()!, top = pieces.map(\.top).min()!
     let right = pieces.map(\.right).max()!, bottom = pieces.map(\.bottom).max()!
-    let box = TextBox(left: Double(cropX + left) / Double(fullWidth), top: Double(cropY + top) / Double(fullHeight),
-                      right: Double(cropX + right) / Double(fullWidth), bottom: Double(cropY + bottom) / Double(fullHeight))
-    return (lines, box)
+    let box = screen(left, top, right, bottom)
+    let lineBoxes = grouped.map { row in
+      screen(row.map(\.left).min()!, row.map(\.top).min()!, row.map(\.right).max()!, row.map(\.bottom).max()!)
+    }
+    return (lines, box, lineBoxes)
   }
 
   /// Bölgenin 32×8 küçültülmüş parlaklık özeti; iki karenin aynı olup olmadığını anlamak için.
@@ -663,6 +687,7 @@ private final class ServerSink: SubtitleSink {
   /// birlikte geri verir.
   private var lines: [(box: TextBox, line: Double?, characters: Int)] = []
   private var matchesGameSize = true
+  private var cover = true
 
   init(server: SubtitleServer) { self.server = server }
 
@@ -670,6 +695,12 @@ private final class ServerSink: SubtitleSink {
   var matchGameTextSize: Bool {
     get { lock.lock(); defer { lock.unlock() }; return matchesGameSize }
     set { lock.lock(); matchesGameSize = newValue; lock.unlock() }
+  }
+
+  /// TV yerleşimi örtme (cover) mi: satır kutuları (rows) yalnız bu yerleşimde anlamlıdır, yalnız o zaman gider.
+  var coverPlacement: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return cover }
+    set { lock.lock(); cover = newValue; lock.unlock() }
   }
 
   func remember(_ box: TextBox, line: Double?, characters: Int) {
@@ -684,19 +715,28 @@ private final class ServerSink: SubtitleSink {
   }
 
   func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool) {
+    show(text, durationMs: durationMs, box: box, replaces: replaces, rows: nil)
+  }
+
+  /// [rows]: hattın verdiği konuşma kutuları (yalnız örtme yerleşiminde ve üst düzey kutu varken gider); her satırın
+  /// yüksekliği üstteki line ile aynıdır (aynı oyunun yazısı; ayar kapalıysa line hiç gitmez).
+  func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool, rows: [TextBox]?) {
     var line: Double?
     var source = box
+    var sent: [SubtitleRow]?
     if let box {
       lock.lock()
       let known = lines.last(where: { $0.box == box })
       let match = matchesGameSize
+      let covering = cover
       lock.unlock()
       line = LineHeight.toSend(known?.line, matchGameTextSize: match)
       if let known, known.characters > 0 {
         source = Self.widened(box, ratio: Double(text.count) / Double(known.characters))
       }
+      if covering, let rows, rows.count >= 2 { sent = rows.map { SubtitleRow(box: $0, line: line) } }
     }
-    server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces, source: source, line: line)
+    server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces, source: source, line: line, rows: sent)
   }
 
   /// Türkçe çoğu zaman İngilizceden uzundur: TV çeviriyi oyunun altyazısının genişliğine sığdıramayınca iki satıra
