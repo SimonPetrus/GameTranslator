@@ -75,7 +75,23 @@ final class VisionReader: FrameReader {
       // Cihaz üstü çeviri (Apple) arka planda hazırlanır: internet koptuğunda yedek olur (Android'deki ML Kit gibi).
       let local = AppleTranslator(source: s.sourceLanguage, target: s.targetLanguage) { level, text in self.engine.log(level, text) }
       self.translating.async { _ = local.prepare() }
+      // Kota dolunca motor değiştirme: seçili motor → anahtarı dolu diğer motor → Google (kapalıysa ya da zincir yoksa eski yol).
+      let chainOrder = FailoverOrder.keyed(
+        engine: s.engine,
+        deepLKey: !s.deepLKey.trimmingCharacters(in: .whitespaces).isEmpty,
+        geminiKey: !s.geminiKey.trimmingCharacters(in: .whitespaces).isEmpty,
+        targetIsTurkish: s.targetLanguage == "tr",
+        failover: s.engineFailover)
+      EngineCooldowns.shared.configure(order: chainOrder)
       let online: TextTranslator?
+      if !chainOrder.isEmpty {
+        var members: [ChainMember] = chainOrder.map { (id: String) -> ChainMember in
+          if id == "deepl" { return DeepLTranslator(key: s.deepLKey, source: s.sourceLanguage, target: s.targetLanguage) }
+          return GeminiTranslator(key: s.geminiKey) { level, text in self.engine.log(level, text) }
+        }
+        members.append(PlainChainMember(id: "google", translator: GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage)))
+        online = FailoverTranslator(members: members, cooldowns: EngineCooldowns.shared)
+      } else {
       switch s.engine {
       case "deepl":
         online = s.deepLKey.trimmingCharacters(in: .whitespaces).isEmpty
@@ -92,7 +108,8 @@ final class VisionReader: FrameReader {
       default:
         online = GoogleGtxTranslator(source: s.sourceLanguage, target: s.targetLanguage)
       }
-      let engineTranslator: TextTranslator = online.map { FallbackTranslator($0, local) } ?? local
+      }
+      let engineTranslator: TextTranslator = online.map { FallbackTranslator($0, local, fallbackId: "apple") } ?? local
       // Sözlüğün ek kuralları Türkçeye göredir; bilgisayarda da yalnız İngilizce→Türkçe için çalışır.
       let glossary = s.sourceLanguage == "en" && s.targetLanguage == "tr" ? s.parsedGlossary() : Glossary.EMPTY
       if !glossary.isEmpty { self.engine.log(2, "terim sözlüğü: \(glossary.count) terim") }
@@ -102,6 +119,10 @@ final class VisionReader: FrameReader {
       let translator = PrefixTranslator(SpeakerNameTranslator(withGlossary))
       let engine = self.engine
       let built = SubtitlePipeline(translator: translator, sink: self.sink, translateQueue: self.translating)
+      // Gemini zincirde beklemedeyse satırı DeepL/Google çevireceği için hat Gemini kipinden çıkar.
+      if chainOrder.contains("gemini") {
+        built.geminiBypassed = { EngineCooldowns.shared.isPaused("gemini", now: Date()) }
+      }
       built.onShown = { source, translation, origin, replaces in
         // Önceki satırın düzeltilmiş hâliyse geçmişte yeni satır açılmaz, sonuncusu güncellenir.
         Engine.history.record(source: source, text: translation, engine: origin, replacesLast: replaces)

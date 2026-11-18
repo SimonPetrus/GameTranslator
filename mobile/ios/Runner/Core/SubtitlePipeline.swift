@@ -92,6 +92,9 @@ final class SubtitlePipeline: @unchecked Sendable {
   private var lastPackId: String?
   /// Kısa satır bağlamının zaman ölçüsü (saniye); testte sahte saat verilir.
   var contextClock: () -> Double = { ProcessInfo.processInfo.systemUptime }
+  /// Seçili motor Gemini iken Gemini zincirde beklemedeyse true: satırı büyük olasılıkla başka motor (DeepL/Google) çevireceği için
+  /// deyim sadeleştirme, ad koruması ve kısa satır bağlamı uygulanır. Varsayılan: hiçbir zaman (bugünkü davranış).
+  var geminiBypassed: () -> Bool = { false }
 
   /// Seçenekler (Türkçe satırı atlama, kalıcı önbellek); varsayılanı [optionsProvider]'dan gelir.
   var options: PipelineOptions {
@@ -197,7 +200,7 @@ final class SubtitlePipeline: @unchecked Sendable {
       let oneLine = KotlinText.string(source.utf16.map { $0 == 0x0A ? 0x20 : $0 })
       // Doğal Türkçe adımları yalnız İngilizce→Türkçe; Gemini bağlamı kendisi anlar (deyim, bağlam, ad adımları yok).
       let natural = packed == nil && options.sourceLanguage == "en" && options.targetLanguage == "tr"
-      let gemini = options.engineId == "gemini"
+      let gemini = options.engineId == "gemini" && !geminiBypassed()
       let stock: String? = natural ? StockLines.lookup(oneLine) : nil
       var context: String? = nil
       if natural && !gemini && stock == nil, let previousAt {
@@ -225,7 +228,8 @@ final class SubtitlePipeline: @unchecked Sendable {
       } else {
         translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: context, options: options)
         memoryStep = natural
-        origin = SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: FallbackSignal.marked)
+        origin = SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: FallbackSignal.marked,
+                                               answeredBy: FallbackSignal.answeredBy)
       }
       // Yedek motorun çevirisi gösterilir ama asıl motorun anahtarıyla diske yazılmaz.
       if packed == nil, stored == nil, !FallbackSignal.marked, let diskKey, let translated, !translated.isEmpty {
@@ -259,7 +263,9 @@ final class SubtitlePipeline: @unchecked Sendable {
 
   /// Çeviriyi hangi kaynağın verdiği (en iyi tahmin): yedek motor cevap verdiyse Gemini/DeepL'in yerine Google,
   /// Google'ın yerine cihaz üstü (Apple) yazılır; ayrımı yapılamayan durumda tahmin edilir.
-  static func engineOrigin(_ engineId: String, fallbackAnswered: Bool) -> String {
+  /// [answeredBy] (zincir ya da yedek cevap verenin kimliğini bildirdiyse) tahminin yerine geçer.
+  static func engineOrigin(_ engineId: String, fallbackAnswered: Bool, answeredBy: String? = nil) -> String {
+    if let answeredBy, !answeredBy.isEmpty { return answeredBy }
     switch engineId {
     case "mlkit": return "apple"
     case "gemini", "deepl": return fallbackAnswered ? "google" : engineId
@@ -293,12 +299,13 @@ final class SubtitlePipeline: @unchecked Sendable {
     let diskKey: String? = options.cache != nil ? options.cacheKey(oneLine) : nil
     if let diskKey, let stored = options.cache?.get(diskKey) { return (stored, "cache") }
     FallbackSignal.reset()
-    let gemini = options.engineId == "gemini"
+    let gemini = options.engineId == "gemini" && !geminiBypassed()
     guard let translated = translateEngine(oneLine, natural: natural, gemini: gemini, context: nil, options: options),
           !translated.isEmpty else { return (nil, "") }
     let fallback = FallbackSignal.marked
     if !fallback, let diskKey { options.cache?.set(diskKey, translated) }
-    return (translated, SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: fallback))
+    return (translated, SubtitlePipeline.engineOrigin(options.engineId, fallbackAnswered: fallback,
+                                                      answeredBy: FallbackSignal.answeredBy))
   }
 
   /// Motor çağrısı ve (İngilizce→Türkçe ise) çevrilmeden önce/sonra adımlar: deyim sadeleştirme, ad koruması, kısa satır

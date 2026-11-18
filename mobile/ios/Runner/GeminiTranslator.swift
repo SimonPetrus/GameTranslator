@@ -48,9 +48,16 @@ final class GeminiTranslator: TextTranslator {
     Self.pauseLock.unlock()
   }
 
-  func translate(_ text: String) -> String? {
-    guard !key.isEmpty, let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else { return nil }
-    guard let previous = reserve() else { return nil }
+  func translate(_ text: String) -> String? { attempt(text).text }
+
+  /// Zincir için deneme: hak dolu ya da duraklatılmışsa istek atılmaz ve `pause` döner (zincir sonraki motora geçer).
+  func attempt(_ text: String) -> ChainOutcome {
+    guard !key.isEmpty, let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else { return .failed }
+    let previous: [(String, String)]
+    switch reserve() {
+    case .wait(let seconds): return .pause(EnginePause(seconds: seconds, reason: .busy))
+    case .go(let context): previous = context
+    }
 
     var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
     request.httpMethod = "POST"
@@ -74,19 +81,21 @@ final class GeminiTranslator: TextTranslator {
     task.resume()
     if semaphore.wait(timeout: .now() + 7) == .timedOut {
       task.cancel()
-      return nil
+      return .unreachable
     }
     switch status {
     case 200:
       break
+    case 0:
+      return .unreachable
     case 429:
       // Dakikalık hak doldu: Gemini'nin söylediği süre (RetryInfo) kadar, günlük hak bittiyse bir saat yedek motor kullanılır.
       let decision = GeminiRateLimit.decide(data)
       let wait = Int(decision.seconds.rounded())
       pause(decision.seconds, decision.daily
-        ? "Gemini günlük hakkı doldu; \(wait / 60) dakika Google kullanılıyor (yarın ya da başka anahtarla yeniden denenir)"
-        : "Gemini dakikalık sınırı doldu; \(wait) sn Google kullanılıyor")
-      return nil
+        ? "Gemini günlük hakkı doldu; \(wait / 60) dakika yedek motor kullanılıyor (yarın ya da başka anahtarla yeniden denenir)"
+        : "Gemini dakikalık sınırı doldu; \(wait) sn yedek motor kullanılıyor")
+      return .pause(EnginePauseRule.gemini(decision))
     case 400, 401, 403:
       lock.lock()
       let first = !warnedKey
@@ -94,14 +103,14 @@ final class GeminiTranslator: TextTranslator {
       lock.unlock()
       if first { log(0, "Gemini anahtarı kabul edilmedi (HTTP \(status)); anahtarı Ayarlar'dan kontrol edin") }
       pause(300, nil)
-      return nil
+      return .pause(EnginePauseRule.geminiKeyRejected)
     default:
-      return nil
+      return .failed
     }
     guard let data, let reply = Self.replyText(data), let translated = Self.translations(reply, count: 1)?.first,
-          !translated.isEmpty else { return nil }
+          !translated.isEmpty else { return .failed }
     remember(text, translated)
-    return translated
+    return .translated(translated)
   }
 
   /// Ayarlardaki "Kaydet ve dene": anahtarı tek bir deneme çevirisiyle sınar. (başarılı mı, kullanıcıya gösterilecek metin)
@@ -154,15 +163,24 @@ final class GeminiTranslator: TextTranslator {
 
   // MARK: - Sınır ve bağlam
 
-  /// İstek hakkı varsa bağlamı döner; dakikalık sınıra gelindiyse nil (yedek motora geçilir).
-  private func reserve() -> [(String, String)]? {
+  private enum Reservation {
+    case go([(String, String)])
+    /// Duraklatma ya da dakikalık sınır: bu kadar saniye istek atılmaz.
+    case wait(Double)
+  }
+
+  /// İstek hakkı varsa bağlamı döner; duraklatma ya da dakikalık sınır varsa kalan süreyi (yedek motora geçilir).
+  private func reserve() -> Reservation {
     lock.lock(); defer { lock.unlock() }
     let now = Date()
-    if now < pausedUntil { return nil }
+    if now < pausedUntil { return .wait(max(1, pausedUntil.timeIntervalSince(now))) }
     sent.removeAll { now.timeIntervalSince($0) > 60 }
-    if sent.count >= Self.requestsPerMinute { return nil }
+    if sent.count >= Self.requestsPerMinute {
+      let oldest = sent.first ?? now
+      return .wait(max(1, 60 - now.timeIntervalSince(oldest)))
+    }
     sent.append(now)
-    return context
+    return .go(context)
   }
 
   private func pause(_ seconds: TimeInterval, _ message: String?) {
@@ -229,4 +247,8 @@ final class GeminiTranslator: TextTranslator {
     guard count == 1 else { return nil }
     return [trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”"))]
   }
+}
+
+extension GeminiTranslator: ChainMember {
+  var id: String { "gemini" }
 }

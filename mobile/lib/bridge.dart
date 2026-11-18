@@ -116,6 +116,15 @@ class ExtraReadResult {
   final String error;
 }
 
+/// Beklemedeki çeviri motoru: neden ("quota", "key", "busy", "connection") ve kalan süre.
+class PausedEngine {
+  const PausedEngine({required this.engine, required this.seconds, required this.reason});
+
+  final String engine;
+  final int seconds;
+  final String reason;
+}
+
 /// Sistem durumu ekranının verisi; eksik alanlar varsayılanlarla dolar.
 class HealthInfo {
   const HealthInfo({
@@ -133,6 +142,9 @@ class HealthInfo {
     this.translatorLastOk = true,
     this.translatorLastError = '',
     this.geminiPausedSeconds = 0,
+    this.failoverActive = false,
+    this.failoverCurrent = '',
+    this.failoverPaused = const [],
     this.tvClients = 0,
     this.tvPort = 0,
     this.packsEnabled = false,
@@ -154,6 +166,11 @@ class HealthInfo {
   final bool translatorLastOk;
   final String translatorLastError;
   final int geminiPausedSeconds;
+  final bool failoverActive;
+  final String failoverCurrent;
+
+  /// Kota/anahtar yüzünden beklemedeki motorlar (kalan süreyle).
+  final List<PausedEngine> failoverPaused;
   final int tvClients;
   final int tvPort;
   final bool packsEnabled;
@@ -167,6 +184,8 @@ class HealthInfo {
     final stream = _sub(map['stream']);
     final reader = _sub(map['reader']);
     final translator = _sub(map['translator']);
+    final failover = _sub(translator['failover']);
+    final pausedRaw = failover['paused'];
     final tv = _sub(map['tv']);
     final packs = _sub(map['packs']);
     final cache = _sub(map['cache']);
@@ -185,6 +204,18 @@ class HealthInfo {
       translatorLastOk: translator['lastOk'] as bool? ?? true,
       translatorLastError: translator['lastError'] as String? ?? '',
       geminiPausedSeconds: (translator['geminiPausedSeconds'] as num?)?.toInt() ?? 0,
+      failoverActive: failover['active'] as bool? ?? false,
+      failoverCurrent: failover['current'] as String? ?? '',
+      failoverPaused: [
+        if (pausedRaw is List)
+          for (final item in pausedRaw)
+            if (item is Map)
+              PausedEngine(
+                engine: item['engine'] as String? ?? '',
+                seconds: (item['seconds'] as num?)?.toInt() ?? 0,
+                reason: item['reason'] as String? ?? '',
+              ),
+      ],
       tvClients: (tv['clients'] as num?)?.toInt() ?? 0,
       tvPort: (tv['port'] as num?)?.toInt() ?? 0,
       packsEnabled: packs['enabled'] as bool? ?? false,
@@ -239,6 +270,7 @@ class AppSettings {
   String get sourceLanguage => json['sourceLanguage'] as String? ?? 'en';
   String get deepLKey => json['deepLKey'] as String? ?? '';
   String get geminiKey => json['geminiKey'] as String? ?? '';
+  bool get engineFailover => json['engineFailover'] as bool? ?? true;
   bool get autoWake => json['autoWake'] as bool? ?? true;
   String get glossary => json['glossary'] as String? ?? '';
   bool get packsEnabled => json['packsEnabled'] as bool? ?? true;

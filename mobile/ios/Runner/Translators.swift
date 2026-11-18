@@ -112,11 +112,15 @@ final class DeepLTranslator: TextTranslator {
     self.target = LanguageCodes.deepLTarget(target)
   }
 
-  func translate(_ text: String) -> String? {
+  func translate(_ text: String) -> String? { attempt(text).text }
+
+  /// Zincir için deneme: durum kodu (456 kota dolu, 403 anahtar reddedildi, 429 çok istek) bekleme olarak bildirilir.
+  /// Ağ hatası, zaman aşımı ve boş cevap yalnız `failed` döner.
+  func attempt(_ text: String) -> ChainOutcome {
     // DeepL bu dili desteklemiyorsa istek atılmaz; hat Google'a düşer.
-    guard let source, let target else { return nil }
+    guard let source, let target else { return .failed }
     let host = key.hasSuffix(":fx") ? "api-free.deepl.com" : "api.deepl.com"
-    guard let url = URL(string: "https://\(host)/v2/translate") else { return nil }
+    guard let url = URL(string: "https://\(host)/v2/translate") else { return .failed }
     var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
     request.httpMethod = "POST"
     request.setValue("DeepL-Auth-Key \(key)", forHTTPHeaderField: "Authorization")
@@ -125,12 +129,14 @@ final class DeepLTranslator: TextTranslator {
     // Kısa satırın önceki satırı: DeepL `context` parametresi çevrilmez ve faturalandırılmaz (API belgesi).
     if let context = TranslationContext.current, !context.isEmpty { body["context"] = context }
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    guard let (status, data) = fetch(request), status == 200,
+    guard let (status, data) = fetch(request) else { return .unreachable }
+    if let pause = EnginePauseRule.deepL(status: status) { return .pause(pause) }
+    guard status == 200,
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let translations = json["translations"] as? [[String: Any]],
           let translated = translations.first?["text"] as? String,
-          !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-    return translated
+          !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failed }
+    return .translated(translated)
   }
 
   /// Ayardaki "Kaydet ve dene": `GET /v2/usage` ile anahtarı sınar (çeviri yapmaz, kota harcamaz).
@@ -146,6 +152,10 @@ final class DeepLTranslator: TextTranslator {
     guard let (status, data) = fetch(request) else { return DeepLCheck.unreachable }
     return DeepLCheck.outcome(status: status, body: data)
   }
+}
+
+extension DeepLTranslator: ChainMember {
+  var id: String { "deepl" }
 }
 
 #if canImport(Translation)

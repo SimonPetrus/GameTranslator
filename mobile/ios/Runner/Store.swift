@@ -37,6 +37,8 @@ struct Settings: Equatable {
   var geminiKey = ""
   /// Gemini modeli (ai-models.json'daki kimlikler); bilinmeyen değer varsayılana döner.
   var geminiModel = GeminiModels.defaultId
+  /// DeepL ya da Gemini kotası dolunca anahtarı girilmiş diğer motora, o da olmazsa Google'a geç (yalnız iOS'ta).
+  var engineFailover = true
   var style = SubtitleStyle()
   /// PS5 dinlenme modundaysa uyandır.
   var autoWake = true
@@ -78,6 +80,7 @@ struct Settings: Equatable {
       "deepLKey": deepLKey,
       "geminiKey": geminiKey,
       "geminiModel": geminiModel,
+      "engineFailover": engineFailover,
       "autoWake": autoWake,
       "glossary": glossary,
       "packsEnabled": packsEnabled,
@@ -119,6 +122,7 @@ struct Settings: Equatable {
     out.deepLKey = string(json["deepLKey"], "")
     out.geminiKey = string(json["geminiKey"], "")
     out.geminiModel = GeminiModels.resolve(string(json["geminiModel"], GeminiModels.defaultId))
+    out.engineFailover = bool(json["engineFailover"], true)
     out.autoWake = bool(json["autoWake"], true)
     out.glossary = string(json["glossary"], "")
     out.packsEnabled = bool(json["packsEnabled"], true)

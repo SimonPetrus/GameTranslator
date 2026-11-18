@@ -786,7 +786,7 @@ class _SettingsTabState extends State<SettingsTab> {
               checked: s.engine == 'deepl',
               onTap: () => change((s) => s.json['engine'] = 'deepl'),
             ),
-            if (s.engine == 'deepl')
+            if (s.engine == 'deepl' || (Platform.isIOS && s.engine == 'gemini' && s.engineFailover))
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                 child: Column(
@@ -821,14 +821,19 @@ class _SettingsTabState extends State<SettingsTab> {
             if (Platform.isIOS)
               Cell(
                 title: 'Google Gemini',
-                subtitle: L.t(
-                  'Yapay zekâ ile en doğal Türkçe. Ücretsiz anahtarla çalışır; sınır dolunca bir dakika Google kullanılır.',
-                  'The most natural translation, powered by AI. Works with a free key; when the limit is reached, Google is used for a minute.',
-                ),
+                subtitle: s.engineFailover && s.deepLKey.isNotEmpty
+                    ? L.t(
+                        'Yapay zekâ ile en doğal Türkçe. Ücretsiz anahtarla çalışır. Sınır dolunca DeepL, o da olmazsa Google kullanılır.',
+                        'The most natural translation, powered by AI. Works with a free key. When the limit is reached, DeepL is used, or Google if that fails too.',
+                      )
+                    : L.t(
+                        'Yapay zekâ ile en doğal Türkçe. Ücretsiz anahtarla çalışır; sınır dolunca bir dakika Google kullanılır.',
+                        'The most natural translation, powered by AI. Works with a free key; when the limit is reached, Google is used for a minute.',
+                      ),
                 checked: s.engine == 'gemini',
                 onTap: () => change((s) => s.json['engine'] = 'gemini'),
               ),
-            if (Platform.isIOS && s.engine == 'gemini')
+            if (Platform.isIOS && (s.engine == 'gemini' || (s.engine == 'deepl' && s.engineFailover)))
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                 child: Column(
@@ -868,6 +873,39 @@ class _SettingsTabState extends State<SettingsTab> {
                 subtitle: geminiModels[geminiModelId] ?? '',
                 chevron: true,
                 onTap: pickGeminiModel,
+              ),
+            if (Platform.isIOS && (s.engine == 'deepl' || s.engine == 'gemini'))
+              Cell(
+                title: L.t('Kota dolunca diğer motora geç', 'Switch engines when quota runs out'),
+                subtitle: L.t(
+                  'DeepL ya da Gemini kotası dolunca anahtarı girilmiş diğer motor, o da olmazsa Google çevirir. Kota açılınca geri döner.',
+                  'When the DeepL or Gemini quota runs out, the other engine (if its key is entered), or else Google, translates. It switches back when the quota is available again.',
+                ),
+                trailing: CupertinoSwitch(
+                  value: s.engineFailover,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => change((s) => s.json['engineFailover'] = value),
+                ),
+              ),
+            if (Platform.isIOS && s.engineFailover && s.engine == 'deepl' && s.deepLKey.isNotEmpty && s.targetLanguage == 'tr' && s.geminiKey.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Text(L.t('Geçiş için Gemini anahtarını da gir.', 'Enter your Gemini key too to enable switching.'), style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
+              ),
+            if (Platform.isIOS && s.engineFailover && s.engine == 'gemini' && s.geminiKey.isNotEmpty && s.deepLKey.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Text(L.t('Geçiş için DeepL anahtarını da gir.', 'Enter your DeepL key too to enable switching.'), style: Txt.subhead.copyWith(color: Tokens.textSecondary)),
+              ),
+            if (Platform.isIOS && s.engine == 'deepl' && s.deepLKey.isEmpty && s.geminiKey.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Text(L.t('DeepL anahtarı boş; şu an Google çeviriyor.', 'The DeepL key is empty; Google is translating right now.'), style: Txt.subhead.copyWith(color: Tokens.warning)),
+              ),
+            if (Platform.isIOS && s.engine == 'gemini' && s.geminiKey.isEmpty && s.deepLKey.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Text(L.t('Gemini anahtarı boş; şu an Google çeviriyor.', 'The Gemini key is empty; Google is translating right now.'), style: Txt.subhead.copyWith(color: Tokens.warning)),
               ),
             Cell(
               title: L.t('Cihazda', 'On device'),

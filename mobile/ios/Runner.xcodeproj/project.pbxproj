@@ -31,6 +31,7 @@
 		AF0200000000000000000002 /* Lang.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0200000000000000000002 /* Lang.swift */; };
 		AF0200000000000000000003 /* AutoRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0200000000000000000003 /* AutoRegion.swift */; };
 		AF0200000000000000000004 /* DeepLCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0200000000000000000004 /* DeepLCheck.swift */; };
+		AF0200000000000000000005 /* FailoverChain.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0200000000000000000005 /* FailoverChain.swift */; };
 		AD0200000000000000000005 /* CrashLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0200000000000000000005 /* CrashLog.swift */; };
 		AA0200000000000000000007 /* FlickerHold.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000007 /* FlickerHold.swift */; };
 		2F375C9B1D24C831D8D6D5F9 /* GamePacks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */; };
@@ -133,6 +134,7 @@
 		AE0200000000000000000002 /* Lang.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Lang.swift; sourceTree = "<group>"; };
 		AE0200000000000000000003 /* AutoRegion.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AutoRegion.swift; sourceTree = "<group>"; };
 		AE0200000000000000000004 /* DeepLCheck.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeepLCheck.swift; sourceTree = "<group>"; };
+		AE0200000000000000000005 /* FailoverChain.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FailoverChain.swift; sourceTree = "<group>"; };
 		AC0200000000000000000005 /* CrashLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CrashLog.swift; sourceTree = "<group>"; };
 		AB0200000000000000000007 /* FlickerHold.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FlickerHold.swift; sourceTree = "<group>"; };
 		6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GamePacks.swift; sourceTree = "<group>"; };
@@ -208,6 +210,7 @@
 				AE0200000000000000000002 /* Lang.swift */,
 				AE0200000000000000000003 /* AutoRegion.swift */,
 				AE0200000000000000000004 /* DeepLCheck.swift */,
+				AE0200000000000000000005 /* FailoverChain.swift */,
 				AB0200000000000000000007 /* FlickerHold.swift */,
 				6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */,
 				34B46C77A9D8F98B1B1FAAF2 /* PackFuzzy.swift */,
@@ -519,6 +522,7 @@
 				AF0200000000000000000002 /* Lang.swift in Sources */,
 				AF0200000000000000000003 /* AutoRegion.swift in Sources */,
 				AF0200000000000000000004 /* DeepLCheck.swift in Sources */,
+				AF0200000000000000000005 /* FailoverChain.swift in Sources */,
 				AD0200000000000000000005 /* CrashLog.swift in Sources */,
 				AA0200000000000000000007 /* FlickerHold.swift in Sources */,
 				2F375C9B1D24C831D8D6D5F9 /* GamePacks.swift in Sources */,

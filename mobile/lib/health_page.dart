@@ -69,6 +69,24 @@ class _HealthPageState extends State<HealthPage> {
     );
   }
 
+  /// "DeepL: kota dolu, 27 dk sonra yeniden denenecek" gibi tek satır.
+  String _pausedLine(PausedEngine p) {
+    final name = engineNames[p.engine] ?? p.engine;
+    final minutes = (p.seconds / 60).ceil();
+    final trWait = p.seconds >= 60 ? '$minutes dk' : '${p.seconds} sn';
+    final enWait = p.seconds >= 60 ? '$minutes min' : '${p.seconds} s';
+    switch (p.reason) {
+      case 'quota':
+        return L.t('$name: kota dolu, $trWait sonra yeniden denenecek', '$name: quota is full, retrying in $enWait');
+      case 'connection':
+        return L.t('$name: bağlantı sorunu, $trWait sonra yeniden denenecek', '$name: connection problem, retrying in $enWait');
+      case 'key':
+        return L.t('$name: anahtar reddedildi, $trWait sonra yeniden denenecek', '$name: key was rejected, retrying in $enWait');
+      default:
+        return L.t('$name: çok istek, $trWait sonra yeniden denenecek', '$name: too many requests, retrying in $enWait');
+    }
+  }
+
   List<Widget> rows(HealthInfo h) {
     final streaming = h.streamRunning;
     final consoleState = h.consoleState.isEmpty ? '' : ' · ${h.consoleState}';
@@ -78,6 +96,11 @@ class _HealthPageState extends State<HealthPage> {
     final (Color, String) translator;
     if (!h.translatorLastOk) {
       translator = (Tokens.danger, '${L.t('Son çeviri başarısız', 'Last translation failed')}${h.translatorLastError.isEmpty ? '' : ': ${h.translatorLastError}'}');
+    } else if (h.failoverActive) {
+      final lines = [for (final p in h.failoverPaused) _pausedLine(p)];
+      final current = engineNames[h.failoverCurrent] ?? h.failoverCurrent;
+      lines.add(L.t('Şu an çeviren: ${current.isEmpty ? 'Google' : current}', 'Currently translating: ${current.isEmpty ? 'Google' : current}'));
+      translator = (h.failoverPaused.isNotEmpty ? Tokens.warning : (streaming ? Tokens.success : Tokens.gray), lines.join('\n'));
     } else if (h.geminiPausedSeconds > 0) {
       translator = (Tokens.warning, L.t('Gemini ${h.geminiPausedSeconds} sn bekliyor; bu sürede Google kullanılır', 'Gemini is paused for ${h.geminiPausedSeconds} s; Google is used meanwhile'));
     } else {

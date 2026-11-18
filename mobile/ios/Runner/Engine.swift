@@ -205,8 +205,11 @@ final class Engine: Native.Listener {
     let streamInfo: [String: Any] = ["running": phase == "streaming", "fps": fps]
     let readerInfo: [String: Any] = ["lastReadMs": readerHealth.lastReadMs, "language": readerHealth.language,
                                      "stuckRecoveries": readerHealth.stuckRecoveries]
+    let chain = EngineCooldowns.shared.snapshot(now: Date())
+    let pausedEngines: [[String: Any]] = chain.paused.map { ["engine": $0.engine, "seconds": $0.seconds, "reason": $0.reason.rawValue] }
     let translatorInfo: [String: Any] = ["engine": Engine.effectiveEngine(s), "lastOk": ok, "lastError": error,
-                                         "geminiPausedSeconds": GeminiTranslator.pausedSeconds]
+                                         "geminiPausedSeconds": GeminiTranslator.pausedSeconds,
+                                         "failover": ["active": chain.active, "current": chain.current, "paused": pausedEngines] as [String: Any]]
     let tvInfo: [String: Any] = ["clients": server.connectedClients, "port": port == 0 ? Int(SubtitleServer.defaultPort) : port]
     let packInfo: [String: Any] = ["enabled": s.packsEnabled, "game": packGame]
     let cacheInfo: [String: Any] = ["entries": Engine.translationCache.count]
@@ -344,7 +347,7 @@ final class Engine: Native.Listener {
       }
       if now.style != before.style, self.server.isStarted { self.server.sendStyle(now.style) }
       guard self.running || self.demoTimer != nil else { return }
-      if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.sourceLanguage != before.sourceLanguage
+      if now.engine != before.engine || now.deepLKey != before.deepLKey || now.geminiKey != before.geminiKey || now.geminiModel != before.geminiModel || now.engineFailover != before.engineFailover || now.sourceLanguage != before.sourceLanguage
         || now.targetLanguage != before.targetLanguage || now.glossary != before.glossary || now.packsEnabled != before.packsEnabled
         || now.packChoice != before.packChoice {
         self.reader?.rebuild(settings: now)
