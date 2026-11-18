@@ -31,6 +31,14 @@
       },
       "versions": [
         {
+          "version": "1.8.4",
+          "date": "2026-11-18T22:06:13Z",
+          "size": 46271801,
+          "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.4/GameTranslator-iOS-1.8.4.ipa",
+          "minOSVersion": "15.0",
+          "localizedDescription": "Çok konuşmacılı altyazıda her konuşma artık kendi satırında; önceden tek paragrafa akıyordu. Aynı kişinin iki satıra sarılmış cümlesi birleşik kalır (TV uygulaması 1.0.5 ya da üstü gerekir). \"Orijinal altyazının üstünü ört\" kipinde yazı artık bazen aşırı büyümüyor: oyunun satır yüksekliği daha sağlam ölçülüyor. Yeni ayar: \"Oyunun yazı boyuna uy\" (varsayılan açık; kapatınca yazı ayardaki boyda kalır). Tuş ipuçları (\"Hold L2 to aim\" gibi; tüm PlayStation tuşları) artık çevrilmiyor ve çevirinin kutusuyla örtülmüyor (\"Tuş yazılarını gizle\" açıkken)."
+        },
+        {
           "version": "1.8.3",
           "date": "2026-11-18T19:39:30Z",
           "size": 46249723,
@@ -71,10 +79,10 @@
           "localizedDescription": "GameTranslator iPhone sürümü 1.0.6."
         }
       ],
-      "version": "1.8.3",
-      "versionDate": "2026-11-18T19:39:30Z",
-      "size": 46249723,
-      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.3/GameTranslator-iOS-1.8.3.ipa"
+      "version": "1.8.4",
+      "versionDate": "2026-11-18T22:06:13Z",
+      "size": 46271801,
+      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.4/GameTranslator-iOS-1.8.4.ipa"
     }
   ],
   "news": []
