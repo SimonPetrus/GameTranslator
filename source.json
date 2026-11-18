@@ -31,6 +31,14 @@
       },
       "versions": [
         {
+          "version": "1.8.1",
+          "date": "2026-11-18T12:27:36Z",
+          "size": 46211579,
+          "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.1/GameTranslator-iOS-1.8.1.ipa",
+          "minOSVersion": "15.0",
+          "localizedDescription": "Ayarlar'da DeepL anahtarı için \"kontrol et\" düğmesi: anahtarın çalışıp çalışmadığını ve bu ay kullanılan karakteri gösterir; yanlış anahtar, dolmuş kota ve internet yok durumlarını ayrı söyler. Kontrol çeviri yapmaz, kota harcamaz."
+        },
+        {
           "version": "1.8.0",
           "date": "2026-11-18T08:56:45Z",
           "size": 46211538,
@@ -47,10 +55,10 @@
           "localizedDescription": "GameTranslator iPhone sürümü 1.0.6."
         }
       ],
-      "version": "1.8.0",
-      "versionDate": "2026-11-18T08:56:45Z",
-      "size": 46211538,
-      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.0/GameTranslator-iOS-1.8.0.ipa"
+      "version": "1.8.1",
+      "versionDate": "2026-11-18T12:27:36Z",
+      "size": 46211579,
+      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.1/GameTranslator-iOS-1.8.1.ipa"
     }
   ],
   "news": []
