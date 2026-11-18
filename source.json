@@ -31,6 +31,14 @@
       },
       "versions": [
         {
+          "version": "1.8.2",
+          "date": "2026-11-18T13:21:59Z",
+          "size": 46231684,
+          "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.2/GameTranslator-iOS-1.8.2.ipa",
+          "minOSVersion": "15.0",
+          "localizedDescription": "Çeviri motorları arasında otomatik geçiş: DeepL ya da Gemini kotası dolunca (ya da anahtar reddedilince) anahtarı girilmiş diğer motor, o da olmazsa Google çevirir; kota açılınca asıl motora dönülür. Bağlantı iki kez üst üste kurulamazsa motor kısa süre atlanır. Ayarlar'da \"Kota dolunca diğer motora geç\" anahtarı (varsayılan açık); açıkken iki anahtar kutusu da görünür. Sistem durumu sayfası o an çeviren ve bekleyen motoru gösterir."
+        },
+        {
           "version": "1.8.1",
           "date": "2026-11-18T12:27:36Z",
           "size": 46211579,
@@ -55,10 +63,10 @@
           "localizedDescription": "GameTranslator iPhone sürümü 1.0.6."
         }
       ],
-      "version": "1.8.1",
-      "versionDate": "2026-11-18T12:27:36Z",
-      "size": 46211579,
-      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.1/GameTranslator-iOS-1.8.1.ipa"
+      "version": "1.8.2",
+      "versionDate": "2026-11-18T13:21:59Z",
+      "size": 46231684,
+      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.2/GameTranslator-iOS-1.8.2.ipa"
     }
   ],
   "news": []
