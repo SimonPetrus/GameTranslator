@@ -36,11 +36,15 @@ enum TurkishDetect {
     return a[i...] == b[(i + 1)...]
   }
 
-  private static func isKnown(_ word: String) -> Bool {
-    if common.contains(word) { return true }
+  /// Bilinen sözcüğe bir harf farkla benziyor mu (tam eşleşme değil).
+  private static func isNearKnown(_ word: String) -> Bool {
     let letters = Array(word)
     if letters.count < 5 { return false }
     return fuzzyKnown.contains { oneEditApart(letters, $0) }
+  }
+
+  private static func hasTurkishLetter(_ word: String) -> Bool {
+    word.contains(where: { strongChars.contains($0) || weakChars.contains($0) })
   }
 
   /// İngilizce işlev sözcükleri (Türkçede anlamlı karşılığı olmayanlar).
@@ -65,17 +69,32 @@ enum TurkishDetect {
     var score = 0
     var englishHits = 0
     var commonHits = 0
+    var asciiNearHits = 0
+    var strongSeen = false
     for word in words {
       if english.contains(word) { englishHits += 1 }
-      if isKnown(word) { score += 2; commonHits += 1; continue }
+      if common.contains(word) { score += 2; commonHits += 1; continue }
+      // Bir harf bozuk bilinen sözcük: Türkçe harf taşıyorsa tek başına yeter; yalnız ASCII ise ("Heroes" ~ "herkes")
+      // satırda başka bağımsız Türkçe kanıt olmadıkça sayılmaz.
+      if isNearKnown(word) {
+        if hasTurkishLetter(word) { score += 2; commonHits += 1; continue }
+        asciiNearHits += 1
+        continue
+      }
       if word.contains(where: { strongChars.contains($0) }) {
         score += 2
+        strongSeen = true
       } else if word.contains(where: { weakChars.contains($0) }) {
         score += 1
       }
     }
     // Büyük "İ" katlamada düz "i" olmuştu; güçlü harf sayılsın.
-    if hasDottedCapital { score += 2 }
+    if hasDottedCapital { score += 2; strongSeen = true }
+    // Bağımsız kanıt: tam bilinen sözcük (ya da Türkçe harfli bozuk eşleşme) ya da güçlü Türkçe harf (ğ ı ş İ).
+    if asciiNearHits > 0 && (commonHits > 0 || strongSeen) {
+      score += 2 * asciiNearHits
+      commonHits += asciiNearHits
+    }
 
     if englishHits > 0 { return score >= 2 * n && score >= 4 }
     // Kısa satırda ("Çağlar!", "Şahin Aksoy") yalnız Türkçe harf özel ad olabilir: bilinen bir Türkçe sözcük şart.

@@ -230,6 +230,43 @@ enum HistoryReplaceTest {
       assertEquals(3, f.shown.count)
       assertEquals(["false", "true", "true"], f.shown.map { $0.split(separator: "|").last.map(String.init) ?? "" })
     }
+    TestRun.test("HistoryReplaceTest.meaningMemoryRemembersDeliveredReadingsAndCaps") {
+      var memory = MeaningMemory()
+      memory.start("we saw 3 guards")
+      assertTrue(memory.permits("we saw 8 guards"))
+      assertFalse(memory.permits("we saw 3 guards"), "ilk okumaya dönüş yeni anlam değil")
+      memory.record("we saw 8 guards", byMeaning: true)
+      assertFalse(memory.permits("we saw 8 guards"))
+      assertFalse(memory.permits("we saw 3 guards"))
+      assertTrue(memory.permits("we saw 5 guards"))
+      memory.record("we saw 5 guards", byMeaning: true)
+      assertFalse(memory.permits("we saw 7 guards"), "üst sınır: en çok 2 anlam yeniden çevirisi")
+      memory.start("we saw 7 guards")
+      assertTrue(memory.permits("we saw 3 guards"), "başka satır: bellek yeniden başlar")
+      memory.reset()
+      assertTrue(memory.permits("we saw 3 guards"))
+    }
+    TestRun.test("HistoryReplaceTest.pipelineStaysStableWhenOcrFlipsADigit") {
+      let f = PipelineFixture(.direct) { text in "Çeviri: \(text)" }
+      for digit in ["3", "8", "3", "8", "3"] {
+        f.onRead(["We saw \(digit) guards at the gate."], nil)
+        f.clock.now += 200
+      }
+      // İlk gösterim + en çok bir anlam yeniden çevirisi; sonra kararlı.
+      assertEquals(2, f.shown.count)
+      assertTrue(f.shown[0].hasSuffix("|false"))
+      assertTrue(f.shown[1].hasPrefix("Çeviri: We saw 8 guards"))
+      assertTrue(f.shown[1].hasSuffix("|true"))
+    }
+    TestRun.test("HistoryReplaceTest.pipelineCapsMeaningRetranslationsAtTwo") {
+      let f = PipelineFixture(.direct) { text in "Çeviri: \(text)" }
+      for digit in ["3", "8", "5", "7", "2"] {
+        f.onRead(["We saw \(digit) guards at the gate."], nil)
+        f.clock.now += 200
+      }
+      assertEquals(3, f.shown.count)
+      assertTrue(f.shown[2].hasPrefix("Çeviri: We saw 5 guards"))
+    }
     TestRun.test("HistoryReplaceTest.pipelineReportsRevisionFlag") {
       let clock = FakeClock()
       let sink = PackPipelineTest.TextSink()

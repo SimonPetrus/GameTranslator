@@ -47,10 +47,10 @@ struct FlickerHold {
 
   /// [reading] (sadeleştirilmiş), gösterilen [shown] (sadeleştirilmiş) satırın titremiş okuması mı.
   /// Satırdan uzun (büyüyen) okuma hiçbir zaman titreme değildir; yeni satır olabilir.
-  static func isFlicker(_ reading: String, _ shown: String) -> Bool {
+  static func isFlicker(_ reading: String, _ shown: String, checkMeaning: Bool = true) -> Bool {
     if reading.isEmpty || shown.isEmpty { return false }
     // Olumsuzluk ya da sayı eklenen okuma titreme değildir: anlam değişti, yeniden çevrilir.
-    if TextMatch.addsMeaning(old: shown, new: reading) { return false }
+    if checkMeaning && TextMatch.addsMeaning(old: shown, new: reading) { return false }
     let x = reading.split(separator: " ").map(String.init)
     let y = shown.split(separator: " ").map(String.init)
     if x.count > y.count { return false }

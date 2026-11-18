@@ -86,6 +86,8 @@ final class SubtitleStabilizer {
   /// Bu boşluk için satırı ekranda tutma süresi (boşluk başlarken belirlenir).
   private var emptyGraceMs = SubtitleStabilizer.CLEAR_AFTER_MS
   private var hold = FlickerHold()
+  /// Ekrandaki satır için teslim edilmiş okumaların anlam imzaları (rakam/olumsuzluk titremesine karşı).
+  private var meaning = MeaningMemory()
   private var history: [Left] = []
   /// Çevirisi başarısız olan satır ve en erken yeniden deneneceği an.
   private var forgotten = ""
@@ -131,7 +133,10 @@ final class SubtitleStabilizer {
       : candidateCount >= stableFrames || SubtitleStabilizer.endsSentence(rawText)
     // Gönderilenin gürültülü yeniden okuması yeni satır değildir.
     let flatSent = sent.replacingOccurrences(of: "\n", with: " ")
-    if isSame(text, sent) {
+    // Rakamı ileri geri okuyan yazı tanıma her dönüşte yeniden çeviri doğurmasın: bu satır için önceden teslim edilmiş
+    // anlama dönüş ya da üst sınır yeni anlam sayılmaz.
+    let meaningOn = meaning.permits(text)
+    if isSame(text, sent, checkMeaning: meaningOn) {
       // Boşluktan dönüş ya da farklı okunmuş aynı satır: arka plan titriyor demektir.
       if hadGap || text != flatSent { hold.note(time) }
       hold.clearShorter()
@@ -139,13 +144,13 @@ final class SubtitleStabilizer {
     }
     // Parlak arka planda sözcük düşüren ya da birkaç harfi yanlış okuyan okuma da yeni satır değildir.
     // Aynı kısa okuma uzun süre kararlı kalırsa gerçekten yeni satırdır ve geçer.
-    if !sent.isEmpty && FlickerHold.isFlicker(text, flatSent) {
+    if !sent.isEmpty && FlickerHold.isFlicker(text, flatSent, checkMeaning: meaningOn) {
       hold.note(time)
       if hold.holdsFlicker(text, at: time) { return StabilizerAction.None }
     }
     if !ready { return StabilizerAction.None }
     // Aynı cümlenin daha iyi olmayan okuması da yeni satır değildir.
-    if !sentRaw.isEmpty && TextMatch.isWorseReread(rawText, sentRaw) { return StabilizerAction.None }
+    if !sentRaw.isEmpty && TextMatch.isWorseReread(rawText, sentRaw, checkMeaning: meaningOn) { return StabilizerAction.None }
 
     // Az önce kalkan satır geri geldiyse okuma birkaç kare kaçmıştır: çevirisi yeniden gösterilir.
     if let index = history.lastIndex(where: {
@@ -155,11 +160,18 @@ final class SubtitleStabilizer {
       leaveScreen(time)
       sent = back.rows
       sentRaw = back.raw
+      meaning.start(back.rows)
       return StabilizerAction.restore(back.raw)
     }
     // Çevirisi az önce başarısız olan satır her karede yeniden istenmez.
     if !forgotten.isEmpty && time < retryAt && isSame(text, forgotten) { return StabilizerAction.None }
 
+    // Aynı satırın düzeltilmiş okuması mı (anlam belleği sürer) yoksa başka satır mı (bellek yeniden başlar).
+    if !sentRaw.isEmpty && TextMatch.isRevision(rawText, sentRaw) {
+      meaning.record(text, byMeaning: TextMatch.addsMeaning(old: flatSent, new: text))
+    } else {
+      meaning.start(text)
+    }
     leaveScreen(time)
     hold.clearShorter()
     forgotten = ""
@@ -168,7 +180,9 @@ final class SubtitleStabilizer {
     return StabilizerAction.translate(sentRaw)
   }
 
-  private func isSame(_ text: String, _ rows: String) -> Bool { !rows.isEmpty && TextMatch.isSameSubtitle(text, rows) }
+  private func isSame(_ text: String, _ rows: String, checkMeaning: Bool = true) -> Bool {
+    !rows.isEmpty && TextMatch.isSameSubtitle(text, rows, checkMeaning: checkMeaning)
+  }
 
   /// Ekrandaki satırı geçmişe yazar (kalktı ya da yerine başkası geldi).
   private func leaveScreen(_ time: Int64) {
@@ -200,6 +214,7 @@ final class SubtitleStabilizer {
     candidateCount = 0
     emptySince = nil
     hold.reset()
+    meaning.reset()
     history.removeAll()
     forgotten = ""
     if sent.isEmpty { return StabilizerAction.None }

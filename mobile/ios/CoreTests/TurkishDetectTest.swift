@@ -34,7 +34,7 @@ enum TurkishDetectTest {
         assertTrue(TurkishDetect.isTurkish(line), line)
       }
       // Yazı tanımanın bir harfi bozduğu (değişmiş, düşmüş, eklenmiş) 6+ harfli sözcükler.
-      for line in ["Yükleniyar", "Güncellme", "Baglantı", "Bekleyln", "Güncelleeme"] {
+      for line in ["Yükleniyar", "Güncellme", "Baglantı", "Bekleyln lütfen", "Güncelleeme"] {
         assertTrue(TurkishDetect.isTurkish(line), line)
       }
       // İki harf bozulmuş ya da 5 harfli sözcük bulanık sayılmaz.
@@ -42,7 +42,7 @@ enum TurkishDetectTest {
       assertFalse(TurkishDetect.isTurkish("Iptxl"))
       // İngilizce satırlar (özel adlar ve İngilizce sistem metinleri) Türkçe sayılmaz.
       for line in ["Update complete, please wait.", "Connection lost.", "Loading game data", "Saving settings, do not turn off",
-                   "Mr. Bekley and Ms. Oturn arrived", "The Güncel brothers are here."] {
+                   "Mr. Bekley and Ms. Oturn arrived", "The Güncel brothers are here.", "Heroes", "Heroes Hermes Athena Zeus", "Gelding"] {
         assertFalse(TurkishDetect.isTurkish(line), line)
       }
     }

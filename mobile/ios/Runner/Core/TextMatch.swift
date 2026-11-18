@@ -47,9 +47,9 @@ enum TextMatch {
 
   /// Yeni okuma, gönderilmiş altyazının yeniden okuması mı. Başına ya da sonuna sözcük eklenmiş metin yenidir;
   /// sondan kısalmış metin ise ancak tam bir satırı eksikse aynı altyazıdır.
-  static func isSameSubtitle(_ reread: String, _ sent: String) -> Bool {
+  static func isSameSubtitle(_ reread: String, _ sent: String, checkMeaning: Bool = true) -> Bool {
     // Olumsuzluk ya da sayı eklenen okuma anlamı değiştirir: aynı altyazı değildir, yeniden çevrilir.
-    if addsMeaning(old: sent, new: reread) { return false }
+    if checkMeaning && addsMeaning(old: sent, new: reread) { return false }
     let rereadUnits = KotlinText.units(reread)
     let rows = KotlinText.split(KotlinText.units(sent), NEWLINE)
     let flat = KotlinText.join(rows, [SPACE])
@@ -90,13 +90,13 @@ enum TextMatch {
   }
 
   /// Okuma, gönderilmiş satırın aynı cümleyi bozuk okuyan ve ondan daha iyi olmayan bir yeniden okuması mı.
-  static func isWorseReread(_ reread: String, _ sent: String) -> Bool {
+  static func isWorseReread(_ reread: String, _ sent: String, checkMeaning: Bool = true) -> Bool {
     let a = normalize(KotlinText.units(reread))
     let b = normalize(KotlinText.units(sent))
     let x = cleanWords(a)
     let y = cleanWords(b)
     if x.count < 5 || y.isEmpty || isGrowth(reread, sent) || isGrowth(sent, reread) { return false }
-    if addsMeaning(old: sent, new: reread) { return false }
+    if checkMeaning && addsMeaning(old: sent, new: reread) { return false }
     let reads = similarity(x, y) >= 0.65 || isSimilar(a, b, 0.75)
     return reads && OcrNoise.score(reread) < OcrNoise.score(sent) + 4
   }
@@ -140,6 +140,12 @@ enum TextMatch {
       if let word = numberWords[token] { return word }
       return token.allSatisfy({ $0.isNumber }) ? token : nil
     }
+  }
+
+  /// Okumanın anlam imzası: sıralı sayılar ve olumsuzluk sayısı. Aynı imza, aynı anlamdır ([MeaningMemory]).
+  static func meaningSignature(_ text: String) -> String {
+    let tokens = meaningTokens(text)
+    return numberTokens(tokens).sorted().joined(separator: ",") + "|" + String(negationCount(tokens))
   }
 
   /// Yeni okuma, eskisinde olmayan bir olumsuzluk (not, n't, no, never ...) ya da sayı ekliyor ya da değiştiriyor mu.
@@ -218,5 +224,38 @@ enum TextMatch {
       return true
     default: return false
     }
+  }
+}
+
+/// Ekrandaki tek satır için, daha önce teslim edilen okumaların anlam imzalarını ve anlam yüzünden yapılan yeniden
+/// çeviri sayısını tutar. OCR bir rakamı ileri geri okuyunca (3 ↔ 8 ↔ 3) her dönüş yeniden çeviri sayılmasın:
+/// önceden teslim edilmiş imzaya dönüş yeni anlam değildir; satır başına en çok [MAX_RETRANSLATIONS] anlam yeniden çevirisi.
+struct MeaningMemory {
+  static let MAX_RETRANSLATIONS = 2
+
+  private var seen: [String] = []
+  private var retranslations = 0
+
+  /// [text] okuması için "anlam eklendi" kuralı hâlâ geçerli mi (imza yeni ve üst sınıra varılmadı).
+  func permits(_ text: String) -> Bool {
+    retranslations < MeaningMemory.MAX_RETRANSLATIONS && !seen.contains(TextMatch.meaningSignature(text))
+  }
+
+  /// Gerçekten başka bir satır gösterildi: bellek bu satırın okumasıyla yeniden başlar.
+  mutating func start(_ text: String) {
+    seen = [TextMatch.meaningSignature(text)]
+    retranslations = 0
+  }
+
+  /// Aynı satırın düzeltilmiş okuması teslim edildi; [byMeaning] anlam eklendiği için mi çevrildi.
+  mutating func record(_ text: String, byMeaning: Bool) {
+    let signature = TextMatch.meaningSignature(text)
+    if !seen.contains(signature) { seen.append(signature) }
+    if byMeaning { retranslations += 1 }
+  }
+
+  mutating func reset() {
+    seen = []
+    retranslations = 0
   }
 }
