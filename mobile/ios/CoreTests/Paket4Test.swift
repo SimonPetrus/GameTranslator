@@ -51,6 +51,39 @@ enum JsonNumberTest {
       assertEquals(9.0, JsonNumber.double(nil, 9), accuracy: 0.0001)
       assertEquals(9.0, JsonNumber.double("nan" as Any, 9), accuracy: 0.0001)
     }
+    TestRun.test("JsonNumberTest.settingsRecoveryChoice") {
+      let good = "{\"engine\":\"google\"}"
+      let older = "{\"engine\":\"deepl\"}"
+      let primaryOk = SettingsRecovery.choose(primary: good, backup: older)
+      assertEquals(good, primaryOk.text ?? "")
+      assertTrue(primaryOk.source == .primary)
+      assertNull(primaryOk.broken)
+      // Bozuk asıl kayıt + geçerli yedek: yedek seçilir, bozuk metin saklanmak üzere döner.
+      let brokenText = "{\"engine\":"
+      let restored = SettingsRecovery.choose(primary: brokenText, backup: older)
+      assertEquals(older, restored.text ?? "")
+      assertTrue(restored.source == .backup)
+      assertEquals(brokenText, restored.broken ?? "")
+      // Nesne olmayan geçerli JSON (dizi) da bozuk sayılır.
+      let array = SettingsRecovery.choose(primary: "[1,2]", backup: older)
+      assertTrue(array.source == .backup)
+      // Asıl kayıt yok: yedek kullanılır, saklanacak bozuk metin yok.
+      let missing = SettingsRecovery.choose(primary: nil, backup: older)
+      assertTrue(missing.source == .backup)
+      assertNull(missing.broken)
+      // İkisi de bozuk: varsayılanlar.
+      let both = SettingsRecovery.choose(primary: brokenText, backup: "xx")
+      assertNull(both.text)
+      assertTrue(both.source == .none)
+      assertEquals(brokenText, both.broken ?? "")
+      // Boş metinler: ilk açılış, bozuk sayılmaz.
+      let empty = SettingsRecovery.choose(primary: "", backup: nil)
+      assertNull(empty.text)
+      assertTrue(empty.source == .none)
+      assertNull(empty.broken)
+      assertFalse(SettingsRecovery.isValidObject(nil))
+      assertTrue(SettingsRecovery.isValidObject("{}"))
+    }
     TestRun.test("JsonNumberTest.extraRegionKeepsZeroAndOne") {
       let map = parse("{\"top\":0,\"bottom\":1,\"left\":0,\"right\":1,\"name\":\"Tam\"}")
       let region = ExtraRegion.parse(map, number: 1)
@@ -145,6 +178,57 @@ enum HistoryReplaceTest {
       let texts = reloaded.list().map { $0["text"] as? String ?? "" }
       assertEquals(["Sonraki", "Merhaba"], texts)
       assertEquals("Hello there", reloaded.list()[1]["source"] as? String ?? "")
+    }
+    TestRun.test("HistoryReplaceTest.addsMeaningNegationAndNumbers") {
+      assertTrue(TextMatch.addsMeaning(old: "we can go to the city", new: "we can not go to the city"))
+      assertTrue(TextMatch.addsMeaning(old: "I did see him", new: "I didn't see him"))
+      assertTrue(TextMatch.addsMeaning(old: "I did see him", new: "I didn’t see him"))
+      assertTrue(TextMatch.addsMeaning(old: "we know", new: "we don t know"))
+      assertTrue(TextMatch.addsMeaning(old: "she was here", new: "she was never here"))
+      assertTrue(TextMatch.addsMeaning(old: "I have 3 apples", new: "I have 5 apples"))
+      assertTrue(TextMatch.addsMeaning(old: "it cost twenty dollars", new: "it cost thirty dollars"))
+      assertTrue(TextMatch.addsMeaning(old: "I have apples", new: "I have 3 apples"))
+      // Eskide olan olumsuzluğun ya da sayının düşmesi anlam eklemez; aynı okuma da eklemez.
+      assertFalse(TextMatch.addsMeaning(old: "I do not know", new: "I do know"))
+      assertFalse(TextMatch.addsMeaning(old: "I have 3 apples", new: "I have apples"))
+      assertFalse(TextMatch.addsMeaning(old: "I have five apples", new: "I have 5 apples"))
+      assertFalse(TextMatch.addsMeaning(old: "we dont know", new: "we don t know"))
+      assertFalse(TextMatch.addsMeaning(old: "we don't know", new: "we dont know"))
+      assertFalse(TextMatch.addsMeaning(old: "where are you going", new: "where are you goinq"))
+      assertFalse(TextMatch.addsMeaning(old: "", new: ""))
+    }
+    TestRun.test("HistoryReplaceTest.addedMeaningIsNotSameSubtitleNorWorseRereadNorFlicker") {
+      assertFalse(TextMatch.isSameSubtitle("we can not go to the city now", "we can go to the city now"))
+      assertTrue(TextMatch.isSameSubtitle("we can go to the city now", "we can not go to the city now"))
+      assertFalse(TextMatch.isWorseReread("we do not like the old city", "we do like the old city"))
+      assertFalse(FlickerHold.isFlicker("we need 5 more men now", "we need 3 more men now"))
+      assertTrue(FlickerHold.isFlicker("we are going to the city now", "we are not going to the city now"))
+    }
+    TestRun.test("HistoryReplaceTest.pipelineRetranslatesWhenNegationIsAdded") {
+      let f = PipelineFixture(.direct) { text in "Çeviri: \(text)" }
+      f.onRead(["We can go to the city now."], nil)
+      f.clock.now += 200
+      f.onRead(["We can not go to the city now."], nil)
+      assertEquals(2, f.shown.count)
+      assertTrue(f.shown[0].hasSuffix("|false"))
+      assertTrue(f.shown[1].hasPrefix("Çeviri: We can not go"))
+      assertTrue(f.shown[1].hasSuffix("|true"), "düzeltilen okuma öncekinin yerine geçer")
+    }
+    TestRun.test("HistoryReplaceTest.pipelineRevisionIgnoresSpeakerNameAndAppliesToRestore") {
+      let f = PipelineFixture(.direct) { text in "Çeviri: \(text)" }
+      f.onRead(["MINE GUARD: Stop right there!"], nil)
+      f.clock.now += 100
+      f.onRead(["ARCHER: Stop right there!"], nil)
+      f.clock.now += 100
+      f.onRead([], nil)
+      f.clock.now += 800
+      f.onRead([], nil)
+      assertEquals(1, f.clears)
+      f.clock.now += 100
+      // Önceki satır geri gelir: önbellekten gösterilir ve yine öncekinin yerine geçer.
+      f.onRead(["MINE GUARD: Stop right there!"], nil)
+      assertEquals(3, f.shown.count)
+      assertEquals(["false", "true", "true"], f.shown.map { $0.split(separator: "|").last.map(String.init) ?? "" })
     }
     TestRun.test("HistoryReplaceTest.pipelineReportsRevisionFlag") {
       let clock = FakeClock()

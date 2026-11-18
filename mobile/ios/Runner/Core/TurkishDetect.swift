@@ -17,7 +17,31 @@ enum TurkishDetect {
     "artık", "yine", "bile", "sadece", "tekrar", "hepsi", "nerede", "nereye", "nedir", "değilim", "değilsin", "misin",
     "musun", "mısın", "bugün", "yarın", "dün", "yok", "tamamdır", "sağol", "hoş", "geldin", "hoşgeldin", "peki", "işte", "zaten",
     "olarak", "üzerinde", "bunlar", "şunlar", "onlar", "buraya", "oraya", "biraz", "herkes", "hiçbir", "bütün",
+    // Konsol ve sistem metinleri.
+    "güncelleme", "bekleyin", "oturum", "bağlantı", "ayarlar", "kaydediliyor", "yükleniyor", "devam", "iptal",
+    "kaydedildi", "tamamlandı",
   ]
+
+  /// En az 6 harfli bilinen sözcükler: yazı tanıma bir harfi bozmuş (değişmiş, düşmüş ya da eklenmiş) olsa da sayılır.
+  private static let fuzzyKnown: [[Character]] = common.filter { $0.count >= 6 }.map { Array($0) }
+
+  /// [a] ile [b] tam olarak bir harf farkla (değiştirme, ekleme ya da silme) ayrılıyor mu.
+  static func oneEditApart(_ a: [Character], _ b: [Character]) -> Bool {
+    if abs(a.count - b.count) > 1 { return false }
+    var i = 0
+    while i < a.count && i < b.count && a[i] == b[i] { i += 1 }
+    if i == a.count && i == b.count { return false }
+    if a.count == b.count { return a[(i + 1)...] == b[(i + 1)...] }
+    if a.count > b.count { return a[(i + 1)...] == b[i...] }
+    return a[i...] == b[(i + 1)...]
+  }
+
+  private static func isKnown(_ word: String) -> Bool {
+    if common.contains(word) { return true }
+    let letters = Array(word)
+    if letters.count < 5 { return false }
+    return fuzzyKnown.contains { oneEditApart(letters, $0) }
+  }
 
   /// İngilizce işlev sözcükleri (Türkçede anlamlı karşılığı olmayanlar).
   private static let english: Set<String> = [
@@ -43,7 +67,7 @@ enum TurkishDetect {
     var commonHits = 0
     for word in words {
       if english.contains(word) { englishHits += 1 }
-      if common.contains(word) { score += 2; commonHits += 1; continue }
+      if isKnown(word) { score += 2; commonHits += 1; continue }
       if word.contains(where: { strongChars.contains($0) }) {
         score += 2
       } else if word.contains(where: { weakChars.contains($0) }) {

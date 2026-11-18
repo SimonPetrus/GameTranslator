@@ -18,7 +18,7 @@ struct SubtitleStyle: Equatable {
   var placement = "cover"
   var background = 72
   var bold = false
-  /// white, yellow
+  /// white, yellow, cyan, green, orange
   var textColor = "white"
   /// inApp, overlay (yalnız Android TV uygulaması kullanır)
   var displayMode = "inApp"
@@ -193,9 +193,20 @@ final class SubtitleServer {
     return frame("subtitle", json)
   }
 
+  /// Yazı rengi adının CSS karşılığı (TV uygulamaları `color` alanını okur); bilinmeyen ad beyazdır.
+  static func colorHex(_ name: String) -> String {
+    switch name {
+    case "yellow": return "#FFE600"
+    case "cyan": return "#38BDF8"
+    case "green": return "#10B981"
+    case "orange": return "#FF9F0A"
+    default: return "#FFFFFF"
+    }
+  }
+
   static func styleFrame(_ s: SubtitleStyle) -> String {
     frame("style",
-          "{\"background\":\(min(100, max(0, s.background))),\"bold\":\(s.bold),\"bottomPercent\":\(s.bottomPercent),"
+          "{\"background\":\(min(100, max(0, s.background))),\"bold\":\(s.bold),\"bottomPercent\":\(s.bottomPercent),\"color\":\(jsonString(colorHex(s.textColor))),"
             + "\"displayMode\":\(jsonString(s.displayMode)),\"fontSize\":\(s.fontSize),\"placement\":\(jsonString(s.placement)),"
             + "\"speakerColor\":\(jsonString(speakerColorValue(s))),"
             + "\"stackPrevious\":\(s.stackPrevious),\"textColor\":\(jsonString(s.textColor))}")

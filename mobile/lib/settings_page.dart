@@ -132,6 +132,14 @@ class _SettingsTabState extends State<SettingsTab> {
         'gemini-3.6-flash': L.t('Daha iyi çeviri, biraz yavaş', 'Better translation, a little slower'),
       };
 
+  static Map<String, String> get textColors => {
+        'white': L.t('Beyaz', 'White'),
+        'yellow': L.t('Sarı', 'Yellow'),
+        'cyan': L.t('Camgöbeği', 'Cyan'),
+        'green': L.t('Yeşil', 'Green'),
+        'orange': L.t('Turuncu', 'Orange'),
+      };
+
   static Map<String, String> get placements => {
         'cover': L.t('Oyunun altyazısını örterek', 'Covering the game\'s subtitle'),
         'above': L.t('Oyunun altyazısının üstünde', 'Above the game\'s subtitle'),
@@ -496,6 +504,17 @@ class _SettingsTabState extends State<SettingsTab> {
   String get geminiModelId {
     final id = settings?.json['geminiModel'] as String?;
     return geminiModels.containsKey(id) ? id! : geminiModels.keys.first;
+  }
+
+  Future<void> pickTextColor() async {
+    final current = settings?.style['textColor'] as String?;
+    final picked = await showApplePicker(
+      context,
+      title: L.t('Yazı rengi', 'Text color'),
+      options: textColors,
+      selected: textColors.containsKey(current) ? current : 'white',
+    );
+    if (picked != null) setStyle('textColor', picked);
   }
 
   Future<void> pickPlacement() async {
@@ -961,14 +980,22 @@ class _SettingsTabState extends State<SettingsTab> {
                 onChanged: (value) => setStyle('fontSize', int.parse(value)),
               ),
             ),
-            _ControlRow(
-              title: L.t('Yazı rengi', 'Text color'),
-              child: _Segmented(
-                value: style['textColor'] as String,
-                items: {'white': L.t('Beyaz', 'White'), 'yellow': L.t('Sarı', 'Yellow')},
-                onChanged: (value) => setStyle('textColor', value),
+            if (Platform.isIOS)
+              Cell(
+                title: L.t('Yazı rengi', 'Text color'),
+                subtitle: textColors[style['textColor']] ?? textColors['white'],
+                chevron: true,
+                onTap: pickTextColor,
+              )
+            else
+              _ControlRow(
+                title: L.t('Yazı rengi', 'Text color'),
+                child: _Segmented(
+                  value: style['textColor'] as String,
+                  items: {'white': L.t('Beyaz', 'White'), 'yellow': L.t('Sarı', 'Yellow')},
+                  onChanged: (value) => setStyle('textColor', value),
+                ),
               ),
-            ),
             Cell(
               title: L.t('Altyazının yeri', 'Subtitle position'),
               subtitle: placements[style['placement']] ?? '',
@@ -1035,7 +1062,7 @@ class _SettingsTabState extends State<SettingsTab> {
             if (Platform.isIOS)
               Cell(
                 title: L.t('Konuşmacı adı renkli', 'Colored speaker name'),
-                subtitle: L.t('Konuşanın adı (ör. ENZO:) sarı, sarı yazıda açık mavi', 'The speaker\'s name (e.g. ENZO:) is yellow, or light blue on yellow text'),
+                subtitle: L.t('Konuşanın adı (ör. ENZO:) sarı, sarı yazıda açık mavi', 'The speaker\'s name (e.g. ENZO:) is yellow, or light blue when the text is yellow'),
                 trailing: CupertinoSwitch(
                   value: style['speakerColor'] as bool? ?? false,
                   activeTrackColor: Tokens.success,

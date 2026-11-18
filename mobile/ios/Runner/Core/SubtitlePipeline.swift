@@ -165,7 +165,7 @@ final class SubtitlePipeline: @unchecked Sendable {
       let number = latest
       onScreen = number
       if let cached = cache.get(key(source)) {
-        show(source, cached, box, SubtitlePipeline.ON_SCREEN_MS, replaces: false, origin: "cache")
+        show(source, cached, box, SubtitlePipeline.ON_SCREEN_MS, replaces: revises(source), origin: "cache")
       } else {
         request(number, source, box)
       }
@@ -330,8 +330,26 @@ final class SubtitlePipeline: @unchecked Sendable {
     // Çeviri kaynağıyla neredeyse aynıysa metin zaten hedef dildedir.
     if !stabilizer.shouldSend(source, translated) { return }
     let duration = number == onScreen ? SubtitlePipeline.ON_SCREEN_MS : SubtitlePipeline.readingTime(translated)
-    let replaces = lastShownSource.map { TextMatch.isRevision(source, $0) } ?? false
-    show(source, translated, box, duration, replaces: replaces, origin: origin)
+    show(source, translated, box, duration, replaces: revises(source), origin: origin)
+  }
+
+  /// Kilit altında çağrılır. [source], az önce gösterilen satırın uzamış ya da düzelmiş okuması mı (TV öncekinin
+  /// yerine koyar). Konuşmacı işareti/adı atılıp tek satır olarak da bakılır: ad bozuk okunmuş olabilir.
+  /// Önbellekten, hazır cevaptan, paketten ve geri gelen satırlardan gelen çeviriler de aynı yoldan geçer.
+  private func revises(_ source: String) -> Bool {
+    guard let previous = lastShownSource else { return false }
+    if TextMatch.isRevision(source, previous) { return true }
+    let a = SubtitlePipeline.bareText(source)
+    let b = SubtitlePipeline.bareText(previous)
+    return !a.isEmpty && !b.isEmpty && TextMatch.isSimilar(a, b, 0.8)
+  }
+
+  /// Konuşmacı işareti ve adı atılmış, tek satır, sadeleştirilmiş metin.
+  private static func bareText(_ text: String) -> String {
+    let oneLine = KotlinText.string(text.utf16.map { $0 == 0x0A ? 0x20 : $0 })
+    let (_, afterPrefix) = SpeakerPrefix.split(oneLine)
+    let (_, afterName) = SpeakerName.split(afterPrefix)
+    return TextMatch.normalize(afterName)
   }
 
   private func show(_ source: String, _ translated: String, _ box: TextBox?, _ duration: Int, replaces: Bool, origin: String) {

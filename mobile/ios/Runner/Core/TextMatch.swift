@@ -48,6 +48,8 @@ enum TextMatch {
   /// Yeni okuma, gönderilmiş altyazının yeniden okuması mı. Başına ya da sonuna sözcük eklenmiş metin yenidir;
   /// sondan kısalmış metin ise ancak tam bir satırı eksikse aynı altyazıdır.
   static func isSameSubtitle(_ reread: String, _ sent: String) -> Bool {
+    // Olumsuzluk ya da sayı eklenen okuma anlamı değiştirir: aynı altyazı değildir, yeniden çevrilir.
+    if addsMeaning(old: sent, new: reread) { return false }
     let rereadUnits = KotlinText.units(reread)
     let rows = KotlinText.split(KotlinText.units(sent), NEWLINE)
     let flat = KotlinText.join(rows, [SPACE])
@@ -94,8 +96,64 @@ enum TextMatch {
     let x = cleanWords(a)
     let y = cleanWords(b)
     if x.count < 5 || y.isEmpty || isGrowth(reread, sent) || isGrowth(sent, reread) { return false }
+    if addsMeaning(old: sent, new: reread) { return false }
     let reads = similarity(x, y) >= 0.65 || isSimilar(a, b, 0.75)
     return reads && OcrNoise.score(reread) < OcrNoise.score(sent) + 4
+  }
+
+  private static let negations: Set<String> = [
+    "not", "no", "never", "none", "nothing", "nobody", "neither", "nor", "without", "cannot", "nowhere",
+    // Kesme işareti okunmamış kısaltmalar ("dont", "cant").
+    "dont", "doesnt", "didnt", "cant", "couldnt", "wont", "wouldnt", "isnt", "arent", "wasnt", "werent", "havent",
+    "hasnt", "hadnt", "shouldnt", "aint",
+  ]
+
+  private static let numberWords: [String: String] = [
+    "zero": "0", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8",
+    "nine": "9", "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14", "fifteen": "15",
+    "sixteen": "16", "seventeen": "17", "eighteen": "18", "nineteen": "19", "twenty": "20", "thirty": "30",
+    "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70", "eighty": "80", "ninety": "90",
+    "hundred": "100", "thousand": "1000", "million": "1000000",
+  ]
+
+  /// Küçük harf, harf/rakam öbekleri (kesme işareti ayırır: "don't" -> "don", "t").
+  private static func meaningTokens(_ text: String) -> [String] {
+    var tokens: [String] = []
+    var current = ""
+    for ch in text.lowercased() {
+      if ch.isLetter || ch.isNumber { current.append(ch) } else if !current.isEmpty { tokens.append(current); current = "" }
+    }
+    if !current.isEmpty { tokens.append(current) }
+    return tokens
+  }
+
+  private static func negationCount(_ tokens: [String]) -> Int {
+    var count = 0
+    for (index, token) in tokens.enumerated() {
+      if negations.contains(token) || (token == "t" && index > 0 && tokens[index - 1].hasSuffix("n")) { count += 1 }
+    }
+    return count
+  }
+
+  private static func numberTokens(_ tokens: [String]) -> [String] {
+    tokens.compactMap { token -> String? in
+      if let word = numberWords[token] { return word }
+      return token.allSatisfy({ $0.isNumber }) ? token : nil
+    }
+  }
+
+  /// Yeni okuma, eskisinde olmayan bir olumsuzluk (not, n't, no, never ...) ya da sayı ekliyor ya da değiştiriyor mu.
+  /// Böyle okuma "aynı altyazı" ya da titreme değildir: anlam değiştiği için yeniden çevrilir. Eskide olan bir
+  /// olumsuzluğun ya da sayının okunmaması (düşmesi) anlam eklemez.
+  static func addsMeaning(old: String, new: String) -> Bool {
+    let oldTokens = meaningTokens(old)
+    let newTokens = meaningTokens(new)
+    if negationCount(newTokens) > negationCount(oldTokens) { return true }
+    var remaining = numberTokens(oldTokens)
+    for number in numberTokens(newTokens) {
+      if let index = remaining.firstIndex(of: number) { remaining.remove(at: index) } else { return true }
+    }
+    return false
   }
 
   /// Levenshtein oranı (sözcük dizileri için).

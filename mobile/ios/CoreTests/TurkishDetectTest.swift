@@ -27,6 +27,36 @@ enum TurkishDetectTest {
       assertFalse(TurkishDetect.isTurkish("... !?"))
       assertFalse(TurkishDetect.isTurkish("12:30"))
     }
+    TestRun.test("TurkishDetectTest.consoleWordsAndOneLetterDamage") {
+      // Konsol/sistem sözcükleri.
+      for line in ["Güncelleme yükleniyor", "Lütfen bekleyin", "Oturum açılıyor, lütfen bekleyin", "Ayarlar kaydediliyor",
+                   "İptal", "Devam"] {
+        assertTrue(TurkishDetect.isTurkish(line), line)
+      }
+      // Yazı tanımanın bir harfi bozduğu (değişmiş, düşmüş, eklenmiş) 6+ harfli sözcükler.
+      for line in ["Yükleniyar", "Güncellme", "Baglantı", "Bekleyln", "Güncelleeme"] {
+        assertTrue(TurkishDetect.isTurkish(line), line)
+      }
+      // İki harf bozulmuş ya da 5 harfli sözcük bulanık sayılmaz.
+      assertFalse(TurkishDetect.isTurkish("Yükleniyxx"))
+      assertFalse(TurkishDetect.isTurkish("Iptxl"))
+      // İngilizce satırlar (özel adlar ve İngilizce sistem metinleri) Türkçe sayılmaz.
+      for line in ["Update complete, please wait.", "Connection lost.", "Loading game data", "Saving settings, do not turn off",
+                   "Mr. Bekley and Ms. Oturn arrived", "The Güncel brothers are here."] {
+        assertFalse(TurkishDetect.isTurkish(line), line)
+      }
+    }
+    TestRun.test("TurkishDetectTest.oneEditApart") {
+      func edit(_ a: String, _ b: String) -> Bool { TurkishDetect.oneEditApart(Array(a), Array(b)) }
+      assertTrue(edit("bekleyin", "bekleyln"))
+      assertTrue(edit("bekleyin", "bekleyi"))
+      assertTrue(edit("bekleyin", "bekleyinn"))
+      assertTrue(edit("bekleyin", "ekleyin"))
+      assertFalse(edit("bekleyin", "bekleyin"))
+      assertFalse(edit("bekleyin", "bekleyxx"))
+      assertFalse(edit("bekleyin", "bekley"))
+      assertFalse(edit("", ""))
+    }
     TestRun.test("TurkishDetectTest.pipelineSkipsTurkishSource") {
       var calls: [String] = []
       let f = PipelineFixture(.direct) { text in calls.append(text); return "çeviri" }

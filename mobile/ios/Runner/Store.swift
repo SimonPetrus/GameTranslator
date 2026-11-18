@@ -134,7 +134,7 @@ struct Settings: Equatable {
       placement: string(s?["placement"], ds.placement),
       background: int(s?["background"], ds.background),
       bold: bool(s?["bold"], ds.bold),
-      textColor: string(s?["textColor"], ds.textColor),
+      textColor: textColor(string(s?["textColor"], ds.textColor)),
       displayMode: string(s?["displayMode"], ds.displayMode),
       stackPrevious: bool(s?["stackPrevious"], ds.stackPrevious),
       speakerColor: bool(s?["speakerColor"], ds.speakerColor))
@@ -145,6 +145,11 @@ struct Settings: Equatable {
     guard let data = text?.data(using: .utf8),
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
     return fromJson(object)
+  }
+
+  /// Bilinen yazı renkleri; başka her değer beyaz olur.
+  static func textColor(_ value: String) -> String {
+    ["white", "yellow", "cyan", "green", "orange"].contains(value) ? value : "white"
   }
 
   private static func clamp(_ value: Double, _ low: Double, _ high: Double) -> Double { min(max(value, low), high) }
@@ -205,8 +210,36 @@ final class Store {
   }
 
   var settings: Settings {
-    get { Settings.fromJsonString(defaults.string(forKey: "settings")) ?? Settings() }
-    set { defaults.set(newValue.toJsonString(), forKey: "settings") }
+    get { loadSettings() }
+    set {
+      let text = newValue.toJsonString()
+      // Önceki geçerli kayıt yedek olur; bozuk bir kayıt yedeğin üstüne yazılmaz.
+      if let previous = defaults.string(forKey: "settings"), previous != text, SettingsRecovery.isValidObject(previous) {
+        defaults.set(previous, forKey: "settingsBackup")
+      }
+      defaults.set(text, forKey: "settings")
+    }
+  }
+
+  /// Asıl kayıt bozuksa yedekten döner; bozuk metin tanı için "settingsBroken" altında kalır (içerik günlüğe yazılmaz).
+  private func loadSettings() -> Settings {
+    let choice = SettingsRecovery.choose(primary: defaults.string(forKey: "settings"),
+                                         backup: defaults.string(forKey: "settingsBackup"))
+    if let broken = choice.broken { defaults.set(broken, forKey: "settingsBroken") }
+    switch choice.source {
+    case .primary:
+      return Settings.fromJsonString(choice.text) ?? Settings()
+    case .backup:
+      NSLog("GameTranslator Ayarlar bozuktu, yedekten geri yüklendi")
+      defaults.set(choice.text, forKey: "settings")
+      return Settings.fromJsonString(choice.text) ?? Settings()
+    case .none:
+      if choice.broken != nil {
+        NSLog("GameTranslator Ayarlar bozuktu ve yedek yok, varsayılanlar kullanıldı")
+        defaults.removeObject(forKey: "settings")
+      }
+      return Settings()
+    }
   }
 
   /// Ayarları varsayılana döndürür; kimlik ve gizli bilgiler (PSN hesabı, PS5 kaydı, DeepL ve Gemini anahtarı) ile

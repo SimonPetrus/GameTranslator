@@ -35,3 +35,25 @@ enum JsonNumber {
     return fallback
   }
 }
+
+/// Kayıtlı ayar JSON'unun bozulmasına karşı seçim: asıl kayıt okunamıyorsa yedeğe dönülür (saf mantık; içerik asla
+/// günlüğe yazılmaz çünkü API anahtarları içerir).
+enum SettingsRecovery {
+  enum Source: Equatable { case primary, backup, none }
+
+  /// Metin geçerli bir JSON nesnesi mi (sözlük)?
+  static func isValidObject(_ text: String?) -> Bool {
+    guard let text = text, !text.isEmpty,
+          let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) else { return false }
+    return object is [String: Any]
+  }
+
+  /// Kullanılacak kayıt: geçerli asıl kayıt, yoksa geçerli yedek, yoksa .none (varsayılanlar).
+  /// [broken] asıl kayıt var ama bozuksa (boş değil) tanı için saklanacak metindir.
+  static func choose(primary: String?, backup: String?) -> (text: String?, source: Source, broken: String?) {
+    if isValidObject(primary) { return (primary, .primary, nil) }
+    let broken: String? = (primary?.isEmpty == false) ? primary : nil
+    if isValidObject(backup) { return (backup, .backup, broken) }
+    return (nil, .none, broken)
+  }
+}

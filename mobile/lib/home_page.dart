@@ -707,7 +707,13 @@ class RegionPreview extends StatelessWidget {
   Widget _subtitle(AppSettings? s, double height) {
     final style = s?.style ?? const <String, dynamic>{};
     final fontSize = ((style['fontSize'] as num?) ?? 46).toDouble() / 1080 * height;
-    final color = style['textColor'] == 'yellow' ? const Color(0xFFFFE600) : Colors.white;
+    final color = switch (style['textColor']) {
+      'yellow' => const Color(0xFFFFE600),
+      'cyan' => const Color(0xFF38BDF8),
+      'green' => const Color(0xFF10B981),
+      'orange' => const Color(0xFFFF9F0A),
+      _ => const Color(0xFFFFFFFF),
+    };
     final placement = style['placement'] as String? ?? 'cover';
     final alpha = placement == 'cover' ? 0.92 : ((style['background'] as num?) ?? 72).toDouble().clamp(0, 100) / 100;
     final bottomPercent = ((style['bottomPercent'] as num?) ?? 7).toDouble().clamp(0, 85) / 100;
