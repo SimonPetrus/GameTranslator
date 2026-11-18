@@ -169,16 +169,19 @@ final class VisionReader: FrameReader {
     }
   }
 
-  func reset() {
+  func reset(clearScreen: Bool) {
     let target = currentQueue()
     target.queue.async {
       guard self.isCurrent(target.token) else { return }
       let settings = Store.shared.settings
       self.region = settings.region
       self.resetAuto(enabled: settings.autoRegion, token: target.token)
+      self.hideButtonHints = settings.hideButtonHints
       self.scheduler.reset()
       _ = self.whenCurrent(target.token) { self.retryLimiter.reset() }
       self.pipeline?.reset()
+      // Durdurmada: sıfırlamadan önce biten çeviri TV'ye gitmiş olabilir; sıfırlamadan sonra hat eski satır göndermez.
+      if clearScreen { self.sink.clear() }
     }
   }
 
@@ -387,6 +390,7 @@ final class VisionReader: FrameReader {
       defer { semaphore.signal() }
       guard self.isCurrent(target.token) else { return }
       slot.pipeline = self.pipeline
+      slot.resets = self.pipeline?.resetCount ?? 0
       slot.lines = self.extraLines(frame, r, token: target.token)
     }
     if semaphore.wait(timeout: .now() + 12) == .timedOut {
@@ -408,12 +412,27 @@ final class VisionReader: FrameReader {
       failed.error = Lang.t("Çeviri alınamadı; bağlantıyı kontrol edin.", "Translation failed; check your connection.")
       return failed
     }
-    // Ek alan çevirisi 8 sn kalır; kutu verilmez, TV kendi yerleşimini kullanır.
-    sink.show(text, durationMs: 8000, box: nil, replaces: false)
-    Engine.history.record(source: source, text: text, engine: translated.origin)
+    // Ek alan çevirisi 8 sn kalır; kutu verilmez, TV kendi yerleşimini kullanır. Hat bu arada sıfırlandıysa
+    // (durdurma, ayar değişimi) gönderilmez.
+    guard let mark = pipeline.showAside(text, durationMs: Self.extraShowMs, unlessResetSince: slot.resets) else {
+      failed.error = Lang.t("Çeviri bu arada durduruldu ya da yeniden kuruldu; yeniden deneyin.",
+                            "Translation was stopped or restarted meanwhile; try again.")
+      return failed
+    }
+    Engine.history.record(source: source, text: text, engine: translated.origin, aside: true)
     engine.log(2, "ek alan (\(r.name)): \"\(source)\" → \"\(text)\"")
+    // Gösterim bitince TV'de oyunun hâlâ ekrandaki satırının çevirisi geri gelir (arada yeni satır, temizleme ya da
+    // durdurma olduysa hat karar verir, bir şey gönderilmez).
+    let resume = currentQueue()
+    resume.queue.asyncAfter(deadline: .now() + .milliseconds(Self.extraShowMs)) {
+      guard self.isCurrent(resume.token), self.pipeline === pipeline else { return }
+      pipeline.resumeAfterAside(mark)
+    }
     return ExtraReadResult(ok: true, source: source, text: text, error: "")
   }
+
+  /// Ek alan çevirisinin TV'de kalma süresi.
+  private static let extraShowMs = 8000
 
   /// Okuma kuyruğunda: ek alanın satırları (yukarıdan aşağı). Okuma hatasında nil, yazı yoksa boş dizi.
   private func extraLines(_ frame: Frame, _ r: ExtraRegion, token: Int) -> [String]? {
@@ -617,6 +636,7 @@ final class VisionReader: FrameReader {
 /// Ek alan okumasının okuma kuyruğundan çağırana taşıdığı sonuç.
 private final class ExtraSlot: @unchecked Sendable {
   var pipeline: SubtitlePipeline?
+  var resets = 0
   var lines: [String]?
 }
 

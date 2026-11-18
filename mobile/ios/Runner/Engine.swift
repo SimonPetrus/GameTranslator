@@ -328,7 +328,8 @@ final class Engine: Native.Listener {
       Engine.translationCache.flush()
       Engine.history.flush()
       self.closeSession()
-      self.reader?.reset()
+      // Okuma kuyruğundaki sıfırlamadan önce biten çeviri TV'ye gidebilir: sıfırlamanın ardından TV bir kez daha temizlenir.
+      self.reader?.reset(clearScreen: true)
       // Sunucu açık kalır: TV bağlı kalsın, çeviri yeniden başlayınca altyazılar hemen gitsin.
       self.server.clear()
       self.frameLock.lock(); self.frame = nil; self.frameLock.unlock()
@@ -363,13 +364,14 @@ final class Engine: Native.Listener {
   /// TV'de deneme altyazısı; sunucu kapalıysa açılır (TV telefonu bulsun diye açık kalır).
   func sendTestSubtitle() {
     onControl {
-      self.settings = Store.shared.settings
+      // self.settings'e yazılmaz: applySettings farkı ona göre hesaplar, bekleyen ayar değişikliği yutulmasın.
+      let s = Store.shared.settings
       if !self.server.isStarted {
         self.server.start()
         self.log(2, "altyazı sunucusu: \(Network.localAddress() ?? "?"):\(SubtitleServer.defaultPort)")
       }
-      self.server.sendStyle(self.settings.style)
-      let r = self.settings.region
+      self.server.sendStyle(s.style)
+      let r = s.region
       self.server.sendSubtitle(Lang.t("Bu bir deneme altyazısıdır. Oyunun üstünde görüyor musunuz?", "This is a test subtitle. Can you see it over the game?"), durationMs: 8000,
                                box: TextBox(left: 0.3, top: r.bottom - 0.1, right: 0.7, bottom: r.bottom - 0.03))
     }
@@ -417,7 +419,7 @@ final class Engine: Native.Listener {
     timer.cancel()
     demoTimer = nil
     demoActive = false
-    reader?.reset()
+    reader?.reset(clearScreen: true)
     server.clear()
     log(2, "demo durdu")
     notifyChanged()
@@ -724,8 +726,8 @@ struct Frame {
 protocol FrameReader: AnyObject {
   /// Ayarlara göre hattı yeniden kurar (denetim kuyruğunda).
   func rebuild(settings: Settings)
-  /// Bölge ya da oturum değişti: geçmiş unutulur.
-  func reset()
+  /// Bölge ya da oturum değişti: geçmiş unutulur. [clearScreen]: sıfırlamadan sonra TV de temizlenir (durdurma).
+  func reset(clearScreen: Bool)
   /// Yeni kare; okuma sürüyorsa kare atlanabilir (libchiaki iş parçacığından).
   func offer(_ frame: Frame)
   /// Okunmuş gibi satırları doğrudan çeviri hattına verir (demo).
@@ -736,6 +738,10 @@ protocol FrameReader: AnyObject {
   var health: ReaderHealth { get }
   /// Otomatik altyazı alanı kilitliyse bulunan şerit; değilse nil.
   var autoRegion: AutoRegionBand? { get }
+}
+
+extension FrameReader {
+  func reset() { reset(clearScreen: false) }
 }
 
 /// Ek alan okumasının sonucu.

@@ -90,7 +90,12 @@ final class SubtitlePipeline: @unchecked Sendable {
   private let address: AddressMemory
   private let nameMemory = NameMemory()
   private var lastPackId: String?
-  /// Kısa satır bağlamının zaman ölçüsü (saniye); testte sahte saat verilir.
+  /// TV'ye hattın en son gönderdiği satır (numarası, çevirisi, kutusu, süresi, gönderildiği an); kalkınca ya da sıfırlanınca nil.
+  private var displayed: (number: Int, text: String, box: TextBox?, durationMs: Int, at: Double)?
+  /// TV'deki gösterim her değiştiğinde (satır, temizleme, ek gösterim, sıfırlama) artar.
+  private var screenMark = 0
+  private var resets = 0
+  /// Kısa satır bağlamının ve ekrandaki satırın kalan süresinin zaman ölçüsü (saniye); testte sahte saat verilir.
   var contextClock: () -> Double = { ProcessInfo.processInfo.systemUptime }
   /// Seçili motor Gemini iken Gemini zincirde beklemedeyse true: satırı büyük olasılıkla başka motor (DeepL/Google) çevireceği için
   /// deyim sadeleştirme, ad koruması ve kısa satır bağlamı uygulanır. Varsayılan: hiçbir zaman (bugünkü davranış).
@@ -161,6 +166,8 @@ final class SubtitlePipeline: @unchecked Sendable {
       break
     case .clear:
       onScreen = -1
+      displayed = nil
+      screenMark += 1
       sink.clear()
     case .restore:
       guard let source = action.text else { return }
@@ -168,7 +175,7 @@ final class SubtitlePipeline: @unchecked Sendable {
       let number = latest
       onScreen = number
       if let cached = cache.get(key(source)) {
-        show(source, cached, box, SubtitlePipeline.ON_SCREEN_MS, replaces: revises(source), origin: "cache")
+        show(number, source, cached, box, SubtitlePipeline.ON_SCREEN_MS, replaces: revises(source), origin: "cache")
       } else {
         request(number, source, box)
       }
@@ -337,7 +344,7 @@ final class SubtitlePipeline: @unchecked Sendable {
     // Çeviri kaynağıyla neredeyse aynıysa metin zaten hedef dildedir.
     if !stabilizer.shouldSend(source, translated) { return }
     let duration = number == onScreen ? SubtitlePipeline.ON_SCREEN_MS : SubtitlePipeline.readingTime(translated)
-    show(source, translated, box, duration, replaces: revises(source), origin: origin)
+    show(number, source, translated, box, duration, replaces: revises(source), origin: origin)
   }
 
   /// Kilit altında çağrılır. [source], az önce gösterilen satırın uzamış ya da düzelmiş okuması mı (TV öncekinin
@@ -359,9 +366,13 @@ final class SubtitlePipeline: @unchecked Sendable {
     return TextMatch.normalize(afterName)
   }
 
-  private func show(_ source: String, _ translated: String, _ box: TextBox?, _ duration: Int, replaces: Bool, origin: String) {
+  private func show(_ number: Int, _ source: String, _ translated: String, _ box: TextBox?, _ duration: Int, replaces: Bool,
+                    origin: String) {
     lastShownSource = source
-    lastShownAt = contextClock()
+    let now = contextClock()
+    lastShownAt = now
+    displayed = (number: number, text: translated, box: box, durationMs: duration, at: now)
+    screenMark += 1
     sink.show(translated, durationMs: duration, box: box, replaces: replaces)
     onPair?(source, translated)
     onShown?(source, translated, origin, replaces)
@@ -369,11 +380,48 @@ final class SubtitlePipeline: @unchecked Sendable {
 
   private func key(_ source: String) -> UTF16Text { KotlinText.units(TextMatch.normalize(source)) }
 
+  /// Hattın kaç kez sıfırlandığı (durdurma, bölge ya da ayar değişimi).
+  var resetCount: Int { lock.lock(); defer { lock.unlock() }; return resets }
+
+  /// Hattın dışından kısa bir gösterim (ek okuma alanı): TV'ye gider, hattın ekrandaki satırı unutulmaz.
+  /// Hat [resetCount] okunduktan sonra sıfırlandıysa (durdurma) gösterilmez ve nil döner; yoksa dönen işaret,
+  /// gösterim bitince [resumeAfterAside]'a verilir.
+  func showAside(_ text: String, durationMs: Int, unlessResetSince resetsBefore: Int) -> Int? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard resets == resetsBefore else { return nil }
+    screenMark += 1
+    sink.show(text, durationMs: durationMs, box: nil, replaces: false)
+    return screenMark
+  }
+
+  /// Ek gösterim bitti: o arada TV'de başka bir şey gösterilmediyse (yeni satır, temizleme, sıfırlama, başka ek gösterim)
+  /// ve hattın son gösterdiği satır oyunda hâlâ ekrandaysa, o satır kendi süresinden kalanla yeniden gönderilir.
+  /// Kalan süre [RESUME_MIN_MS]'den azsa gönderilmez (satırın TV'deki süresi zaten dolmuştu). Gönderildiyse true.
+  @discardableResult
+  func resumeAfterAside(_ mark: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard mark == screenMark, let current = displayed, current.number == onScreen, current.number == latest else { return false }
+    let elapsed = Int(((contextClock() - current.at) * 1000).rounded())
+    let remaining = current.durationMs - max(0, elapsed)
+    guard remaining >= SubtitlePipeline.RESUME_MIN_MS else { return false }
+    screenMark += 1
+    sink.show(current.text, durationMs: remaining, box: current.box, replaces: false)
+    return true
+  }
+
+  /// Ek gösterimden sonra geri gelen satırın en kısa kalan süresi (TV de 1 sn'den kısa gösterim yapmaz).
+  static let RESUME_MIN_MS = 1000
+
   func reset() {
     lock.lock()
     defer { lock.unlock() }
     latest += 1
+    resets += 1
     onScreen = -1
+    displayed = nil
+    screenMark += 1
     lastShownSource = nil
     lastShownAt = nil
     lastPackId = nil

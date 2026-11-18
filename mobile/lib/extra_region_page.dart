@@ -50,7 +50,9 @@ class _ExtraRegionPageState extends State<ExtraRegionPage> {
 
   double value(String key) => (region[key] as num).toDouble();
 
-  void setEdge(String key, double next) {
+  void setEdge(String key, double raw) {
+    // Kaydederken uygulanan sınırlar: üst ve sol kenar en çok %95, alt ve sağ kenar en az %5.
+    final next = key == 'top' || key == 'left' ? raw.clamp(0.0, 0.95) : raw.clamp(0.05, 1.0);
     setState(() {
       region[key] = next;
       // Alan en az %5 yüksekliğinde ve genişliğinde kalır.

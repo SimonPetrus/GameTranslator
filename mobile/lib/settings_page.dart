@@ -190,6 +190,7 @@ class _SettingsTabState extends State<SettingsTab> {
   final deepLController = TextEditingController();
   final geminiController = TextEditingController();
   final geminiStyleController = TextEditingController();
+  final geminiStyleFocus = FocusNode();
   bool checkingGemini = false;
   bool updatingPatches = false;
   (bool, String)? patchesResult;
@@ -288,6 +289,7 @@ class _SettingsTabState extends State<SettingsTab> {
   void initState() {
     super.initState();
     load();
+    geminiStyleFocus.addListener(onStyleFocus);
     if (Platform.isIOS) {
       loadIosExtras();
       stateSubscription = Bridge.states.listen((next) {
@@ -300,16 +302,43 @@ class _SettingsTabState extends State<SettingsTab> {
   }
 
   @override
+  void didUpdateWidget(covariant SettingsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sekmeden çıkılırken kutuda kaydedilmemiş ek talimat kalmasın.
+    if (oldWidget.active && !widget.active) commitStyleNote();
+  }
+
+  @override
   void dispose() {
     saveTimer?.cancel();
     previewTimer?.cancel();
     stateSubscription?.cancel();
+    geminiStyleFocus.removeListener(onStyleFocus);
+    geminiStyleFocus.dispose();
     final current = settings;
-    if (current != null) Bridge.saveSettings(current);
+    if (current != null) {
+      current.json['geminiStyleNote'] = geminiStyleController.text;
+      Bridge.saveSettings(current);
+    }
     deepLController.dispose();
     geminiController.dispose();
     geminiStyleController.dispose();
     super.dispose();
+  }
+
+  /// Ek talimat yazarken kaydedilmez (akışta her kayıt çevirmeni yeniden kurar); klavyede "bitti", odak gidince ya da
+  /// sekmeden çıkınca bir kez kaydedilir. Kayıtlı metinle aynıysa kayıt yapılmaz.
+  void commitStyleNote() {
+    final current = settings;
+    final text = geminiStyleController.text;
+    if (current == null || current.geminiStyleNote == text) return;
+    current.json['geminiStyleNote'] = text;
+    saveTimer?.cancel();
+    Bridge.saveSettings(current);
+  }
+
+  void onStyleFocus() {
+    if (!geminiStyleFocus.hasFocus) commitStyleNote();
   }
 
   /// iOS'a özgü bilgiler: önceki çökme ve deneme durumu.
@@ -495,8 +524,10 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
       );
 
-  void setRegion(String edge, double value) => change((s) {
+  void setRegion(String edge, double next) => change((s) {
         final region = s.region;
+        // Kaydederken uygulanan sınırlar: üst ve sol kenar en çok %95, alt ve sağ kenar en az %5.
+        final value = edge == 'top' || edge == 'left' ? next.clamp(0.0, 0.95) : next.clamp(0.05, 1.0);
         region[edge] = value;
         // Bölge en az %5 yüksekliğinde ve genişliğinde kalır.
         if (edge == 'top' && region['bottom'] < value + 0.05) region['bottom'] = (value + 0.05).clamp(0.0, 1.0);
@@ -520,6 +551,20 @@ class _SettingsTabState extends State<SettingsTab> {
     final options = only == null ? names : {for (final code in only) code: names[code] ?? code};
     final picked = await showApplePicker(context, title: title, options: options, selected: settings?.json[key] as String?, leading: flags);
     if (picked != null) change((s) => s.json[key] = picked);
+  }
+
+  /// Ek talimat kutusunun hazır seçenekleri (etiket, kutuya yazılan metin).
+  List<(String, String)> get styleNotePresets => [
+        (L.t('Samimi', 'Casual'), L.t('Samimi, günlük konuşma diliyle çevir.', 'Translate in a casual, everyday tone.')),
+        (L.t('Argo', 'Slang'), L.t('Argo ve sokak ağzını koru, yumuşatma.', 'Keep slang and street talk, do not soften it.')),
+        (L.t('Resmî', 'Formal'), L.t('Resmî ve saygılı bir dille çevir.', 'Translate in a formal, respectful tone.')),
+        (L.t('Kısa', 'Short'), L.t('Çeviriyi kısa ve öz tut.', 'Keep the translation short and to the point.')),
+      ];
+
+  /// Seçenek kutunun metninin yerine geçer; elle yazılmış gibi kaydedilir.
+  void applyStyleNote(String text) {
+    geminiStyleController.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+    change((s) => s.json['geminiStyleNote'] = text);
   }
 
   Future<void> pickGeminiModel() async {
@@ -886,14 +931,27 @@ class _SettingsTabState extends State<SettingsTab> {
                   children: [
                     TextField(
                       controller: geminiStyleController,
+                      focusNode: geminiStyleFocus,
+                      textInputAction: TextInputAction.done,
                       maxLength: 200,
                       decoration: InputDecoration(
                         hintText: L.t('Ek talimat (isteğe bağlı), ör. Samimi dille çevir', 'Extra instruction (optional), e.g. Translate casually'),
                         counterText: '',
                       ),
-                      onChanged: (value) => change((s) => s.json['geminiStyleNote'] = value),
+                      // Yazarken kaydedilmez; yalnız hazır seçeneklerin seçili görünümü güncellenir.
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: (_) => commitStyleNote(),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final preset in styleNotePresets)
+                          _presetChip(preset.$1, selected: geminiStyleController.text == preset.$2, onTap: () => applyStyleNote(preset.$2)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       L.t("Gemini'ye üslup notu. Yalnız Gemini çevirirken etkilidir.", 'A style note for Gemini. Only applies when Gemini is translating.'),
                       style: Txt.footnote.copyWith(color: Tokens.textSecondary),
