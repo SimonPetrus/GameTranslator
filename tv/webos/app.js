@@ -288,13 +288,25 @@
     return { rows: rows, count: parts.length };
   }
 
+  // Satır kutusu validBox'tan sıkıdır: eksik değer ya da ters kutu (sol ≥ sağ, üst ≥ alt) düzeltilmez, reddedilir.
+  // Tek kutu yolu (validBox) eskisi gibi kalır.
+  function rowBox(box) {
+    if (!box || typeof box !== 'object') return null;
+    var values = [box.left, box.top, box.right, box.bottom];
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] === null || values[i] === undefined || values[i] === '' || isNaN(Number(values[i]))) return null;
+    }
+    if (Number(box.left) >= Number(box.right) || Number(box.top) >= Number(box.bottom)) return null;
+    return validBox(box);
+  }
+
   // Telefonun gönderdiği satır yerleri: sayısı satır sayısını tutmuyorsa ya da bir kutu geçersizse hiç kullanılmaz.
   function validRows(list, count, rows) {
     if (!list || Object.prototype.toString.call(list) !== '[object Array]' || list.length !== count) return null;
     var out = [];
     for (var i = 0; i < rows.length; i++) {
       var item = list[rows[i].index];
-      var box = validBox(item && item.box);
+      var box = rowBox(item && item.box);
       if (!box) return null;
       var line = Number(item.line);
       out.push({ text: rows[i].text, box: box, line: line > 0 && line < 1 ? line : 0 });
@@ -449,11 +461,15 @@
     el.style.webkitTransform = 'none';
     cover.className = 'hidden';
     unfit();
+    restoreRowsSize();
     hideRowCovers();
     paintRows();
 
     // Altyazı yokken veya kutu tanımlı değilken örtü tek başına kalmasın
-    if (!box || el.className === 'hidden') return;
+    if (!box || el.className === 'hidden') {
+      keepRowsOnScreen();
+      return;
+    }
 
     var mode = placement;
     // Ekranın kenarında yer yoksa öbür yana geçilir.
@@ -502,6 +518,33 @@
       el.style.transform = 'none';
       el.style.webkitTransform = 'none';
     }
+    keepRowsOnScreen();
+  }
+
+  // Çok satır ekrana sığmıyorsa (üstten ya da alttan taşıyor) yazı ayarlardaki boyun 0,6 katına kadar küçülür.
+  // Yalnız alt alta kutularda; tek satırlı yazıya ve sığdırma yerleşimlerine dokunmaz.
+  var rowsShrunk = false;
+  function keepRowsOnScreen() {
+    var el = $('subtitle');
+    if (!textRows || fitted || el.className === 'hidden' || el.style.visibility === 'hidden') return;
+    var text = $('subtitle-text');
+    var height = window.innerHeight || document.documentElement.clientHeight || 1080;
+    var base = baseFontSize || 46;
+    var min = Math.round(base * 0.6);
+    var size = base;
+    var rect = text.getBoundingClientRect();
+    while ((rect.top < 0 || rect.bottom > height) && size > min) {
+      size = Math.max(min, size - 2);
+      text.style.fontSize = size + 'px';
+      rowsShrunk = true;
+      rect = text.getBoundingClientRect();
+    }
+  }
+
+  function restoreRowsSize() {
+    if (!rowsShrunk) return;
+    rowsShrunk = false;
+    $('subtitle-text').style.fontSize = baseFontSize ? baseFontSize + 'px' : '';
   }
 
   // Çeviriyi oyunun altyazısının kapladığı alana sığdırır: aynı genişlikte sarılır, yazı boyu alana sığan en büyük
@@ -602,12 +645,21 @@
     host.innerHTML = '';
     host.className = '';
     $('subtitle').style.visibility = 'hidden';
-    for (var i = 0; i < rows.length; i++) {
-      var r = padBox(rows[i].box);
-      var cover = document.createElement('div');
-      cover.className = 'row-cover';
-      setRect(cover, r.left, r.top, r.right, r.bottom);
-      host.appendChild(cover);
+    // Önce bütün örtüler, sonra bütün yazılar eklenir: bir satırın opak örtüsü komşu satırın taşan yazısını kapatmasın
+    // (aynı katmanda sonra eklenen üstte çizilir).
+    var covers = [];
+    var i;
+    for (i = 0; i < rows.length; i++) {
+      var padded = padBox(rows[i].box);
+      var block = document.createElement('div');
+      block.className = 'row-cover';
+      setRect(block, padded.left, padded.top, padded.right, padded.bottom);
+      host.appendChild(block);
+      covers.push({ el: block, box: padded });
+    }
+    for (i = 0; i < rows.length; i++) {
+      var r = covers[i].box;
+      var cover = covers[i].el;
       var area = cover.getBoundingClientRect();
       var perX = area.width / (r.right - r.left), perY = area.height / (r.bottom - r.top);
 
@@ -781,13 +833,22 @@
     }
     setStatus('st-conn', t('connecting'), 'muted');
     var gen = connGen;
-    var source = new EventSource(address + '/events');
+    var source;
+    try {
+      source = new EventSource(address + '/events');
+    } catch (e) {
+      // Adres bozuksa ya da motor reddederse yine yeniden denenir ve ağ taranır.
+      setStatus('st-conn', t('reconnecting'), 'bad');
+      scheduleRetry();
+      noteFailure();
+      return;
+    }
     eventSource = source;
     source.onopen = function () {
       if (gen !== connGen) return;
       failures = 0;
       retryStep = 0;
-      nextScanAt = 0;
+      resetScanPause();
       lastDataAt = Date.now();
       // Bağlandık: süren ya da bekleyen tarama bırakılır, geç dönen yanıtları yok sayılır.
       cancelScan();
@@ -861,6 +922,7 @@
   // sayılır (ping yollamayan eski sunucuda da tek bir yeniden bağlanma zararsızdır).
   var RESUME_STALE_MS = 20000;
   function onResume() {
+    resetScanPause();
     if (!server || demoRunning()) return;
     if (!isOpen() || Date.now() - lastDataAt >= RESUME_STALE_MS) reconnectNow();
   }
@@ -868,12 +930,21 @@
   // Saniyede bir: veri nöbetçisi, boşta sunucu denetimi ve panel açıksa tanı satırı. Tek zamanlayıcıdır, hiç kapanmaz.
   var HEARTBEAT_MS = 1000;
   function heartbeat() {
+    // Demo sürerken yeniden bağlanılmaz (demo bitince yapılır); bayat sayacı da boşuna artmasın.
+    if (demoRunning()) {
+      if ($('panel').className !== 'hidden') renderDiag();
+      return;
+    }
     if (eventSource && isStale()) {
-      // Yarı açık bağlantı: tarayıcı açık sanıyor ama sunucudan 40 sn hiçbir şey gelmedi.
+      // Yarı açık bağlantı: tarayıcı açık sanıyor ama sunucudan 40 sn hiçbir şey gelmedi. Hata olayı gelmediği için
+      // tarama da buradan planlanır (yeni bağlantı açılırsa iptal edilir).
       diag.stale++;
+      noteFailure();
       reconnectNow();
     } else if (eventSource && eventSource.readyState === 0 && Date.now() - attemptAt >= CONNECT_TIMEOUT_MS) {
-      // Bağlanma denemesi ne açıldı ne hata verdi (yanıtsız adres): yeni denemeyle değiştirilir.
+      // Bağlanma denemesi ne açıldı ne hata verdi (yanıtsız adres): yeni denemeyle değiştirilir. Kapatılan deneme
+      // hata vermeyeceği için tarama buradan planlanır; yoksa yanıtsız kayıtlı adreste TV sonsuza dek beklerdi.
+      noteFailure();
       reconnectNow();
     } else {
       checkIdle();
@@ -913,10 +984,14 @@
   var SERVER_PORT = 8787;
   var SCAN_PARALLEL = 24;
   var SCAN_TIMEOUT_MS = 1200;
-  // Bağlantı kopunca ilk tarama bu kadar sonra (önce doğrudan yeniden bağlanma şansı); sonuçsuz taramadan sonra
-  // bir sonraki ancak SCAN_PAUSE_MS sonra. Bağlıyken tarama yalnız boşta sunucu denetiminden başlar.
+  // Bağlantı kopunca ilk tarama bu kadar sonra (önce doğrudan yeniden bağlanma şansı). Sonuçsuz taramadan sonra
+  // bekleme uzar: 25 → 50 → 100 → en çok 120 sn; bağlanınca, uygulama öne gelince ya da kumandada bir tuşa basılınca
+  // sıfırlanır. Kayıtlı adrese doğrudan yeniden bağlanma (en çok 10 sn arayla) bundan bağımsız sürer. Bağlıyken
+  // tarama yalnız boşta sunucu denetiminden başlar.
   var SCAN_FIRST_MS = 6000;
   var SCAN_PAUSE_MS = 25000;
+  var SCAN_PAUSE_MAX_MS = 120000;
+  var scanPause = SCAN_PAUSE_MS;
   var scanTimer = null;
   var scanDue = 0;
   var nextScanAt = 0;
@@ -981,6 +1056,16 @@
   function cancelScan() {
     clearTimeout(scanTimer);
     scanTimer = null;
+  }
+
+  // Tarama beklemesi baştan başlar; kopukken uzak bir zamana kurulmuş tarama öne alınır.
+  function resetScanPause() {
+    scanPause = SCAN_PAUSE_MS;
+    nextScanAt = 0;
+    if (scanTimer !== null && !isOpen() && scanDue - Date.now() > SCAN_FIRST_MS) {
+      cancelScan();
+      scheduleScan(SCAN_FIRST_MS);
+    }
   }
 
   // Süren tarama bırakılır: istekler kesilir, geç dönen yanıtlar kuşak denetimiyle yok sayılır.
@@ -1119,7 +1204,8 @@
           // Çeviri yapan yok: bağlı değilsek bulunan (bekleyen) sunucuya bağlanılır; o da yoksa bir süre sonra yeniden.
           if (fallback && !isOpen()) return useServer(fallback, false);
           if (!isOpen()) {
-            nextScanAt = Date.now() + SCAN_PAUSE_MS;
+            nextScanAt = Date.now() + scanPause;
+            scanPause = Math.min(SCAN_PAUSE_MAX_MS, scanPause * 2);
             scheduleScan();
           }
         }
@@ -1240,6 +1326,8 @@
 
   document.addEventListener('keydown', function (e) {
     var code = e.keyCode;
+    // Kullanıcı TV'nin başında: kopuksa ağ yeniden sık taranır.
+    resetScanPause();
     if (code === 48) { // 0: elle seçimi unut, konsolu yeniden ara
       save('hdmi', '');
       autoSelectConsole(function () {
