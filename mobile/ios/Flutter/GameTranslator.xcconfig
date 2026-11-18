@@ -2,10 +2,10 @@
 // libchiaki (PS5 Remote Play) bağlantısı. Kütüphane ios-port dalındaki mobile/ios-native/build.sh ile derlenir;
 // mobile/ios/scripts/fetch-libchiaki.sh hazır derlemeyi GitHub Actions'tan work/libchiaki-ios altına indirir.
 // Yalnız gerçek cihaz (arm64, iphoneos) için derlidir; simülatör desteklenmez.
-// iPhone sürümünün numarası. pubspec.yaml'daki sürüm Android ile ortaktır (1.0.0); iOS sürümü yayıncının 1.8.3 sürüm
-// çizgisini izler (iPhone sürümü 1.8.3). Generated.xcconfig'ten sonra okunduğu için onu geçersiz kılar.
-FLUTTER_BUILD_NAME = 1.8.3
-FLUTTER_BUILD_NUMBER = 10
+// iPhone sürümünün numarası. pubspec.yaml'daki sürüm Android ile ortaktır (1.0.0); iOS sürümü yayıncının 1.8.4 sürüm
+// çizgisini izler (iPhone sürümü 1.8.4). Generated.xcconfig'ten sonra okunduğu için onu geçersiz kılar.
+FLUTTER_BUILD_NAME = 1.8.4
+FLUTTER_BUILD_NUMBER = 11
 
 GT_CHIAKI_DIR = $(SRCROOT)/../../work/libchiaki-ios
 HEADER_SEARCH_PATHS = $(inherited) "$(GT_CHIAKI_DIR)/include"

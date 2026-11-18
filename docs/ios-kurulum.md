@@ -3,18 +3,15 @@
 iPhone sürümü App Store'da değil. İmzasız bir IPA dosyası olarak dağıtılır; her kullanıcı kendi sertifikasıyla imzalayıp
 kurar (Feather, Sideloadly, AltStore gibi araçlarla).
 
-## Bu sürümde yeni (1.8.3)
+## Bu sürümde yeni (1.8.4)
 
-- **Önemli düzeltme: ana ekran durumu.** 1.8.0–1.8.2'de ana ekran durum bilgisini alamıyordu; telefon Wi-Fi'a bağlıyken "Wi-Fi yok" yazıyor, başlat düğmesi tepkisiz görünüyor, ekran güncellenmiyordu. Düzeltildi. Uygulama arka plandan dönünce durum da tazeleniyor. 1.8.0–1.8.2 kullananların güncellemesi gerekir.
-- **Ek okuma alanı:** Artık TV'deki diyalog altyazısını silmiyor; ek alan gösterimi bitince diyalog çevirisi geri geliyor, ek alan satırı da geçmişte kaybolmuyor.
-- **Çeviri durdurulunca** TV'de son altyazı yeniden belirmiyor.
-- **"Tuş yazılarını gizle"** ayarı akış sürerken de hemen etkili.
-- **Deneme altyazısı** gönderirken yapılan ayar değişikliği artık kaybolmuyor.
-- **Okuma alanı sürgüleri** uçta doğru çerçeveyi gösteriyor.
-- **Yeni: Gemini için ek talimat kutusu.** Kısa üslup notu yazılır (en çok 200 karakter); yalnız Gemini çevirirken etkilidir. Dört hazır seçenek: Samimi, Argo, Resmî, Kısa.
+- **Çok konuşmacılı altyazı:** Her konuşma artık kendi satırında; önceden tek paragrafa akıyordu. Aynı kişinin iki satıra sarılmış cümlesi birleşik kalır. TV uygulaması 1.0.5 ya da üstü gerekir.
+- **"Orijinal altyazının üstünü ört" kipi:** Yazı artık bazen aşırı büyümüyor; oyunun satır yüksekliği daha sağlam ölçülüyor. Yeni ayar: "Oyunun yazı boyuna uy" (varsayılan açık; kapatınca yazı ayardaki boyda kalır).
+- **Tuş ipuçları** ("Hold L2 to aim" gibi; tüm PlayStation tuşları) artık çevrilmiyor ve çevirinin kutusuyla örtülmüyor ("Tuş yazılarını gizle" açıkken).
 
 ## Önceki sürümler
 
+- **1.8.3:** Ana ekran durum düzeltmesi, ek okuma alanı ve durdurma düzeltmeleri, Gemini ek talimat kutusu.
 - **1.8.2:** DeepL ya da Gemini kotası dolunca (ya da anahtar reddedilince) diğer motora, o da olmazsa Google'a otomatik geçiş; Ayarlar'da "Kota dolunca diğer motora geç" anahtarı; sistem durumunda çalışan ve bekleyen motor.
 - **1.8.1:** Ayarlar'da DeepL anahtarı için kontrol düğmesi (anahtar çalışıyor mu, bu ay kullanılan karakter; kota harcamaz).
 - **1.8.0:** Yazı rengi TV'ye ulaşıyor, okuma bölgesi seçimleri ve otomatik altyazı alanı, daha sağlam okuma, daha iyi İngilizce-Türkçe çeviri, kalıcı çeviri hafızası, 27 çeviri dili, altyazı geçmişi, sistem durumu, PS5'siz deneme, çökme kaydı, ayar yedeği, İngilizce arayüz.
