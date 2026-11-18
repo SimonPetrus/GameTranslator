@@ -88,7 +88,8 @@
       function read(property, otherwise) {
         try {
           tizen.systeminfo.getPropertyValue(property, function (info) {
-            if (info && info.ipAddress) callback(info.ipAddress); else otherwise();
+            // Bağlı olmayan arabirim (kablosuz kullanan TV'de kablolu) 0.0.0.0 bildirebilir.
+            if (info && info.ipAddress && !/^(0\.|127\.|169\.254\.)/.test(info.ipAddress)) callback(info.ipAddress); else otherwise();
           }, otherwise);
         } catch (e) {
           otherwise();

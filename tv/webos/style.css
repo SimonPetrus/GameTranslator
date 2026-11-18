@@ -96,6 +96,56 @@ html, body {
   text-shadow: 0 2px 4px #000;
 }
 
+/* İki ya da daha çok konuşmacı: her satır oyundaki gibi kendi kutusunda, alt alta, ortalı ve yazısı kadar geniş.
+   Zemin satır kutularına geçer (rengi app.js ayardan kopyalar); aralarındaki ince boşlukta görüntü görünür. */
+#subtitle-text.rows { background: none !important; padding: 0 !important; }
+#subtitle-text.rows .row-line + .row-line { margin-top: 6px; }
+#subtitle-text.rows .row {
+  display: inline-block;
+  vertical-align: top;
+  padding: 6px 22px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.72);
+}
+/* Örtmede satırlar oyunun yazı alanına sığdırılır; zemin zaten opak olduğundan boşluklar dardır. */
+#subtitle-text.rows.fit .row-line + .row-line { margin-top: 2px; }
+#subtitle-text.rows.fit .row { padding: 0 6px; }
+
+/* Satırların oyundaki yerleri biliniyorsa (örtme): her satırın kendi opak zemini ve kendi yazısı. */
+#subtitle-rows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+#subtitle-rows.hidden { display: none; }
+#subtitle-rows .row-cover {
+  position: absolute;
+  border-radius: 10px;
+  background: rgb(10, 10, 12);
+}
+#subtitle-rows .row-place {
+  position: absolute;
+  text-align: center;
+  -webkit-transform: translateY(-50%);
+  transform: translateY(-50%);
+}
+#subtitle-rows .row {
+  display: inline-block;
+  vertical-align: top;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  font-size: 46px;
+  line-height: 1.2;
+  font-weight: 600;
+  text-shadow: 0 2px 4px #000;
+}
+
 
 /* Panel ve bekleme ekranı: design/tokens.json'un koyu tema renkleri (docs/TASARIM.md). */
 #panel {
