@@ -48,11 +48,12 @@ final class FileZipSink: ZipSink {
   deinit { close() }
 
   func write(_ chunk: Data) throws {
-    try chunk.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-      guard var base = raw.baseAddress else { return }
-      var left = raw.count
+    let target: Int32 = fd
+    try chunk.withUnsafeBytes { (raw: UnsafeRawBufferPointer) throws -> Void in
+      guard var base: UnsafeRawPointer = raw.baseAddress else { return }
+      var left: Int = raw.count
       while left > 0 {
-        let written = Darwin.write(fd, base, left)
+        let written: Int = Darwin.write(target, base, left)
         if written < 0 {
           if errno == EINTR { continue }
           throw ZipError.write("write \(errno)")
@@ -224,7 +225,9 @@ final class StoredZipWriter {
     defer { _ = Darwin.close(fd) }
     var buffer = [UInt8](repeating: 0, count: chunkSize)
     while true {
-      let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, chunkSize) }
+      let count: Int = buffer.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) -> Int in
+        Darwin.read(fd, raw.baseAddress, chunkSize)
+      }
       if count < 0 {
         if errno == EINTR { continue }
         throw ZipError.read("\(url.lastPathComponent): read \(errno)")
@@ -247,9 +250,10 @@ enum DiagnosticExport {
       if manager.fileExists(atPath: url.path) { out.append((name: root + "/" + name, url: url)) }
     }
     let frames = folder.appendingPathComponent("frames", isDirectory: true)
-    let names = ((try? manager.contentsOfDirectory(atPath: frames.path)) ?? [])
-      .filter { $0.hasSuffix(".jpg") && !$0.hasPrefix(".") && !$0.contains("/") }
-      .sorted()
+    let listed: [String] = (try? manager.contentsOfDirectory(atPath: frames.path)) ?? []
+    var names: [String] = []
+    for name in listed where name.hasSuffix(".jpg") && !name.hasPrefix(".") && !name.contains("/") { names.append(name) }
+    names.sort()
     for name in names { out.append((name: root + "/frames/" + name, url: frames.appendingPathComponent(name))) }
     return out
   }
@@ -257,7 +261,8 @@ enum DiagnosticExport {
   static func write(folder: URL, root: String, to sink: ZipSink, modified: Date = Date()) throws {
     let writer = StoredZipWriter(sink: sink)
     for file in files(in: folder, root: root) {
-      let date = ((try? file.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate) ?? modified
+      let values: URLResourceValues? = try? file.url.resourceValues(forKeys: [.contentModificationDateKey])
+      let date: Date = values?.contentModificationDate ?? modified
       try writer.add(name: file.name, file: file.url, modified: date)
     }
     try writer.finish()

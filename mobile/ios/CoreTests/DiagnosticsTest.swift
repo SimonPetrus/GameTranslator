@@ -195,9 +195,10 @@ enum DiagnosticPrivacyTest {
   static let deepL = "dl-SECRET-1234:fx"
   static let gemini = "AIzaSyGEMINISECRET99"
 
-  static func settingsJson(geminiKey: String = gemini, fontSize: Int = 46) -> [String: Any] {
-    [
-      "deepLKey": deepL, "geminiKey": geminiKey, "engine": "gemini", "geminiStyleNote": "samimi konuş",
+  static func settingsJson(geminiKey: String? = nil, fontSize: Int = 46) -> [String: Any] {
+    let key: String = geminiKey ?? DiagnosticPrivacyTest.gemini
+    return [
+      "deepLKey": deepL, "geminiKey": key, "engine": "gemini", "geminiStyleNote": "samimi konuş",
       "glossary": "{\"terms\":{\"Foo\":\"GLOSSSECRET\"},\"keep\":[\"KEEPSECRET\"]}",
       "region": ["top": 0.62, "bottom": 0.97] as [String: Double],
       "style": ["fontSize": fontSize, "bold": false, "placement": "cover"] as [String: Any],
@@ -428,7 +429,7 @@ enum DiagnosticRecorderTest {
       }
       assertFalse(built, "kayıt kapalıyken alanlar kurulmamalı")
       let list = events(folder(r, id))
-      assertEquals(["session", "log", "stop"], list.map { $0["type"] as? String ?? "" })
+      assertEquals(["session", "log", "stop"], list.map { (event: [String: Any]) -> String in event["type"] as? String ?? "" })
       assertEquals("1.8.4", list[0]["version"] as? String ?? "")
       assertEquals("iPhone15,2", list[0]["device"] as? String ?? "")
       assertEquals(2500, list[1]["t"] as? Int ?? -1)
@@ -488,7 +489,7 @@ enum DiagnosticRecorderTest {
       Diag.emit("extra", frame: "extra") { ["what": .string("pressed")] }
       r.waitIdle()
       r.stop()
-      let extra = events(folder(r, id)).first { $0["type"] as? String == "extra" }
+      let extra = events(folder(r, id)).first(where: { (event: [String: Any]) -> Bool in event["type"] as? String == "extra" })
       assertNotNull(extra)
       assertNull(extra?["frame"] as? String, "kare yoksa olay karesiz yazılır")
     }
@@ -543,7 +544,7 @@ enum DiagnosticRecorderTest {
       let data = (try? Data(contentsOf: dir.appendingPathComponent("events.jsonl"))) ?? Data()
       let parsed = DiagnosticReader.events(data)
       assertEquals(0, parsed.skipped)
-      assertEquals(["session", "log", "recovered"], parsed.events.map { $0["type"] as? String ?? "" })
+      assertEquals(["session", "log", "recovered"], parsed.events.map { (event: [String: Any]) -> String in event["type"] as? String ?? "" })
       assertEquals(3, parsed.events.last?["seq"] as? Int ?? 0)
       assertEquals(UInt8(0x0A), data.last ?? 0)
       // İkinci kez mühürlenmez (özet dosyası var).
@@ -722,7 +723,11 @@ enum StoredZipTest {
       defer { try? FileManager.default.removeItem(at: dir) }
       try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
       // Parça boyundan büyük dosya: iki geçişte CRC ve kopya.
-      let big = Data((0..<(StoredZipWriter.chunkSize * 2 + 123)).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+      var bytes: [UInt8] = []
+      let total: Int = StoredZipWriter.chunkSize * 2 + 123
+      bytes.reserveCapacity(total)
+      for index in 0..<total { bytes.append(UInt8(truncatingIfNeeded: index &* 31)) }
+      let big = Data(bytes)
       let url = dir.appendingPathComponent("big.bin")
       try big.write(to: url)
       let sink = DataZipSink()

@@ -345,7 +345,7 @@ final class SubtitlePipeline: @unchecked Sendable {
           fields["packId"] = DiagValue.optional(packed?.packId)
           fields["context"] = DiagValue.optional(context)
           fields["fallbackAnswered"] = DiagValue.bool(path == "engine" && fallback)
-          fields["answeredBy"] = path == "engine" ? DiagValue.optional(answered) : .null
+          fields["answeredBy"] = path == "engine" ? DiagValue.optional(answered) : DiagValue.null
           fields["gemini"] = DiagValue.bool(gemini)
           fields["natural"] = DiagValue.bool(natural)
           return fields

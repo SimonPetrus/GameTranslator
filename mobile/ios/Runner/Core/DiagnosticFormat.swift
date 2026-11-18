@@ -4,7 +4,8 @@
 import Foundation
 
 /// Tanı kaydındaki bir JSON değeri. Nesne alanlarının sırası korunur (çıktı kararlı ve okunur).
-enum DiagValue {
+/// `indirect`: dizi ve nesne durumları kutulanır; DiagValue ↔ DiagFields özyinelemesi tip yerleşiminde döngü kurmasın.
+indirect enum DiagValue {
   case null
   case bool(Bool)
   case int(Int)
@@ -18,17 +19,33 @@ enum DiagValue {
 
   /// Kutu: [sol, üst, sağ, alt] (0–1, dört basamak); yoksa null.
   static func box(_ b: TextBox?) -> DiagValue {
-    guard let b else { return .null }
-    return .array([.double(b.left), .double(b.top), .double(b.right), .double(b.bottom)])
+    guard let b else { return DiagValue.null }
+    let edges: [DiagValue] = [DiagValue.double(b.left), DiagValue.double(b.top), DiagValue.double(b.right),
+                              DiagValue.double(b.bottom)]
+    return DiagValue.array(edges)
   }
 
-  static func strings(_ list: [String]) -> DiagValue { .array(list.map { .string($0) }) }
+  static func strings(_ list: [String]) -> DiagValue {
+    var items: [DiagValue] = []
+    for text in list { items.append(DiagValue.string(text)) }
+    return DiagValue.array(items)
+  }
 
-  static func doubles(_ list: [Double]) -> DiagValue { .array(list.map { .double($0) }) }
+  static func doubles(_ list: [Double]) -> DiagValue {
+    var items: [DiagValue] = []
+    for number in list { items.append(DiagValue.double(number)) }
+    return DiagValue.array(items)
+  }
 
-  static func optional(_ value: Double?) -> DiagValue { value.map { .double($0) } ?? DiagValue.null }
+  static func optional(_ value: Double?) -> DiagValue {
+    guard let value else { return DiagValue.null }
+    return DiagValue.double(value)
+  }
 
-  static func optional(_ value: String?) -> DiagValue { value.map { .string($0) } ?? DiagValue.null }
+  static func optional(_ value: String?) -> DiagValue {
+    guard let value else { return DiagValue.null }
+    return DiagValue.string(value)
+  }
 
   /// JSON metni.
   var json: String {
@@ -79,26 +96,50 @@ enum DiagValue {
   }
 }
 
+/// Nesnenin bir alanı.
+struct DiagField {
+  let key: String
+  var value: DiagValue
+}
+
 /// Sıralı nesne alanları. `["what": .string("send"), "count": .int(2)]` biçiminde yazılır.
 struct DiagFields: ExpressibleByDictionaryLiteral {
-  private(set) var items: [(key: String, value: DiagValue)] = []
+  // İlişkili tipler açık: çıkarıma bırakılınca DiagValue ile karşılıklı başvuru tip denetleyicide döngü oluyordu.
+  typealias Key = String
+  typealias Value = DiagValue
+
+  private(set) var items: [DiagField] = []
 
   init() {}
 
   init(dictionaryLiteral elements: (String, DiagValue)...) {
-    items = elements.map { (key: $0.0, value: $0.1) }
+    var collected: [DiagField] = []
+    for element in elements { collected.append(DiagField(key: element.0, value: element.1)) }
+    items = collected
   }
 
   var isEmpty: Bool { items.isEmpty }
 
-  /// Alan ekler; aynı ad varsa değeri değiştirir.
+  private func index(of key: String) -> Int? {
+    for (position, item) in items.enumerated() where item.key == key { return position }
+    return nil
+  }
+
+  /// Alan ekler; aynı ad varsa değeri değiştirir; nil atanırsa alanı siler.
   subscript(key: String) -> DiagValue? {
-    get { items.first(where: { $0.key == key })?.value }
+    get {
+      guard let position = index(of: key) else { return nil }
+      return items[position].value
+    }
     set {
-      if let index = items.firstIndex(where: { $0.key == key }) {
-        if let newValue { items[index].value = newValue } else { items.remove(at: index) }
+      if let position = index(of: key) {
+        if let newValue {
+          items[position].value = newValue
+        } else {
+          items.remove(at: position)
+        }
       } else if let newValue {
-        items.append((key: key, value: newValue))
+        items.append(DiagField(key: key, value: newValue))
       }
     }
   }
@@ -181,8 +222,7 @@ enum DiagnosticPrivacy {
     var names = Set<String>()
     for path in all {
       let parts: [Substring] = path.split(separator: ".")
-      let last: String = parts.last.map { (part: Substring) -> String in String(part) } ?? path
-      names.insert(last)
+      if let last = parts.last { names.insert(String(last)) } else { names.insert(path) }
     }
     return names
   }
@@ -493,14 +533,19 @@ enum DiagnosticReader {
   }
 
   /// Tam satır sayısı (satır sonları).
-  static func lineCount(_ data: Data) -> Int { data.reduce(0) { $0 + ($1 == 0x0A ? 1 : 0) } }
+  static func lineCount(_ data: Data) -> Int {
+    var count = 0
+    for byte: UInt8 in data where byte == 0x0A { count += 1 }
+    return count
+  }
 
   /// Son tam satır (çözülebiliyorsa).
   static func lastEvent(_ data: Data) -> [String: Any]? {
     let length = completeLength(data)
     guard length > 0 else { return nil }
-    let body = data.prefix(length - 1)
-    let start = body.lastIndex(of: 0x0A).map { body.index(after: $0) } ?? body.startIndex
+    let body: Data = data.prefix(length - 1)
+    var start: Data.Index = body.startIndex
+    if let newline = body.lastIndex(of: 0x0A) { start = body.index(after: newline) }
     return try? JSONSerialization.jsonObject(with: Data(body[start...])) as? [String: Any]
   }
 
@@ -516,46 +561,83 @@ enum DiagRead {
   /// Vision gözlemi: metin, güven, kutu (tüm karede 0–1: sol, üst, sağ, alt) ve okunan alandaki piksel boyu.
   /// [cropX]/[cropY]: alanın karedeki yeri (piksel).
   static func observation(_ o: TextObservation, cropX: Int, cropY: Int, frameWidth: Int, frameHeight: Int) -> DiagValue {
-    let w = Double(max(frameWidth, 1)), h = Double(max(frameHeight, 1))
+    let w: Double = Double(max(frameWidth, 1))
+    let h: Double = Double(max(frameHeight, 1))
     let box = TextBox(left: Double(cropX + o.left) / w, top: Double(cropY + o.top) / h,
                       right: Double(cropX + o.right) / w, bottom: Double(cropY + o.bottom) / h)
-    return .object(["text": .string(o.text), "conf": .double(o.confidence), "box": DiagValue.box(box),
-                    "px": .array([.int(o.left), .int(o.top), .int(o.right), .int(o.bottom)]), "h": .int(o.height)])
+    let pixels: [DiagValue] = [DiagValue.int(o.left), DiagValue.int(o.top), DiagValue.int(o.right), DiagValue.int(o.bottom)]
+    var fields = DiagFields()
+    fields["text"] = DiagValue.string(o.text)
+    fields["conf"] = DiagValue.double(o.confidence)
+    fields["box"] = DiagValue.box(box)
+    fields["px"] = DiagValue.array(pixels)
+    fields["h"] = DiagValue.int(o.height)
+    return DiagValue.object(fields)
   }
 
   static func observations(_ list: [TextObservation], cropX: Int, cropY: Int, frameWidth: Int, frameHeight: Int) -> DiagValue {
-    .array(list.map { observation($0, cropX: cropX, cropY: cropY, frameWidth: frameWidth, frameHeight: frameHeight) })
+    var items: [DiagValue] = []
+    for o in list { items.append(observation(o, cropX: cropX, cropY: cropY, frameWidth: frameWidth, frameHeight: frameHeight)) }
+    return DiagValue.array(items)
   }
 
   /// Seçim adımları: güven elemesi, kesik kenar elemesi, bloklar ve puanları, seçilen bloğun sırası (ReadingSelector.select
   /// ile aynı hesap).
   static func selection(_ input: [TextObservation], width: Int, height: Int) -> DiagValue {
-    let confident = ReadingSelector.filterConfidence(input)
-    let uncut = ReadingSelector.dropEdgeCut(confident, width: width)
-    let blocks = ReadingSelector.blocks(uncut)
+    let confident: [TextObservation] = ReadingSelector.filterConfidence(input)
+    let uncut: [TextObservation] = ReadingSelector.dropEdgeCut(confident, width: width)
+    let blocks: [[TextObservation]] = ReadingSelector.blocks(uncut)
     var best = -1
-    var bestScore = -Double.infinity
+    var bestScore: Double = -Double.infinity
     var list: [DiagValue] = []
     for (index, block) in blocks.enumerated() {
-      let score = ReadingSelector.score(block, width: width, height: height)
+      let score: Double = ReadingSelector.score(block, width: width, height: height)
       // pickBlock: tek blok puansız seçilir; birden çokta ilk en yüksek puan.
-      if blocks.count == 1 || score > bestScore { best = index; bestScore = score }
-      list.append(.object(["texts": DiagValue.strings(block.map(\.text)), "score": .double(score)]))
+      if blocks.count == 1 || score > bestScore {
+        best = index
+        bestScore = score
+      }
+      var entry = DiagFields()
+      entry["texts"] = DiagValue.strings(texts(block))
+      entry["score"] = DiagValue.double(score)
+      list.append(DiagValue.object(entry))
     }
-    var fields: DiagFields = ["lowConfidence": DiagValue.strings(input.filter { !confident.contains($0) }.map(\.text))]
-    fields["edgeCut"] = DiagValue.strings(confident.filter { !uncut.contains($0) }.map(\.text))
+    var lowConfidence: [String] = []
+    for o in input where !confident.contains(o) { lowConfidence.append(o.text) }
+    var edgeCut: [String] = []
+    for o in confident where !uncut.contains(o) { edgeCut.append(o.text) }
+    var fields = DiagFields()
+    fields["lowConfidence"] = DiagValue.strings(lowConfidence)
+    fields["edgeCut"] = DiagValue.strings(edgeCut)
     fields["blocks"] = DiagValue.array(list)
     fields["chosenBlock"] = DiagValue.int(best)
-    return .object(fields)
+    return DiagValue.object(fields)
+  }
+
+  private static func texts(_ list: [TextObservation]) -> [String] {
+    var out: [String] = []
+    for o in list { out.append(o.text) }
+    return out
   }
 
   /// Satır yüksekliği hesabının ara değerleri.
   static func lineHeight(_ t: LineHeight.Trace) -> DiagValue {
-    var fields: DiagFields = ["frameHeight": .int(t.frameHeight), "onlyLong": .bool(t.onlyLong)]
-    fields["pieces"] = DiagValue.array(t.pieces.map { p -> DiagValue in
-      .object(["text": .string(p.text), "chars": .int(p.characters), "hPx": .int(p.heightPx), "wPx": .int(p.widthPx),
-               "ratio": DiagValue.optional(p.ratio), "lines": DiagValue.optional(p.linesGuess), "perLine": .double(p.perLine)])
-    })
+    var pieces: [DiagValue] = []
+    for p in t.pieces {
+      var piece = DiagFields()
+      piece["text"] = DiagValue.string(p.text)
+      piece["chars"] = DiagValue.int(p.characters)
+      piece["hPx"] = DiagValue.int(p.heightPx)
+      piece["wPx"] = DiagValue.int(p.widthPx)
+      piece["ratio"] = DiagValue.optional(p.ratio)
+      piece["lines"] = DiagValue.optional(p.linesGuess)
+      piece["perLine"] = DiagValue.double(p.perLine)
+      pieces.append(DiagValue.object(piece))
+    }
+    var fields = DiagFields()
+    fields["frameHeight"] = DiagValue.int(t.frameHeight)
+    fields["onlyLong"] = DiagValue.bool(t.onlyLong)
+    fields["pieces"] = DiagValue.array(pieces)
     fields["typical"] = DiagValue.double(t.typical)
     fields["single"] = DiagValue.doubles(t.single)
     fields["upperMedianPx"] = DiagValue.double(t.upper)
@@ -564,10 +646,14 @@ enum DiagRead {
     fields["min"] = DiagValue.double(LineHeight.MIN_RATIO)
     fields["max"] = DiagValue.double(LineHeight.MAX_RATIO)
     fields["estimate"] = DiagValue.optional(t.result)
-    return .object(fields)
+    return DiagValue.object(fields)
   }
 
-  static func boxes(_ list: [TextBox]) -> DiagValue { .array(list.map { DiagValue.box($0) }) }
+  static func boxes(_ list: [TextBox]) -> DiagValue {
+    var items: [DiagValue] = []
+    for b in list { items.append(DiagValue.box(b)) }
+    return DiagValue.array(items)
+  }
 }
 
 /// Kayıt ve paylaşım dosyası adları.

@@ -208,13 +208,18 @@ final class DiagnosticRecorder: @unchecked Sendable {
   init(root: URL, limits: DiagnosticLimits = DiagnosticLimits(),
        clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime },
        wallClock: @escaping () -> Date = { Date() },
-       freeSpace: @escaping (URL) -> Int64? = DiagnosticRecorder.availableCapacity,
+       freeSpace: ((URL) -> Int64?)? = nil,
        openOutput: ((URL) -> DiagnosticOutput?)? = nil) {
     self.root = root
     self.limits = limits
     self.clock = clock
     self.wallClock = wallClock
-    self.freeSpace = freeSpace
+    // Varsayılanlar gövdede verilir (varsayılan argümanda kendi tipine başvuru yok).
+    if let freeSpace {
+      self.freeSpace = freeSpace
+    } else {
+      self.freeSpace = { (url: URL) -> Int64? in DiagnosticRecorder.availableCapacity(url) }
+    }
     if let openOutput {
       self.openOutput = openOutput
     } else {
@@ -327,7 +332,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
 
   /// Kaydı durdurur (sürmüyorsa bir şey yapmaz); bekleyen olaylar önce yazılır.
   func stop(_ reason: DiagnosticStop = .manual) {
-    queue.sync { finish(reason) }
+    queue.sync { () -> Void in finish(reason) }
   }
 
   // MARK: - Olaylar
@@ -394,7 +399,10 @@ final class DiagnosticRecorder: @unchecked Sendable {
   /// Kuyrukta.
   private func writeFrame(_ name: String, _ data: Data?, reason: String, encodeMs: Int, token: Int) {
     guard let s = session, s.token == token else { return }
-    var fields: DiagFields = ["name": .string(name), "reason": .string(reason), "encodeMs": .int(encodeMs)]
+    var fields = DiagFields()
+    fields["name"] = DiagValue.string(name)
+    fields["reason"] = DiagValue.string(reason)
+    fields["encodeMs"] = DiagValue.int(encodeMs)
     guard let data, !data.isEmpty else {
       fields["ok"] = DiagValue.bool(false)
       fields["error"] = DiagValue.string("kodlanamadı")
@@ -459,8 +467,13 @@ final class DiagnosticRecorder: @unchecked Sendable {
     lock.unlock()
     let seconds = max(0, clock() - s.startUptime)
     if writable {
-      let fields: DiagFields = ["reason": .string(reason.rawValue), "seconds": .double(seconds), "events": .int(s.budget.events + 1),
-                                "frames": .int(s.budget.frames), "bytes": .int(s.budget.bytes), "dropped": .int(dropped)]
+      var fields = DiagFields()
+      fields["reason"] = DiagValue.string(reason.rawValue)
+      fields["seconds"] = DiagValue.double(seconds)
+      fields["events"] = DiagValue.int(s.budget.events + 1)
+      fields["frames"] = DiagValue.int(s.budget.frames)
+      fields["bytes"] = DiagValue.int(s.budget.bytes)
+      fields["dropped"] = DiagValue.int(dropped)
       _ = appendClosing(s, fields: fields)
     }
     s.file.sync()
@@ -521,7 +534,7 @@ final class DiagnosticRecorder: @unchecked Sendable {
   }
 
   /// Testler: zamanlayıcıyı beklemeden bir tık.
-  func tick() { queue.sync { tickLocked() } }
+  func tick() { queue.sync { () -> Void in tickLocked() } }
 
   /// Testler: bekleyen kare kodlamaları ve yazımlar biter.
   func waitIdle() {
@@ -535,17 +548,18 @@ final class DiagnosticRecorder: @unchecked Sendable {
 
   /// Bitmiş kayıtlar, yeniden eskiye. Yarım kalanlar (uygulama kapanmış) önce mühürlenir.
   func sessions() -> [DiagnosticSummary] {
-    queue.sync {
-      listIds().reversed().compactMap { id -> DiagnosticSummary? in
-        if session?.id == id { return nil }
-        return summaryLocked(id)
+    queue.sync { () -> [DiagnosticSummary] in
+      var out: [DiagnosticSummary] = []
+      for id in listIds().reversed() where session?.id != id {
+        if let summary = summaryLocked(id) { out.append(summary) }
       }
+      return out
     }
   }
 
   /// Yarım kalan kayıtları mühürler (açılışta).
   func sealInterrupted() {
-    queue.sync {
+    queue.sync { () -> Void in
       for id in listIds() where session?.id != id { _ = summaryLocked(id) }
     }
   }
@@ -585,7 +599,9 @@ final class DiagnosticRecorder: @unchecked Sendable {
   /// Kayıt klasörleri, eskiden yeniye (adlar zaman damgası).
   private func listIds() -> [String] {
     let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-    return names.filter { DiagnosticNames.isValidId($0) }.sorted()
+    var ids: [String] = []
+    for name in names where DiagnosticNames.isValidId(name) { ids.append(name) }
+    return ids.sorted()
   }
 
   /// Kuyrukta: summary.json varsa onu okur; yoksa kayıt yarım kalmıştır: yarım son satır kesilir, bir "recovered" satırı
@@ -620,11 +636,14 @@ final class DiagnosticRecorder: @unchecked Sendable {
     let lastT = JsonNumber.int(last?["t"], 0)
     let lastSeq = JsonNumber.int(last?["seq"], lines)
     let frameNames = (try? FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("frames").path)) ?? []
-    let frames = frameNames.filter { $0.hasSuffix(".jpg") }.count
+    var frames = 0
+    for name in frameNames where name.hasSuffix(".jpg") { frames += 1 }
     var added = 0
     if FileManager.default.fileExists(atPath: events.path), let file = AppendFile(url: events) {
-      let note: DiagFields = ["reason": .string("interrupted"), "droppedTailBytes": .int(data.count - complete),
-                              "note": .string("uygulama kayıt sürerken kapandı; kayıt bir sonraki açılışta mühürlendi")]
+      var note = DiagFields()
+      note["reason"] = DiagValue.string("interrupted")
+      note["droppedTailBytes"] = DiagValue.int(data.count - complete)
+      note["note"] = DiagValue.string("uygulama kayıt sürerken kapandı; kayıt bir sonraki açılışta mühürlendi")
       if file.write(Data(DiagnosticLine.encode(seq: lastSeq + 1, t: lastT, type: "recovered", fields: note).utf8)) { added = 1 }
       file.sync()
       file.close()
