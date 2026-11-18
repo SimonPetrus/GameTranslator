@@ -31,6 +31,14 @@
       },
       "versions": [
         {
+          "version": "1.8.0",
+          "date": "2026-11-18T08:56:45Z",
+          "size": 46211538,
+          "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.0/GameTranslator-iOS-1.8.0.ipa",
+          "minOSVersion": "15.0",
+          "localizedDescription": "Yazı rengi TV'ye ulaşıyor (beyaz, sarı, camgöbeği, yeşil, turuncu). Ekran konumu, önceki satır ayarı, okuma bölgesi için hazır seçimler, otomatik altyazı alanı ve ek okuma alanları. Daha sağlam okuma ve daha iyi İngilizce-Türkçe çeviri. Kalıcı çeviri hafızası, Gemini model seçimi, 27 çeviri dili. Altyazı geçmişi, sistem durumu, PS5'siz deneme, çökme kaydı, ayar yedeği. Bağlantı kopunca artan bekleme. İngilizce arayüz."
+        },
+        {
           "version": "1.0.6",
           "date": "2026-11-15T21:20:49Z",
           "size": 45936870,
@@ -39,10 +47,10 @@
           "localizedDescription": "GameTranslator iPhone sürümü 1.0.6."
         }
       ],
-      "version": "1.0.6",
-      "versionDate": "2026-11-15T21:20:49Z",
-      "size": 45936870,
-      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.0.6/GameTranslator-iOS-1.0.6.ipa"
+      "version": "1.8.0",
+      "versionDate": "2026-11-18T08:56:45Z",
+      "size": 46211538,
+      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.0/GameTranslator-iOS-1.8.0.ipa"
     }
   ],
   "news": []
