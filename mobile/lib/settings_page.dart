@@ -247,6 +247,28 @@ class _SettingsTabState extends State<SettingsTab> {
       geminiResult = result;
     });
   }
+  bool checkingDeepL = false;
+  (bool, String)? deepLResult;
+
+  /// DeepL anahtarını hemen kaydeder ve kota sorgusuyla sınar.
+  Future<void> checkDeepL() async {
+    final current = settings;
+    if (current == null) return;
+    current.json['deepLKey'] = deepLController.text.trim();
+    saveTimer?.cancel();
+    setState(() {
+      checkingDeepL = true;
+      deepLResult = null;
+    });
+    await Bridge.saveSettings(current);
+    final result = await Bridge.checkDeepL(deepLController.text.trim());
+    if (!mounted) return;
+    setState(() {
+      checkingDeepL = false;
+      deepLResult = result;
+    });
+  }
+
   Uint8List? preview;
   Timer? saveTimer;
   Timer? previewTimer;
@@ -767,11 +789,32 @@ class _SettingsTabState extends State<SettingsTab> {
             if (s.engine == 'deepl')
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                child: TextField(
-                  controller: deepLController,
-                  autocorrect: false,
-                  decoration: InputDecoration(hintText: L.t('DeepL API anahtarı', 'DeepL API key')),
-                  onChanged: (value) => change((s) => s.json['deepLKey'] = value.trim()),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: deepLController,
+                      autocorrect: false,
+                      decoration: InputDecoration(hintText: L.t('DeepL API anahtarı', 'DeepL API key')),
+                      onChanged: (value) => change((s) => s.json['deepLKey'] = value.trim()),
+                    ),
+                    // Kontrol köprü metodu yalnız iOS'ta var; Android'de düğme gösterilmez.
+                    if (Platform.isIOS) ...[
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: checkingDeepL ? null : checkDeepL,
+                        child: Text(checkingDeepL ? L.t('Deneniyor…', 'Testing…') : L.t('Kaydet ve dene', 'Save and test')),
+                      ),
+                      if (deepLResult != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            deepLResult!.$2,
+                            style: Txt.subhead.copyWith(color: deepLResult!.$1 ? Tokens.success : Tokens.danger),
+                          ),
+                        ),
+                    ],
+                  ],
                 ),
               ),
             // Yapay zekâ çevirisi (bilgisayar sürümündeki gibi); şimdilik yalnız iPhone'da.

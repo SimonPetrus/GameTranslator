@@ -132,6 +132,20 @@ final class DeepLTranslator: TextTranslator {
           !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
     return translated
   }
+
+  /// Ayardaki "Kaydet ve dene": `GET /v2/usage` ile anahtarı sınar (çeviri yapmaz, kota harcamaz).
+  /// (başarılı mı, kullanıcıya gösterilecek metin)
+  static func check(key: String) -> (Bool, String) {
+    let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    if key.isEmpty { return DeepLCheck.emptyKey }
+    let host = key.hasSuffix(":fx") ? "api-free.deepl.com" : "api.deepl.com"
+    guard let url = URL(string: "https://\(host)/v2/usage") else { return DeepLCheck.unreachable }
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+    request.httpMethod = "GET"
+    request.setValue("DeepL-Auth-Key \(key)", forHTTPHeaderField: "Authorization")
+    guard let (status, data) = fetch(request) else { return DeepLCheck.unreachable }
+    return DeepLCheck.outcome(status: status, body: data)
+  }
 }
 
 #if canImport(Translation)

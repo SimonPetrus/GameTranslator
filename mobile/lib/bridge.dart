@@ -358,6 +358,16 @@ class Bridge {
     }
   }
 
+  /// DeepL anahtarını kota sorgusuyla sınar; çeviri yapmaz, kota harcamaz (yalnız iOS). (başarılı mı, gösterilecek metin)
+  static Future<(bool, String)> checkDeepL(String key) async {
+    try {
+      final map = await _channel.invokeMethod<Map<Object?, Object?>>('checkDeepL', key) ?? {};
+      return (map['ok'] as bool? ?? false, map['detail'] as String? ?? '');
+    } on MissingPluginException {
+      return (false, L.t('Bu telefonda desteklenmiyor.', 'Not supported on this phone.'));
+    }
+  }
+
   /// Adresi tarayıcıda açar (yalnız iOS'ta; Android'de false döner).
   static Future<bool> openUrl(String url) async {
     try {

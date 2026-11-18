@@ -155,6 +155,14 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
         let (ok, detail) = GeminiTranslator.check(key: key, model: model)
         DispatchQueue.main.async { result(["ok": ok, "detail": detail]) }
       }
+    case "checkDeepL":
+      // Bağımsız değişken: anahtar metni ya da {"key": ...}.
+      let map = call.arguments as? [String: Any]
+      let key = map?["key"] as? String ?? call.arguments as? String ?? ""
+      background.async {
+        let (ok, detail) = DeepLTranslator.check(key: key)
+        DispatchQueue.main.async { result(["ok": ok, "detail": detail]) }
+      }
     case "openUrl":
       // Yalnız https adresleri (ör. Gemini anahtar sayfası) Safari'de açılır.
       guard let text = call.arguments as? String, let url = URL(string: text), url.scheme == "https" else { return result(false) }
