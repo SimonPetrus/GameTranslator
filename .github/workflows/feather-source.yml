@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Yayın etiketi (ör. ios-v1.8.0)'
+        description: 'Yayın etiketi (ör. ios-v1.8.1)'
         required: true
 
 permissions:

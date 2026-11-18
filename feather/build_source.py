@@ -4,7 +4,7 @@
 
 Bir sürüm IPA'sından CFBundleIdentifier, CFBundleShortVersionString, MinimumOSVersion ve dosya boyutunu okur,
 mevcut source.json'a versions[] başına ekler (eski sürümler kalır, aynı sürüm ikinci kez eklenmez).
-Kullanım: build_source.py --template feather/source.template.json --ipa X.ipa --tag ios-v1.8.0 \
+Kullanım: build_source.py --template feather/source.template.json --ipa X.ipa --tag ios-v1.8.1 \
           --date 2026-11-15T21:20:49Z --repo SimonPetrus/GameTranslator-iOS --existing source.json --out source.json
 """
 import argparse, json, os, plistlib, re, sys, zipfile
