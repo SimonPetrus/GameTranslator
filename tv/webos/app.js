@@ -30,25 +30,32 @@
 //     sunucu arar ve bulursa ona geçer (bağlantı yine kopmaz).
 //   - alan yok: eski sunucu, durum bilinmiyor. Bağlantı korunur, boşta tarama yapılmaz.
 //   Kopunca TV önce kayıtlı adresi tek /hello ile yoklar; yanıt gelirse (active ne olursa olsun) hemen bağlanır.
-// Stil olayı (SSE `event: style`), TV'nin okuduğu alanlar (hepsi isteğe bağlı; gelmeyen alan değişmez):
+// Stil olayı (SSE `event: style`), TV'nin okuduğu alanlar. Gelmeyen alan çoğunlukla değişmez; istisnası
+// speakerColors: alan yoksa palet kapanır ve ad→renk eşlemesi sıfırlanır (eski sunucularla uyum). Bu yüzden
+// speakerColor ve speakerColors HER stil olayında gönderilmeli.
 //   background (0–100 sayı), bold (bool), bottomPercent (sayı), color ("#RRGGBB"), fontSize (px),
 //   placement ("cover" | "above" | "below" | "fixed").
 //   speakerColor   "" ya da "#RRGGBB": konuşmacı adının tek rengi; "" = adlar ayrı renkte yazılmaz (palet de kapanır).
 //   speakerColors  (1.0.9) ["#RRGGBB", ...] konuşmacı başına palet; yalnız speakerColor boş değilken kullanılır.
 //                  Yoksa ya da dizi değilse her ad speakerColor renginde. Ad "AD:" önekinden çıkar, anahtar büyük harflidir.
 //                  Renk ilk görülme sırasıyla paletteki ilk boş renktir; aynı ad olaylar arasında hep aynı renkte kalır;
-//                  palet biterse en uzun süredir konuşmayanın rengi devralınır. Eşleme yalnız farklı bir palet gelince
-//                  sıfırlanır. Telefon ad→renk eşlemesi göndermez. Masaüstünün paleti: #FFD60A #64D2FF #FF9F0A #30D158
-//                  #FF7AB6 #C49BFF (sarı yazıda #FFD60A çıkarılır).
-//   fontFamily     (1.0.9) yazı tipi adı; "" = standart yazı tipi.
-//   fontUrl        (1.0.9) yazı tipi dosyasının sunucudaki yolu "/font/<dosya>" (harf, rakam, . _ - %). TV dosyayı
-//                  bağlı sunucudan indirir (FontFace; yoksa @font-face), inince altyazıyı yeniden yerleştirir. Başka
-//                  kökenden adres kabul edilmez (1.0.10); o zaman ya da yükleme başarısızsa fontFamily adı TV'de kurulu
-//                  yazı tipi olarak denenir, o da yoksa standart yazı tipi kalır.
+//                  palet biterse en uzun süredir konuşmayanın rengi devralınır. Eşleme farklı bir palet gelince ya da
+//                  alan gelmeyince sıfırlanır. Telefon ad→renk eşlemesi göndermez. Masaüstünün paleti: #FFD60A #64D2FF
+//                  #FF9F0A #30D158 #FF7AB6 #C49BFF (sarı yazıda #FFD60A çıkarılır).
+//   fontFamily     (1.0.9) yazı tipi adı; "" = standart yazı tipi. Alan yoksa yazı tipi değişmez.
+//   fontUrl        (1.0.9) yazı tipi dosyasının sunucudaki yolu "/font/<dosya>". Dosya adında yalnız [A-Za-z0-9._-]
+//                  kullanılmalı (boşluk ya da ASCII dışı karakter gerekirse yüzde-kodlanır ve sunucu yolu çözer). TV
+//                  dosyayı bağlı sunucudan indirir (FontFace; yoksa @font-face), inince altyazıyı yeniden yerleştirir.
+//                  - fontUrl yok, boş ya da kabul edilmeyen adres (başka köken, "@", tırnak, ".."; 1.0.10): fontFamily
+//                    adı TV'de kurulu yazı tipi olarak denenir, o da yoksa standart yazı tipi.
+//                  - Geçerli fontUrl inemezse: standart yazı tipi (ad ayrıca denenmez; 1.0.9 ile aynı). Kendi kendine
+//                    yeniden deneme yoktur; aynı fontFamily/fontUrl'yi bildiren bir sonraki stil olayı (ör. yeniden
+//                    bağlanınca gelen) bir kez daha dener. İnmiş yazı tipi aynı stil olayıyla yeniden indirilmez.
 //   Örnek: {"background":72,"color":"#FFFFFF","fontFamily":"Quicksand","fontSize":46,"fontUrl":"/font/Quicksand.ttf",
 //   "placement":"cover","speakerColor":"#FFD60A","speakerColors":["#FFD60A","#64D2FF","#FF9F0A"]}
-// GET /font/<dosya>: yazı tipi dosyası; Access-Control-Allow-Origin: * ve Content-Type (font/ttf, font/otf, font/woff2)
-//   gerekir (TV sayfası başka kökenden yükler, CORS başlığı yoksa FontFace yüklemesi başarısız olur). Yoksa 404.
+// GET /font/<dosya>: yazı tipi dosyası. Zorunlu: Access-Control-Allow-Origin: * (TV sayfası başka kökenden yükler;
+//   yoksa FontFace yüklemesi başarısız olur). Önerilen: Content-Type font/ttf (ya da font/otf), Content-Length.
+//   Eski motorlar için ttf/otf dosyası önerilir (woff2'yi tanımayabilirler). Bilinmeyen dosya: 404.
 (function () {
   'use strict';
 
@@ -822,7 +829,7 @@
       // font bu yüzden TV'de hiç değişmiyordu. FontFace bu kurala takılmaz; yoksa eski yola dönülür.
       if (window.FontFace && document.fonts && document.fonts.add) {
         tag.textContent = '';
-        loadFont(name, source);
+        loadFont(name, source, key);
       } else {
         tag.textContent = "@font-face { font-family: '" + name + "'; src: " + source + "; font-weight: 100 900; }";
       }
@@ -845,13 +852,19 @@
   }
 
   // Font indirilip sayfaya eklenir; inince yazı yeniden yerleştirilir (genişliği değişir). Hata tanı satırında görünür.
-  function loadFont(name, source) {
+  // İnemezse anahtar unutulur: aynı yazı tipini bildiren bir sonraki stil olayı (ör. yeniden bağlanınca gelen) bir kez
+  // daha dener. Kendi kendine yeniden deneme yoktur.
+  function loadFont(name, source, key) {
     var face;
+    function failed() {
+      fontStatus = 'font hata';
+      if (fontKey === key) fontKey = '';
+    }
     try {
       face = new FontFace(name, source, { weight: '100 900' });
     } catch (err) {
       // Eski tarayıcılar kalınlık aralığını tanımaz
-      try { face = new FontFace(name, source); } catch (err2) { noteError('font: ' + err2.message); return; }
+      try { face = new FontFace(name, source); } catch (err2) { failed(); noteError('font: ' + err2.message); return; }
     }
     // Yükleme hemen hata atarsa da stil olayının geri kalanı (yerleşim) yarıda kalmasın.
     try {
@@ -860,11 +873,11 @@
         fontStatus = 'font ok';
         layout();
       }, function (err) {
-        fontStatus = 'font hata';
+        failed();
         noteError('font: ' + (err && err.message ? err.message : err));
       });
     } catch (err3) {
-      fontStatus = 'font hata';
+      failed();
     }
   }
   var fontStatus = '';
