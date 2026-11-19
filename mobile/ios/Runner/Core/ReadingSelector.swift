@@ -6,6 +6,9 @@ struct TextObservation: Equatable {
   let text: String
   let confidence: Double
   let left: Int, top: Int, right: Int, bottom: Int
+  /// Yazı satırının eğimi (derece; Vision'ın dörtgeninin üst kenarından). Bilinmiyorsa nil ("Yalnız altyazıyı çevir"
+  /// süzgeci eğik dünya içi yazıyı ayırmak için kullanır; başka hiçbir kural bakmaz).
+  var angle: Double? = nil
 
   var height: Int { bottom - top }
   var width: Int { right - left }
@@ -306,6 +309,32 @@ enum LineHeight {
     trace.inRange = ratio >= MIN_RATIO && ratio <= MAX_RATIO
     trace.result = trace.inRange ? ratio : nil
     return trace
+  }
+
+  /// Tek parçanın tek satır yüksekliği (piksel): [estimate]'in parça kuralı (uzun parçada satır sayısına bölünür).
+  /// "Yalnız altyazıyı çevir" süzgeci parçaları altyazının tipik satır yüksekliğiyle bununla karşılaştırır.
+  static func perLine(_ piece: TextObservation) -> Double {
+    let h: Double = Double(piece.height)
+    let characters: Int = piece.text.count
+    guard characters >= MIN_CHARACTERS, piece.width > 0 else { return h }
+    let ratio: Double = h / (Double(piece.width) / Double(characters))
+    let lines: Double = (ratio / SINGLE_LINE_RATIO).squareRoot().rounded()
+    return lines >= 2 ? h / lines : h
+  }
+
+  // Örtme (cover) yerleşiminde TV'ye giden satır yüksekliğinin sınırları (CoverKeeper bunları kullanır; tek yer).
+  /// Altyazının tipik satır yüksekliği bilinmiyorsa gönderilen en büyük değer (tam kare yüksekliğine oranla).
+  static let MAX_SENT_RATIO = 0.06
+  /// Tipik satır yüksekliği biliniyorsa gönderilen en büyük değer onun bu katıdır (yine en çok [MAX_RATIO]).
+  static let TYPICAL_CAP_FACTOR = 1.5
+  /// Ardışık iki altyazı arasında satır yüksekliği en çok bu katına çıkar (küçülme serbest).
+  static let GROWTH_STEP = 1.25
+
+  /// Gönderilecek satır yüksekliğinin üst sınırı: tipik değer biliniyorsa onun [TYPICAL_CAP_FACTOR] katı (en çok
+  /// [MAX_RATIO]), bilinmiyorsa [MAX_SENT_RATIO].
+  static func sendCap(typical: Double?) -> Double {
+    guard let typical, typical > 0 else { return MAX_SENT_RATIO }
+    return min(MAX_RATIO, typical * TYPICAL_CAP_FACTOR)
   }
 
   /// Büyük olan ortanca (çift sayıda değerde üstteki).

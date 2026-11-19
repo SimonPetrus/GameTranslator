@@ -38,6 +38,11 @@
 		B10200000000000000000002 /* DiagnosticRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000002 /* DiagnosticRecorder.swift */; };
 		B10200000000000000000003 /* StoredZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000003 /* StoredZip.swift */; };
 		B10200000000000000000004 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00200000000000000000004 /* Diagnostics.swift */; };
+		B30200000000000000000001 /* SubtitleOnly.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20200000000000000000001 /* SubtitleOnly.swift */; };
+		B30200000000000000000002 /* CoverKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20200000000000000000002 /* CoverKeeper.swift */; };
+		B30200000000000000000003 /* SubtitleLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20200000000000000000003 /* SubtitleLook.swift */; };
+		B30200000000000000000004 /* Quicksand.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B20200000000000000000004 /* Quicksand.ttf */; };
+		B30200000000000000000005 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = B20200000000000000000005 /* OFL.txt */; };
 		AA0200000000000000000007 /* FlickerHold.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0200000000000000000007 /* FlickerHold.swift */; };
 		2F375C9B1D24C831D8D6D5F9 /* GamePacks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -146,6 +151,11 @@
 		B00200000000000000000002 /* DiagnosticRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiagnosticRecorder.swift; sourceTree = "<group>"; };
 		B00200000000000000000003 /* StoredZip.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoredZip.swift; sourceTree = "<group>"; };
 		B00200000000000000000004 /* Diagnostics.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
+		B20200000000000000000001 /* SubtitleOnly.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleOnly.swift; sourceTree = "<group>"; };
+		B20200000000000000000002 /* CoverKeeper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoverKeeper.swift; sourceTree = "<group>"; };
+		B20200000000000000000003 /* SubtitleLook.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubtitleLook.swift; sourceTree = "<group>"; };
+		B20200000000000000000004 /* Quicksand.ttf */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; name = Quicksand.ttf; path = Fonts/Quicksand.ttf; sourceTree = "<group>"; };
+		B20200000000000000000005 /* OFL.txt */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = OFL.txt; path = Fonts/OFL.txt; sourceTree = "<group>"; };
 		AB0200000000000000000007 /* FlickerHold.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FlickerHold.swift; sourceTree = "<group>"; };
 		6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GamePacks.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -225,6 +235,9 @@
 				B00200000000000000000001 /* DiagnosticFormat.swift */,
 				B00200000000000000000002 /* DiagnosticRecorder.swift */,
 				B00200000000000000000003 /* StoredZip.swift */,
+				B20200000000000000000001 /* SubtitleOnly.swift */,
+				B20200000000000000000002 /* CoverKeeper.swift */,
+				B20200000000000000000003 /* SubtitleLook.swift */,
 				AB0200000000000000000007 /* FlickerHold.swift */,
 				6E72E7BD5881EA1B4DFA105B /* GamePacks.swift */,
 				34B46C77A9D8F98B1B1FAAF2 /* PackFuzzy.swift */,
@@ -311,6 +324,8 @@
 				1EC5BAE0B64481896FC6DA33 /* Engine.swift */,
 				47964395D1CC1DE18DC30B9C /* Channels.swift */,
 				DC1D1BB14CC8F755A58136C4 /* obs-overlay.html */,
+				B20200000000000000000004 /* Quicksand.ttf */,
+				B20200000000000000000005 /* OFL.txt */,
 				86BD0E03C4B22A59BB9C160D /* Native */,
 				088725EB0948165AA7A4549B /* Native.swift */,
 				22277569CEE8367E529AAD92 /* Core */,
@@ -430,6 +445,8 @@
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 				C26575231AE6FD6D9CCA7126 /* obs-overlay.html in Resources */,
+				B30200000000000000000004 /* Quicksand.ttf in Resources */,
+				B30200000000000000000005 /* OFL.txt in Resources */,
 				83C03677928B4EB7D195C519 /* packs in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -543,6 +560,9 @@
 				B10200000000000000000001 /* DiagnosticFormat.swift in Sources */,
 				B10200000000000000000002 /* DiagnosticRecorder.swift in Sources */,
 				B10200000000000000000003 /* StoredZip.swift in Sources */,
+				B30200000000000000000001 /* SubtitleOnly.swift in Sources */,
+				B30200000000000000000002 /* CoverKeeper.swift in Sources */,
+				B30200000000000000000003 /* SubtitleLook.swift in Sources */,
 				B10200000000000000000004 /* Diagnostics.swift in Sources */,
 				AA0200000000000000000007 /* FlickerHold.swift in Sources */,
 				2F375C9B1D24C831D8D6D5F9 /* GamePacks.swift in Sources */,

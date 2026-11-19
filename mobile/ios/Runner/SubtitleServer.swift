@@ -10,22 +10,7 @@ struct TextBox: Equatable {
   var bottom: Double
 }
 
-/// TV'de altyazının görünümü (Android'deki SubtitleStyle ve Windows'taki SubtitleStyle ile aynı alanlar).
-struct SubtitleStyle: Equatable {
-  var fontSize = 46
-  var bottomPercent = 7
-  /// cover, above, below, fixed
-  var placement = "cover"
-  var background = 72
-  var bold = false
-  /// white, yellow, cyan, green, orange
-  var textColor = "white"
-  /// inApp, overlay (yalnız Android TV uygulaması kullanır)
-  var displayMode = "inApp"
-  var stackPrevious = true
-  /// Konuşmacı adı ("ENZO:") renkli; bilgisayar sürümündeki "Konuşmacı adı renkli" (yalnız iPhone ayarlarında).
-  var speakerColor = false
-}
+// SubtitleStyle (TV'deki görünüm) ve `style` çerçevesi Core/SubtitleLook.swift'te.
 
 /// TV uygulamasının bağlandığı yerel Server-Sent Events sunucusu. `GET /events` akışında `subtitle`, `clear` ve
 /// `style` olaylarını yayınlar; `GET /hello` ile TV telefonu ağda tanır. Android'deki SubtitleServer.kt ve
@@ -76,6 +61,10 @@ final class SubtitleServer {
   /// İsteği henüz okunmamış bağlantılar (10 sn içinde istek gelmezse kapatılır).
   private var pending: [ObjectIdentifier: NWConnection] = [:]
   private var lastStyle: SubtitleStyle?
+  /// Bu oturumda TV'ye bir yazı tipi bildirildi mi: standarda dönünce `"fontFamily":""` gider (yalnız sunucu kuyruğunda).
+  private var fontAnnounced = false
+  /// /font/ yolundan verilen dosyalar, ilk istekte paketten okunur (yalnız sunucu kuyruğunda).
+  private var fontFiles: [String: Data] = [:]
   private var _boundPort: UInt16 = 0
   private var _connected = 0
   private var page: Data?
@@ -174,9 +163,18 @@ final class SubtitleServer {
 
   func clear() { broadcast(SubtitleWire.frame("clear", "{}")) }
 
+  /// Her stil çerçevesi tam stildir (konuşmacı paleti dahil): TV, paleti olmayan stil olayında renk eşlemesini sıfırlar.
   func sendStyle(_ style: SubtitleStyle) {
-    queue.async { self.lastStyle = style }
-    broadcast(Self.styleFrame(style))
+    queue.async {
+      self.lastStyle = style
+      if SubtitleFonts.font(for: style.subtitleFont) != nil { self.fontAnnounced = true }
+      self.broadcastOnQueue(self.styleFrameLocked(style))
+    }
+  }
+
+  /// Sunucu kuyruğunda: bu oturumun yazı tipi durumuna göre stil çerçevesi.
+  private func styleFrameLocked(_ style: SubtitleStyle) -> String {
+    SubtitleWire.styleFrame(style, clearFont: fontAnnounced && SubtitleFonts.font(for: style.subtitleFont) == nil)
   }
 
   // MARK: - Çerçeveler (Android'dekiyle bayt bayt aynı; altyazı çerçevesi ve /hello: Core/SubtitleRows.swift'teki SubtitleWire)
@@ -185,30 +183,13 @@ final class SubtitleServer {
 
   static func frame(_ name: String, _ json: String) -> String { SubtitleWire.frame(name, json) }
 
-  /// Yazı rengi adının CSS karşılığı (TV uygulamaları `color` alanını okur); bilinmeyen ad beyazdır.
-  static func colorHex(_ name: String) -> String {
-    switch name {
-    case "yellow": return "#FFE600"
-    case "cyan": return "#38BDF8"
-    case "green": return "#10B981"
-    case "orange": return "#FF9F0A"
-    default: return "#FFFFFF"
-    }
-  }
+  /// Yazı rengi adının CSS karşılığı (Core/SubtitleLook.swift: SubtitleWire.colorHex).
+  static func colorHex(_ name: String) -> String { SubtitleWire.colorHex(name) }
 
-  static func styleFrame(_ s: SubtitleStyle) -> String {
-    frame("style",
-          "{\"background\":\(min(100, max(0, s.background))),\"bold\":\(s.bold),\"bottomPercent\":\(s.bottomPercent),\"color\":\(jsonString(colorHex(s.textColor))),"
-            + "\"displayMode\":\(jsonString(s.displayMode)),\"fontSize\":\(s.fontSize),\"placement\":\(jsonString(s.placement)),"
-            + "\"speakerColor\":\(jsonString(speakerColorValue(s))),"
-            + "\"stackPrevious\":\(s.stackPrevious),\"textColor\":\(jsonString(s.textColor))}")
-  }
+  /// Stil çerçevesi (Core/SubtitleLook.swift: SubtitleWire.styleFrame; yazı tipi sıfırlaması olmadan).
+  static func styleFrame(_ s: SubtitleStyle) -> String { SubtitleWire.styleFrame(s) }
 
-  /// Bilgisayar sürümüyle aynı: kapalıysa "", yazı sarıysa ad açık mavi, değilse sarı.
-  static func speakerColorValue(_ s: SubtitleStyle) -> String {
-    guard s.speakerColor else { return "" }
-    return s.textColor == "yellow" ? "#64D2FF" : "#FFD60A"
-  }
+  static func speakerColorValue(_ s: SubtitleStyle) -> String { SubtitleWire.speakerColorValue(s) }
 
   // MARK: - Dinleme
 
@@ -328,6 +309,7 @@ final class SubtitleServer {
     case ("GET", "/hello"): respondAndClose(connection, status: "200 OK", body: SubtitleWire.helloBody(active: _active))
     case ("GET", "/obs"):
       if let page { respondPage(connection, page) } else { respondAndClose(connection, status: "404 Not Found", body: "") }
+    case ("GET", _) where path.hasPrefix("/font/"): respondFont(connection, path: path)
     default: respondAndClose(connection, status: "404 Not Found", body: "")
     }
   }
@@ -338,6 +320,32 @@ final class SubtitleServer {
       + "Cache-Control: no-cache\r\nContent-Length: \(page.count)\r\nConnection: close\r\n\r\n").utf8)
     out.append(page)
     connection.send(content: out, completion: .contentProcessed { _ in connection.cancel() })
+  }
+
+  /// Altyazı yazı tipi (TV 1.0.10): yalnız izin listesindeki paket dosyası; başka her yol 404. Dosya tek parça gönderilir
+  /// (gönderim eşzamansız; SSE akışları beklemez), bitince bağlantı kapanır.
+  private func respondFont(_ connection: NWConnection, path: String) {
+    guard let font = SubtitleFonts.served(path: path), let data = fontData(font) else {
+      Diag.emit("tv") { ["what": DiagValue.string("font"), "path": DiagValue.string(String(path.prefix(64))), "served": DiagValue.bool(false)] }
+      return respondAndClose(connection, status: "404 Not Found", body: "")
+    }
+    Diag.emit("tv") {
+      ["what": DiagValue.string("font"), "path": DiagValue.string(path), "served": DiagValue.bool(true), "bytes": DiagValue.int(data.count)]
+    }
+    var out = Data(SubtitleWire.fontResponseHead(length: data.count).utf8)
+    out.append(data)
+    connection.send(content: out, completion: .contentProcessed { _ in connection.cancel() })
+  }
+
+  private func fontData(_ font: SubtitleFont) -> Data? {
+    if let cached = fontFiles[font.file] { return cached }
+    guard let url = Bundle.main.url(forResource: font.resource, withExtension: font.ext),
+          let data = try? Data(contentsOf: url, options: .mappedIfSafe), !data.isEmpty else {
+      onLog?(1, "yazı tipi dosyası pakette bulunamadı: \(font.file)")
+      return nil
+    }
+    fontFiles[font.file] = data
+    return data
   }
 
   private func respondAndClose(_ connection: NWConnection, status: String, body: String) {
@@ -354,7 +362,7 @@ final class SubtitleServer {
       + "Connection: keep-alive\r\n"
       + "Access-Control-Allow-Origin: *\r\n\r\n"
       + "retry: 2000\n\n"
-    if let lastStyle { head += Self.styleFrame(lastStyle) }
+    if let lastStyle { head += styleFrameLocked(lastStyle) }
     let client = Client(connection: connection, viewer: viewer)
     clients[ObjectIdentifier(connection)] = client
     write(client, head)
@@ -395,13 +403,16 @@ final class SubtitleServer {
   private func updateCount() { _connected = clients.values.filter { !$0.viewer }.count }
 
   private func broadcast(_ frame: String) {
-    queue.async {
-      // Tanı kaydı: TV'ye giden çerçevenin tam metni ve o anki alıcı sayısı.
-      Diag.emit("tv") {
-        ["what": .string("send"), "wire": .string(frame), "tvClients": .int(self._connected), "clients": .int(self.clients.count)]
-      }
-      self.broadcastLocked(frame)
+    queue.async { self.broadcastOnQueue(frame) }
+  }
+
+  /// Sunucu kuyruğunda.
+  private func broadcastOnQueue(_ frame: String) {
+    // Tanı kaydı: TV'ye giden çerçevenin tam metni ve o anki alıcı sayısı.
+    Diag.emit("tv") {
+      ["what": .string("send"), "wire": .string(frame), "tvClients": .int(self._connected), "clients": .int(self.clients.count)]
     }
+    broadcastLocked(frame)
   }
 
   /// Gönderim hatası alan bağlantı kopmuş sayılır ve listeden çıkarılır.

@@ -50,6 +50,8 @@ struct Settings: Equatable {
   var packsEnabled = true
   /// Satır sonundaki oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye gitmez (yalnız iOS'ta, ayarlardan kapatılır).
   var hideButtonHints = true
+  /// Yalnız oyunun altyazısı çevrilir: tabela, gösterge ve menü yazıları atılır (yalnız iOS'ta; varsayılan açık).
+  var subtitleOnly = true
   /// "Örterek" yerleşiminde çevirinin yazı boyu oyunun altyazısının boyuna yaklaşır (okunan satır yüksekliği TV'ye gider);
   /// kapalıysa ayardaki boyda kalır, sığmazsa küçülür (yalnız iOS'ta).
   var matchGameTextSize = true
@@ -91,6 +93,7 @@ struct Settings: Equatable {
       "glossary": glossary,
       "packsEnabled": packsEnabled,
       "hideButtonHints": hideButtonHints,
+      "subtitleOnly": subtitleOnly,
       "matchGameTextSize": matchGameTextSize,
       "packChoice": packChoice,
       "extraRegions": extraRegions.map { $0.toJson() },
@@ -100,6 +103,7 @@ struct Settings: Equatable {
         "fontSize": style.fontSize, "bottomPercent": style.bottomPercent, "placement": style.placement,
         "background": style.background, "bold": style.bold, "textColor": style.textColor,
         "displayMode": style.displayMode, "stackPrevious": style.stackPrevious, "speakerColor": style.speakerColor,
+        "speakerColorsEnabled": style.speakerColorsEnabled, "subtitleFont": style.subtitleFont,
       ] as [String: Any],
     ]
   }
@@ -135,6 +139,7 @@ struct Settings: Equatable {
     out.glossary = string(json["glossary"], "")
     out.packsEnabled = bool(json["packsEnabled"], true)
     out.hideButtonHints = bool(json["hideButtonHints"], true)
+    out.subtitleOnly = bool(json["subtitleOnly"], true)
     out.matchGameTextSize = bool(json["matchGameTextSize"], true)
     out.packChoice = string(json["packChoice"], "")
     out.extraRegions = ExtraRegion.parseList(json["extraRegions"])
@@ -150,7 +155,9 @@ struct Settings: Equatable {
       textColor: textColor(string(s?["textColor"], ds.textColor)),
       displayMode: string(s?["displayMode"], ds.displayMode),
       stackPrevious: bool(s?["stackPrevious"], ds.stackPrevious),
-      speakerColor: bool(s?["speakerColor"], ds.speakerColor))
+      speakerColor: bool(s?["speakerColor"], ds.speakerColor),
+      speakerColorsEnabled: bool(s?["speakerColorsEnabled"], ds.speakerColorsEnabled),
+      subtitleFont: SubtitleFonts.normalize(string(s?["subtitleFont"], ds.subtitleFont)))
     return out
   }
 

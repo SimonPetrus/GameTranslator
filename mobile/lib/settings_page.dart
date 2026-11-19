@@ -141,6 +141,12 @@ class _SettingsTabState extends State<SettingsTab> {
         'orange': L.t('Turuncu', 'Orange'),
       };
 
+  /// Altyazı yazı tipleri (yalnız iOS; TV uygulaması 1.0.9 ve üstü gösterir).
+  static Map<String, String> get subtitleFonts => {
+        'default': L.t('Standart', 'Standard'),
+        'quicksand': 'Quicksand',
+      };
+
   static Map<String, String> get placements => {
         'cover': L.t('Oyunun altyazısını örterek', 'Covering the game\'s subtitle'),
         'above': L.t('Oyunun altyazısının üstünde', 'Above the game\'s subtitle'),
@@ -589,6 +595,17 @@ class _SettingsTabState extends State<SettingsTab> {
     if (picked != null) setStyle('textColor', picked);
   }
 
+  Future<void> pickSubtitleFont() async {
+    final current = settings?.style['subtitleFont'] as String?;
+    final picked = await showApplePicker(
+      context,
+      title: L.t('Altyazı yazı tipi', 'Subtitle font'),
+      options: subtitleFonts,
+      selected: subtitleFonts.containsKey(current) ? current : 'default',
+    );
+    if (picked != null) setStyle('subtitleFont', picked);
+  }
+
   Future<void> pickPlacement() async {
     final picked = await showApplePicker(context, title: L.t('Altyazının yeri', 'Subtitle position'), options: placements, selected: settings?.style['placement'] as String?);
     if (picked != null) setStyle('placement', picked);
@@ -1030,6 +1047,18 @@ class _SettingsTabState extends State<SettingsTab> {
                   onChanged: (value) => change((s) => s.json['autoRegion'] = value),
                 ),
               ),
+              Cell(
+                title: L.t('Yalnız altyazıyı çevir', 'Translate subtitles only'),
+                subtitle: L.t(
+                  'Tabela, gösterge ve menü yazıları çevrilmez. Altyazı kaçıyorsa kapat.',
+                  'Signs, on-screen indicators and menu text are not translated. Turn off if subtitles are being missed.',
+                ),
+                trailing: CupertinoSwitch(
+                  value: s.subtitleOnly,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => change((s) => s.json['subtitleOnly'] = value),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -1247,6 +1276,26 @@ class _SettingsTabState extends State<SettingsTab> {
                   onChanged: (value) => setStyle('speakerColor', value),
                 ),
               ),
+            if (Platform.isIOS && (style['speakerColor'] as bool? ?? false))
+              Cell(
+                title: L.t('Her konuşmacıya ayrı renk', 'A colour for each speaker'),
+                subtitle: L.t(
+                  'Her konuşanın adı kendi renginde yazılır. Eski TV uygulamasında tek renk kalır.',
+                  'Each speaker\'s name gets its own colour. Older TV apps keep a single colour.',
+                ),
+                trailing: CupertinoSwitch(
+                  value: style['speakerColorsEnabled'] as bool? ?? true,
+                  activeTrackColor: Tokens.success,
+                  onChanged: (value) => setStyle('speakerColorsEnabled', value),
+                ),
+              ),
+            if (Platform.isIOS)
+              Cell(
+                title: L.t('Altyazı yazı tipi', 'Subtitle font'),
+                subtitle: subtitleFonts[style['subtitleFont']] ?? subtitleFonts['default'],
+                chevron: true,
+                onTap: pickSubtitleFont,
+              ),
             Cell(title: L.t('TV\'ye Deneme Altyazısı Gönder', 'Send a Test Subtitle to the TV'), titleColor: Tokens.accent, onTap: sendTest),
             if (Platform.isIOS)
               Cell(
@@ -1366,6 +1415,13 @@ class _SettingsTabState extends State<SettingsTab> {
                 'is sent to the translation service.\n\nGameTranslator is open source (AGPL-3.0). It is not affiliated with Sony or PlayStation.',
           ),
         ),
+        if (Platform.isIOS)
+          GroupFooter(L.t(
+            'TV altyazısı için Quicksand yazı tipi uygulamayla gelir: Copyright 2011 The Quicksand Project Authors, '
+                'SIL Open Font License 1.1 (lisans metni uygulama paketinde, OFL.txt).',
+            'The Quicksand font for TV subtitles ships with the app: Copyright 2011 The Quicksand Project Authors, '
+                'SIL Open Font License 1.1 (licence text in the app bundle, OFL.txt).',
+          )),
       ],
     );
   }

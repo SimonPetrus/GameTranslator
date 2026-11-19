@@ -396,7 +396,7 @@ final class Engine: Native.Listener {
         Diag.emit("engine") { ["what": .string("settings-apply"), "action": .string("rebuild")] }
         self.reader?.rebuild(settings: now)
       } else if now.region != before.region || now.hideButtonHints != before.hideButtonHints
-        || now.autoRegion != before.autoRegion {
+        || now.autoRegion != before.autoRegion || now.subtitleOnly != before.subtitleOnly {
         Diag.emit("engine") { ["what": .string("settings-apply"), "action": .string("reset")] }
         self.reader?.reset()
       }

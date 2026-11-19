@@ -31,6 +31,11 @@ final class VisionReader: FrameReader {
   /// Vision'a verilecek tanıma dili; nil: Vision kendi seçsin (kaynak dil bu iOS sürümünde desteklenmiyor).
   private var ocrLanguage: String? = "en-US"
   private var hideButtonHints = true
+  /// "Yalnız altyazıyı çevir": tabela, gösterge ve menü yazısı blok seçiminden önce atılır (yalnız okuma kuyruğunda).
+  private var subtitleOnly = true
+  private var onlyFilter = SubtitleOnlyFilter()
+  /// Tanı kaydı: son yazılan süzgeç kararının özeti (yalnız okuma kuyruğunda).
+  private var diagLastFilterKey = ""
   /// Oyun altyazısının satır yüksekliği (yalnız okuma kuyruğunda); bölge ya da hat değişince sıfırlanır.
   private var lineTracker = LineHeightTracker()
   private var lastLines: [String] = []
@@ -77,6 +82,7 @@ final class VisionReader: FrameReader {
       let languageName = self.ocrLanguage ?? Lang.t("otomatik", "automatic")
       _ = self.whenCurrent(target.token) { self.healthLanguage = languageName }
       self.hideButtonHints = s.hideButtonHints
+      self.resetSubtitleOnly(s.subtitleOnly)
       self.lineTracker.reset()
       self.sink.matchGameTextSize = s.matchGameTextSize
       self.sink.coverPlacement = s.style.placement == "cover"
@@ -131,9 +137,10 @@ final class VisionReader: FrameReader {
       if chainOrder.contains("gemini") {
         built.geminiBypassed = { EngineCooldowns.shared.isPaused("gemini", now: Date()) }
       }
-      built.onShown = { source, translation, origin, replaces in
+      built.onShown = { [weak self] source, translation, origin, replaces in
         // Önceki satırın düzeltilmiş hâliyse geçmişte yeni satır açılmaz, sonuncusu güncellenir.
         Engine.history.record(source: source, text: translation, engine: origin, replacesLast: replaces)
+        self?.noteShown(source)
       }
       built.onPair = { source, translation in
         engine.noteTranslation(ok: true)
@@ -184,6 +191,7 @@ final class VisionReader: FrameReader {
         fields["glossaryTerms"] = DiagValue.int(glossary.count)
         fields["packs"] = DiagValue.bool(s.packsEnabled && PackTranslation.applies(s.sourceLanguage, s.targetLanguage))
         fields["hideButtonHints"] = DiagValue.bool(s.hideButtonHints)
+        fields["subtitleOnly"] = DiagValue.bool(s.subtitleOnly)
         fields["matchGameTextSize"] = DiagValue.bool(s.matchGameTextSize)
         fields["placement"] = DiagValue.string(s.style.placement)
         fields["autoRegion"] = DiagValue.bool(s.autoRegion)
@@ -207,6 +215,7 @@ final class VisionReader: FrameReader {
       self.region = settings.region
       self.resetAuto(enabled: settings.autoRegion, token: target.token)
       self.hideButtonHints = settings.hideButtonHints
+      self.resetSubtitleOnly(settings.subtitleOnly)
       self.lineTracker.reset()
       self.sink.matchGameTextSize = settings.matchGameTextSize
       self.sink.coverPlacement = settings.style.placement == "cover"
@@ -216,7 +225,8 @@ final class VisionReader: FrameReader {
       self.diagLastReadKey = ""
       Diag.emit("engine") {
         ["what": .string("reader-reset"), "clearScreen": .bool(clearScreen), "hideButtonHints": .bool(settings.hideButtonHints),
-         "autoRegion": .bool(settings.autoRegion), "matchGameTextSize": .bool(settings.matchGameTextSize)]
+         "autoRegion": .bool(settings.autoRegion), "matchGameTextSize": .bool(settings.matchGameTextSize),
+         "subtitleOnly": DiagValue.bool(settings.subtitleOnly)]
       }
       // Durdurmada: sıfırlamadan önce biten çeviri TV'ye gitmiş olabilir; sıfırlamadan sonra hat eski satır göndermez.
       if clearScreen { self.sink.clear() }
@@ -323,6 +333,42 @@ final class VisionReader: FrameReader {
       return was
     } ?? false
     if had { engine.notifyChanged() }
+  }
+
+  /// Okuma kuyruğunda: "Yalnız altyazıyı çevir" ayarı uygulanır; öğrenilen bant ve sabit yazılar unutulur, TV kutusu
+  /// kararlılığı da baştan başlar.
+  private func resetSubtitleOnly(_ enabled: Bool) {
+    subtitleOnly = enabled
+    onlyFilter.reset()
+    diagLastFilterKey = ""
+    sink.resetCover()
+  }
+
+  /// Hat bir satırı TV'ye gönderdi (hattın kilidi altında, herhangi bir kuyrukta): süzgece okuma kuyruğunda bildirilir.
+  private func noteShown(_ source: String) {
+    let target = currentQueue()
+    target.queue.async {
+      guard self.isCurrent(target.token), self.subtitleOnly else { return }
+      let note = self.onlyFilter.noteShown(source, at: SubtitleStabilizer.monotonicMillis())
+      let band: SubtitleBand? = self.onlyFilter.band
+      if note.bandChanged {
+        self.sink.setCoverBand(band)
+        if note.learning == SubtitleOnlyShown.Learning.learned || note.learning == SubtitleOnlyShown.Learning.relearned {
+          let verb = note.learning == SubtitleOnlyShown.Learning.learned ? "öğrenildi" : "yeniden öğrenildi"
+          self.engine.log(2, "altyazı bandı \(verb): üst %\(Int(((band?.top ?? 0) * 100).rounded())), alt %\(Int(((band?.bottom ?? 0) * 100).rounded()))")
+        }
+      }
+      Diag.emit("filter") {
+        var f: DiagFields = ["what": DiagValue.string("shown-sample"), "source": DiagValue.string(source)]
+        f["learning"] = DiagValue.string(SubtitleOnlyDiag.learning(note.learning))
+        f["sample"] = DiagValue.box(note.sample)
+        f["lineHeight"] = DiagValue.optional(note.lineHeight)
+        f["outsideRun"] = DiagValue.int(note.outsideRun)
+        f["bandChanged"] = DiagValue.bool(note.bandChanged)
+        f["band"] = SubtitleOnlyDiag.band(band)
+        return f
+      }
+    }
   }
 
   /// Okuma kuyruğunda: bulucunun kararı okunan alana, duruma ve günlüğe yansır.
@@ -573,7 +619,11 @@ final class VisionReader: FrameReader {
     if let signature = Self.signature(crop) {
       guard let reuse = whenCurrent(token, { scheduler.canReuse(signature) }) else { return }
       if reuse {
-        if isCurrent(token) { pipeline.onRead(lastLines, lastBox, lineBoxes: lastLineBoxes) }
+        if isCurrent(token) {
+          // Kare değişmedi: son okumada görülen yazılar hâlâ ekranda (sabit yazı süresi işlemeye devam eder).
+          if subtitleOnly { onlyFilter.touch(at: SubtitleStabilizer.monotonicMillis()) }
+          pipeline.onRead(lastLines, lastBox, lineBoxes: lastLineBoxes)
+        }
         return
       }
     }
@@ -587,15 +637,24 @@ final class VisionReader: FrameReader {
     // Tuş ipucu satırları ("Hold L2 to aim") altyazı bloğu seçilmeden önce atılır: ne çevrilir ne de kutuya girer
     // (yoksa ipucu bloğu altyazının yerine seçilebiliyor, çeviri kutusu ipucunu örtüyordu).
     let english = language == "en"
-    let first: [TextObservation]
+    let hinted: [TextObservation]
     var hintDrops: [(text: String, reason: String)] = []
     if hideButtonHints && diagOn {
       // Aynı hesap; tanı kaydı için atılan satırlar ve nedenleri de alınır.
       let explained = ButtonHints.dropHintRowsExplained(raw, english: english)
-      first = explained.kept
+      hinted = explained.kept
       hintDrops = explained.dropped
     } else {
-      first = hideButtonHints ? ButtonHints.dropHintRows(raw, english: english) : raw
+      hinted = hideButtonHints ? ButtonHints.dropHintRows(raw, english: english) : raw
+    }
+    // "Yalnız altyazıyı çevir": tabela, gösterge, görev metni ve menü yazısı blok seçiminden önce atılır; atılan parça ne
+    // çevrilir ne de kutuya/satır yüksekliğine girer. Kapalıyken hiçbir şey değişmez.
+    var first: [TextObservation] = hinted
+    let onlyFrame = SubtitleOnlyFrame(cropX: cropX, cropY: cropY, width: fullWidth, height: fullHeight)
+    if subtitleOnly {
+      let outcome = onlyFilter.apply(hinted, frame: onlyFrame, at: SubtitleStabilizer.monotonicMillis(), track: true)
+      first = outcome.kept
+      if diagOn { diagFilter(outcome, frame: onlyFrame) }
     }
     var selected = ReadingSelector.select(first, width: w, height: h)
     let clock = SubtitleStabilizer.monotonicMillis()
@@ -609,7 +668,11 @@ final class VisionReader: FrameReader {
          let big = Self.upscaled(part, factor: scale),
          let rereadRaw = recognize(big, offsetX: band.x, offsetY: band.y, scale: scale, timed: false, token: token) {
         guard isCurrent(token) else { return }
-        let again = hideButtonHints ? ButtonHints.dropHintRows(rereadRaw, english: english) : rereadRaw
+        let unhinted = hideButtonHints ? ButtonHints.dropHintRows(rereadRaw, english: english) : rereadRaw
+        // Yeniden okumada da aynı süzgeç; sabit yazı izleri ikinci kez sayılmaz.
+        let again: [TextObservation] = subtitleOnly
+          ? onlyFilter.apply(unhinted, frame: onlyFrame, at: SubtitleStabilizer.monotonicMillis(), track: false).kept
+          : unhinted
         let retried = ReadingSelector.select(again, width: w, height: h)
         let better = ReadingSelector.isBetter(retried, than: selected)
         if better { selected = retried }
@@ -629,10 +692,17 @@ final class VisionReader: FrameReader {
     if hideButtonHints {
       // Oyun düğmesi yazıları ("RESUME BA", "SKIP") çeviriye karışmasın. Satır kutuları satırlarla birlikte süzülür.
       let stripped = lines.map(ButtonHints.strip)
+      let rowCount = lineBoxes.count
       lineBoxes = stripped.indices.filter { !stripped[$0].isEmpty }.map { lineBoxes[$0] }
       lines = stripped.filter { !$0.isEmpty }
-      if lines.isEmpty { box = nil }
+      if lines.isEmpty {
+        box = nil
+      } else if sink.coverPlacement && lineBoxes.count < rowCount && !lineBoxes.isEmpty {
+        // Örtme yerleşimi: bütünüyle atılan düğme satırı ("Hold △ to skip") kutuda kalmasın (kutu altyazıdan taşıyordu).
+        box = TurnRows.union(lineBoxes)
+      }
     }
+    if subtitleOnly { onlyFilter.rememberRead(lines: lines, selected: selected, frame: onlyFrame, at: clock) }
     var lineTrace: LineHeight.Trace?
     var tracked: Double?
     if let box, !pieces.isEmpty {
@@ -698,6 +768,22 @@ final class VisionReader: FrameReader {
     pipeline.onRead(lines, box, lineBoxes: lineBoxes)
   }
 
+  /// Okuma kuyruğunda, yalnız tanı kaydı açıkken: süzgecin attığı her parça nedeniyle (karar değişmedikçe yeniden yazılmaz).
+  private func diagFilter(_ outcome: SubtitleOnlyOutcome, frame: SubtitleOnlyFrame) {
+    var key = outcome.wholeFrame ? "frame|" : ""
+    for drop in outcome.drops { key += drop.observation.text + "\u{1F}" + drop.reason.code + "\u{1E}" }
+    guard key != diagLastFilterKey else { return }
+    diagLastFilterKey = key
+    let band = onlyFilter.band
+    Diag.emit("filter") {
+      var f: DiagFields = ["what": DiagValue.string("subtitle-only"), "wholeFrame": DiagValue.bool(outcome.wholeFrame)]
+      f["dropped"] = SubtitleOnlyDiag.drops(outcome.drops, frame: frame)
+      f["kept"] = DiagValue.int(outcome.kept.count)
+      f["band"] = SubtitleOnlyDiag.band(band)
+      return f
+    }
+  }
+
   /// Görüntüyü okur; her çağrıda taze bir istek kurulur. Parçalar bölge pikselinde (sol üstten) döner;
   /// [offsetX]/[offsetY]/[scale] büyütülmüş bir alt bandın bölgedeki yerini belirtir. Okuma hatasında nil.
   private func recognize(_ image: CGImage, offsetX: Int, offsetY: Int, scale: Double, timed: Bool, token: Int) -> [TextObservation]? {
@@ -734,8 +820,12 @@ final class VisionReader: FrameReader {
       let p = ReadingSelector.pixels(minX: Double(b.minX), minY: Double(b.minY), maxX: Double(b.maxX), maxY: Double(b.maxY),
                                      imageWidth: image.width, imageHeight: image.height,
                                      offsetX: offsetX, offsetY: offsetY, scale: scale)
+      // Satırın eğimi: dörtgenin üst kenarı (piksel oranıyla; Vision koordinatı sol alttan, y yukarı).
+      let dx = Double(observation.topRight.x - observation.topLeft.x) * Double(image.width)
+      let dy = Double(observation.topRight.y - observation.topLeft.y) * Double(image.height)
+      let angle: Double? = dx > 0 ? atan2(dy, dx) * 180 / Double.pi : nil
       return TextObservation(text: text, confidence: Double(candidate.confidence),
-                             left: p.left, top: p.top, right: p.right, bottom: p.bottom)
+                             left: p.left, top: p.top, right: p.right, bottom: p.bottom, angle: angle)
     }
   }
 
@@ -833,8 +923,27 @@ private final class ServerSink: SubtitleSink {
   private var lines: [(box: TextBox, line: Double?, characters: Int)] = []
   private var matchesGameSize = true
   private var cover = true
+  /// Örtme yerleşiminde kutu ve satır yüksekliği kararlılığı (kilit altında).
+  private var keeper = CoverKeeper()
 
   init(server: SubtitleServer) { self.server = server }
+
+  /// "Yalnız altyazıyı çevir"in öğrendiği altyazı bandı: yüksek kutu bununla kırpılır, satır yüksekliği sınırı tipik
+  /// değerden alınır. Yoksa nil.
+  func setCoverBand(_ band: SubtitleBand?) {
+    lock.lock()
+    keeper.bandTop = band?.top
+    keeper.bandBottom = band?.bottom
+    keeper.typicalLine = band?.lineHeight
+    lock.unlock()
+  }
+
+  /// Akış ya da ayar değişti: örtme kutusu kararlılığı ve bant bilgisi unutulur.
+  func resetCover() {
+    lock.lock()
+    keeper = CoverKeeper()
+    lock.unlock()
+  }
 
   /// Açıksa okunan satır yüksekliği TV'ye gider (yazı oyunun altyazısının boyuna yaklaşır); kapalıysa gitmez (ayardaki boy).
   var matchGameTextSize: Bool {
@@ -867,6 +976,7 @@ private final class ServerSink: SubtitleSink {
   /// yüksekliği üstteki line ile aynıdır (aynı oyunun yazısı; ayar kapalıysa line hiç gitmez).
   func show(_ text: String, durationMs: Int, box: TextBox?, replaces: Bool, rows: [TextBox]?) {
     var line: Double?
+    var outBox = box
     var source = box
     var sent: [SubtitleRow]?
     var diag: DiagFields?
@@ -875,12 +985,30 @@ private final class ServerSink: SubtitleSink {
       let known = lines.last(where: { $0.box == box })
       let match = matchesGameSize
       let covering = cover
-      lock.unlock()
-      line = LineHeight.toSend(known?.line, matchGameTextSize: match)
-      if let known, known.characters > 0 {
-        source = Self.widened(box, ratio: Double(text.count) / Double(known.characters))
+      // Örtme yerleşimi: kutu, örtülen alan, satır yüksekliği ve satır kutuları kararlı tutulur (CoverKeeper). Diğer
+      // yerleşimlerde 1.8.5'teki hesap olduğu gibi.
+      var request: CoverRequest?
+      var placed: CoverPlacement?
+      if covering {
+        var ratio: Double?
+        if let known, known.characters > 0 { ratio = Double(text.count) / Double(known.characters) }
+        let made = CoverRequest(text: text, box: box, line: LineHeight.toSend(known?.line, matchGameTextSize: match),
+                                matchGameTextSize: match, widenRatio: ratio, rows: rows, replaces: replaces)
+        request = made
+        placed = keeper.place(made, at: SubtitleStabilizer.monotonicMillis())
       }
-      if covering, let rows, rows.count >= 2 { sent = rows.map { SubtitleRow(box: $0, line: line) } }
+      lock.unlock()
+      if let placed {
+        outBox = placed.box
+        source = placed.source
+        line = placed.line
+        sent = placed.rows
+      } else {
+        line = LineHeight.toSend(known?.line, matchGameTextSize: match)
+        if let known, known.characters > 0 {
+          source = Self.widened(box, ratio: Double(text.count) / Double(known.characters))
+        }
+      }
       if Diag.on {
         // Yazı boyu kararının girdileri: okumadan bilinen satır yüksekliği ve karakter sayısı, ayar, giden değer.
         var f: DiagFields = ["knownBox": .bool(known != nil), "knownLine": DiagValue.optional(known?.line)]
@@ -888,6 +1016,7 @@ private final class ServerSink: SubtitleSink {
         f["matchGameTextSize"] = DiagValue.bool(match)
         f["cover"] = DiagValue.bool(covering)
         if let known, known.characters > 0 { f["widenRatio"] = DiagValue.double(Double(text.count) / Double(known.characters)) }
+        if let request, let placed { f["coverKeeper"] = CoverDiag.fields(request, placed) }
         diag = f
       }
     }
@@ -895,7 +1024,7 @@ private final class ServerSink: SubtitleSink {
       let base = diag ?? DiagFields()
       Diag.emit("tv", frame: "tv") {
         var f: DiagFields = ["what": .string("show"), "text": .string(text), "durationMs": .int(durationMs), "replaces": .bool(replaces)]
-        f["box"] = DiagValue.box(box)
+        f["box"] = DiagValue.box(outBox)
         f["source"] = DiagValue.box(source)
         f["line"] = DiagValue.optional(line)
         f["rowsIn"] = rows.map { DiagValue.int($0.count) } ?? DiagValue.null
@@ -904,25 +1033,11 @@ private final class ServerSink: SubtitleSink {
         return f
       }
     }
-    server.sendSubtitle(text, durationMs: durationMs, box: box, replaces: replaces, source: source, line: line, rows: sent)
+    server.sendSubtitle(text, durationMs: durationMs, box: outBox, replaces: replaces, source: source, line: line, rows: sent)
   }
 
-  /// Türkçe çoğu zaman İngilizceden uzundur: TV çeviriyi oyunun altyazısının genişliğine sığdıramayınca iki satıra
-  /// bölüp küçültüyordu. Alan, çevirinin uzunluk oranında (%8 payla) iki yana genişletilir; ekranın %90'ını ve
-  /// kenarları (%5) aşmaz. Çeviri daha kısaysa alan küçültülmez (oyunun altyazısı tamamen örtülsün).
-  static func widened(_ box: TextBox, ratio: Double) -> TextBox {
-    let width = box.right - box.left
-    guard width > 0, ratio.isFinite else { return box }
-    let target = min(0.9, width * ratio * 1.08)
-    guard target > width else { return box }
-    let center = (box.left + box.right) / 2
-    var left = center - target / 2
-    var right = center + target / 2
-    // Bir kenara dayanırsa öbür yana kaydırılır.
-    if left < 0.05 { right += 0.05 - left; left = 0.05 }
-    if right > 0.95 { left -= right - 0.95; right = 0.95 }
-    return TextBox(left: max(0.05, left), top: box.top, right: min(0.95, right), bottom: box.bottom)
-  }
+  /// Çeviri uzunluğuna göre genişletilmiş örtme alanı (hesap Core'da: CoverKeeper.widened; 1.8.5 ile aynı).
+  static func widened(_ box: TextBox, ratio: Double) -> TextBox { CoverKeeper.widened(box, ratio: ratio) }
 
   func clear() { server.clear() }
 }

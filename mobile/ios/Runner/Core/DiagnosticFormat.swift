@@ -194,10 +194,10 @@ enum DiagnosticPrivacy {
   /// Değeri olduğu gibi yazılan ayar yolları ("style.fontSize"; dizideki nesnelerin alanları "extraRegions.name").
   static let safeSettingPaths: Set<String> = [
     "sourceLanguage", "targetLanguage", "engine", "geminiModel", "geminiStyleNote", "engineFailover", "autoWake",
-    "packsEnabled", "hideButtonHints", "matchGameTextSize", "packChoice", "autoRegion", "uiLanguage",
+    "packsEnabled", "hideButtonHints", "subtitleOnly", "matchGameTextSize", "packChoice", "autoRegion", "uiLanguage",
     "region.top", "region.bottom", "region.left", "region.right",
     "style.fontSize", "style.bottomPercent", "style.placement", "style.background", "style.bold", "style.textColor",
-    "style.displayMode", "style.stackPrevious", "style.speakerColor",
+    "style.displayMode", "style.stackPrevious", "style.speakerColor", "style.speakerColorsEnabled", "style.subtitleFont",
     "extraRegions.top", "extraRegions.bottom", "extraRegions.left", "extraRegions.right", "extraRegions.name",
   ]
   /// İçine girilen (nesne ya da nesne dizisi) ayar yolları.
