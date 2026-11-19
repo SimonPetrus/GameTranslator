@@ -174,6 +174,8 @@ struct SubtitleOnlyFilter {
   /// Emniyet supabı: bant kuralları bu kadar ms konuşma/cümle biçimli yazı atıp bu arada hiçbir satır gösterilmezse
   /// bant unutulur.
   static let SAFETY_MS: Int64 = 20_000
+  /// Şüpheli atmalar arasındaki en uzun ara: daha uzun ara şüpheyi bitirir.
+  static let SUSPECT_GAP_MS: Int64 = 4000
   /// Metni ve yeri bu kadar ms değişmeyen yazı sabittir (gösterge/görev metni).
   static let STATIC_MS: Int64 = 9000
   /// Yazı bu kadar ms görünmezse kalkmış sayılır; yeniden belirmesi yeni görünümdür.
@@ -231,6 +233,8 @@ struct SubtitleOnlyFilter {
   private var lastSampleAt: Int64?
   /// Bant kurallarının konuşma/cümle biçimli yazı atmaya başladığı an (son gösterimden beri); yoksa nil.
   private var suspectSince: Int64?
+  /// Son şüpheli atmanın anı: aradan [SUSPECT_GAP_MS]'den fazla geçerse şüphe biter (supap yalnız kesintisiz şüphede açılır).
+  private var lastSuspectAt: Int64?
   /// Öğrenilmiş altyazı bandı; yoksa yalnız kesin kurallar çalışır.
   private(set) var band: SubtitleBand?
 
@@ -245,6 +249,7 @@ struct SubtitleOnlyFilter {
     runAfterQuiet = false
     lastSampleAt = nil
     suspectSince = nil
+    lastSuspectAt = nil
     band = nil
   }
 
@@ -255,8 +260,9 @@ struct SubtitleOnlyFilter {
     var outcome = SubtitleOnlyOutcome()
     // Emniyet supabı: bant kuralları bir süredir konuşma/cümle biçimli yazı atıyor ve bu arada hiçbir satır gösterilmedi:
     // bant yanlış ya da eskimiş; unutulur, kesin kurallara dönülür ve yeniden öğrenilir.
-    if track, band != nil, let since = suspectSince, now >= since, now - since >= SubtitleOnlyFilter.SAFETY_MS {
-      forgetBand()
+    if track, band != nil, let since = suspectSince, let last = lastSuspectAt, now >= since, now >= last,
+       now - last <= SubtitleOnlyFilter.SUSPECT_GAP_MS, now - since >= SubtitleOnlyFilter.SAFETY_MS {
+      forgetBand(at: now)
       outcome.bandDropped = true
     }
     let confident: [TextObservation] = ReadingSelector.filterConfidence(input)
@@ -305,7 +311,18 @@ struct SubtitleOnlyFilter {
       dropped.append(contentsOf: result.drops)
       if result.suspicious { suspicious = true }
     }
-    if track && suspicious && band != nil && suspectSince == nil { suspectSince = now }
+    if track && band != nil {
+      // Şüphe yalnız kesintisiz sürerse sayılır: son şüpheli atmadan [SUSPECT_GAP_MS]'den fazla geçtiyse sayaç sıfırlanır.
+      var expired = false
+      if let last = lastSuspectAt { expired = now < last || now - last > SubtitleOnlyFilter.SUSPECT_GAP_MS }
+      if suspicious {
+        if expired || suspectSince == nil { suspectSince = now }
+        lastSuspectAt = now
+      } else if expired {
+        suspectSince = nil
+        lastSuspectAt = nil
+      }
+    }
     outcome.drops = dropped
     var kept: [TextObservation] = []
     for o in input where !dropped.contains(where: { (d: SubtitleOnlyDrop) -> Bool in d.observation == o }) { kept.append(o) }
@@ -324,14 +341,20 @@ struct SubtitleOnlyFilter {
     }
   }
 
-  /// Bant ve öğrenme kanıtı unutulur (sabit yazı izleri kalır).
-  private mutating func forgetBand() {
+  /// Bant ve öğrenme kanıtı unutulur. Sabit yazı sayımı sıfırdan başlar: bant kuralıyla uzun süre atılmış gerçek altyazı
+  /// sabit yazı sayılmış olabilir (gösterilmediği için); supaptan sonra o yüzden düşmesin.
+  private mutating func forgetBand(at now: Int64) {
+    for index in fixtures.indices {
+      fixtures[index].unchanging = false
+      fixtures[index].appearedAt = now
+    }
     band = nil
     samples.removeAll()
     outsideRun.removeAll()
     runAfterQuiet = false
     lastSampleAt = nil
     suspectSince = nil
+    lastSuspectAt = nil
   }
 
   // MARK: - Kurallar
@@ -400,7 +423,24 @@ struct SubtitleOnlyFilter {
   }
 
   /// Konuşma ya da cümle biçimi: konuşmacı etiketi ya da cümle gibi metin (altyazının olumlu kanıtı).
-  static func isSpeech(_ text: String) -> Bool { hasLabel(text) || AutoRegionFinder.isSentenceLike(text) }
+  /// Etiketten sonraki gövde harf içermiyorsa ("Cash: $500", "HP: 100") gösterge sayılır, konuşma değil.
+  static func isSpeech(_ text: String) -> Bool {
+    if AutoRegionFinder.isSentenceLike(text) { return true }
+    guard hasLabel(text) else { return false }
+    let lines: [Substring] = text.split(separator: "\n")
+    for line in lines {
+      var body: Substring = line
+      if let mark = line.range(of: ": ") { body = line[mark.upperBound...] }
+      if body.contains(where: { (c: Character) -> Bool in c.isLetter }) { return true }
+    }
+    return false
+  }
+
+  /// Tireyle başlayan konuşma ("- Yes.").
+  static func startsWithDash(_ text: String) -> Bool {
+    guard let first = text.trimmingCharacters(in: .whitespaces).first else { return false }
+    return first == "-" || first == "–" || first == "—"
+  }
 
   /// Parça kuralları (yalnız bant öğrenildikten sonra): satır yüksekliği uyumu ve dünya içi tabela.
   /// Konuşma/cümle biçimli parça yükseklikten hiç atılmaz (bant içinde de dışında da). Alt sınır (kısa sarma satırı
@@ -443,6 +483,21 @@ struct SubtitleOnlyFilter {
     var sides: [[TextObservation]] = []
     for row in ReadingSelector.rows(block) {
       let groups: [[TextObservation]] = SubtitleOnlyFilter.segments(row)
+      // Aynı satırda geniş boşlukla ayrılmış iki konuşma ("- Yes.    - No."): birleşik kapsamı ortalıysa ve hepsi
+      // konuşma/tireli ise tek yazıdır.
+      if groups.count >= 2 {
+        let whole: TextBox = frame.box(row)
+        let centered: Bool = abs((whole.left + whole.right) / 2 - 0.5) <= SubtitleOnlyFilter.CENTER_TOLERANCE
+        var talk = true
+        for group in groups {
+          let text: String = SubtitleOnlyFilter.text(of: group)
+          if !(SubtitleOnlyFilter.startsWithDash(text) || SubtitleOnlyFilter.isSpeech(text)) { talk = false }
+        }
+        if centered && talk {
+          mains.append(row)
+          continue
+        }
+      }
       var widest = 0
       var widestWidth = -1.0
       for (index, group) in groups.enumerated() {
@@ -656,6 +711,7 @@ struct SubtitleOnlyFilter {
     }
     // Bir satır gösterildi: bant işini görüyor (emniyet supabı sayacı sıfırlanır).
     suspectSince = nil
+    lastSuspectAt = nil
     var note = SubtitleOnlyShown(learning: SubtitleOnlyShown.Learning.unmatched, sample: nil, lineHeight: nil,
                                  outsideRun: outsideRun.count, bandChanged: false)
     // Yalnız konuşma/cümle biçimli gösterim bant öğretir (menü öğesi, başlık, kısa etiketsiz yazı öğretmez).

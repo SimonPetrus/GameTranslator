@@ -40,9 +40,11 @@ final class BridgeChannel: NSObject, FlutterStreamHandler {
     case "getSetup": result(Self.plain(setup(store)))
     case "getSettings": result(store.settings.toJsonString())
     case "setSettings":
-      guard let settings = Settings.fromJsonString(call.arguments as? String) else {
+      guard var settings = Settings.fromJsonString(call.arguments as? String) else {
         return result(FlutterError(code: "bad_settings", message: Lang.t("Ayarlar okunamadı", "Could not read the settings"), details: nil))
       }
+      // Yalnız yerelin türettiği bayrak: Dart'ın eski kopyası onu silmesin (Quicksand → Standart dönüşünde TV standarda dönsün).
+      settings.style.subtitleFontUsed = SubtitleFonts.usedFlag(incoming: settings.style, stored: store.settings.style)
       store.settings = settings
       engine.applySettings()
       result(nil)

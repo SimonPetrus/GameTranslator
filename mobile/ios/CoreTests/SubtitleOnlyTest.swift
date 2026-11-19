@@ -37,6 +37,12 @@ enum SubtitleOnlyTest {
     return filter
   }
 
+  /// Birbirine benzemeyen (sözcük kümeleri örtüşmeyen) cümle biçimli altyazı satırları; ilki [lineA].
+  static let talk: [String] = [lineA, "Where is the money hidden", "Get on the horse and ride", "They are coming for us",
+                               "I will hold them off here", "Stay down and keep quiet", "Nobody move or I shoot",
+                               "Check the barn for supplies", "Your brother owes me money", "Watch your back out there",
+                               "Bring the wagon around back", "This town has gone mad"]
+
   /// Yükleme ipuçlarından (ortalı, 480–510 px, satır 30 px) öğrenilmiş yanlış bant: 0,45–0,54, tipik 0,03.
   static func tipsBand() -> SubtitleOnlyFilter {
     var filter = SubtitleOnlyFilter()
@@ -314,25 +320,86 @@ enum SubtitleOnlyTest {
       assertEquals([], reasons(outcome))
     }
     TestRun.test("SubtitleOnlyTest.safetyValveDropsAWrongBand") {
-      // Y1b: aynı yanlış bant; oyunun altyazısı sola yaslı (0,05–0,45; ortası 0,25) ve bant dışında: cümle olduğu halde
-      // atılır (10000'de). 20 sn boyunca hiçbir satır gösterilmezse bant unutulur, o kare kesin kurallarla geçer.
+      // Y1b/N2: aynı yanlış bant; oyunun altyazıları sola yaslı (0,05–0,45; ortası 0,25) ve bant dışında: cümle oldukları
+      // halde atılır. Okumalar 2 sn arayla (≤ 4 sn: şüphe kesintisiz), her okumada başka satır. Şüphe 10000'de başlar;
+      // 28000'de 18 sn, 30000'de 20 sn: bant unutulur, o kare kesin kurallarla geçer.
       var filter = tipsBand()
-      let line = obs(lineA, 50, 880, 450, 940)
-      assertEquals(["\(lineA)=outside-band"], reasons(filter.apply([line], frame: frame, at: 10000, track: true)))
-      assertEquals(["\(lineA)=outside-band"], reasons(filter.apply([line], frame: frame, at: 29999, track: true)))
-      let after = filter.apply([line], frame: frame, at: 30000, track: true)
+      for i in 0..<10 {
+        let t: Int64 = 10000 + Int64(i) * 2000
+        let outcome = filter.apply([obs(talk[i], 50, 880, 450, 940)], frame: frame, at: t, track: true)
+        assertEquals(["\(talk[i])=outside-band"], reasons(outcome), "t=\(t)")
+        assertFalse(outcome.bandDropped, "t=\(t)")
+      }
+      let after = filter.apply([obs(talk[10], 50, 880, 450, 940)], frame: frame, at: 30000, track: true)
       assertTrue(after.bandDropped)
       assertNull(filter.band)
-      assertEquals([lineA], texts(after.kept))
-      // Arada bir satır gösterildiyse bant işini görüyor: supap açılmaz (sayaç gösterimde sıfırlanır, 30000'de yeniden başlar).
+      assertEquals([talk[10]], texts(after.kept))
+      // Arada bir satır gösterildiyse bant işini görüyor: sayaç gösterimde sıfırlanır, 26000'deki şüpheli atmayla yeniden
+      // başlar; 44000'de 18 sn, 46000'de 20 sn.
       var shown = tipsBand()
-      _ = shown.apply([line], frame: frame, at: 10000, track: true)
-      _ = shown.noteShown("Somebody else said something here", at: 26000)
-      let kept = shown.apply([line], frame: frame, at: 30000, track: true)
-      assertFalse(kept.bandDropped)
-      assertNotNull(shown.band)
-      assertFalse(shown.apply([line], frame: frame, at: 49999, track: true).bandDropped)
-      assertTrue(shown.apply([line], frame: frame, at: 50000, track: true).bandDropped)
+      for i in 0..<8 { _ = shown.apply([obs(talk[i], 50, 880, 450, 940)], frame: frame, at: 10000 + Int64(i) * 2000, track: true) }
+      _ = shown.noteShown("Somebody else said something here", at: 25000)
+      var t: Int64 = 26000
+      var index = 8
+      while t <= 44000 {
+        assertFalse(shown.apply([obs(talk[index % talk.count], 50, 880, 450, 940)], frame: frame, at: t, track: true).bandDropped,
+                    "t=\(t)")
+        assertNotNull(shown.band)
+        t += 2000
+        index += 1
+      }
+      assertTrue(shown.apply([obs(talk[index % talk.count], 50, 880, 450, 940)], frame: frame, at: 46000, track: true).bandDropped)
+    }
+    TestRun.test("SubtitleOnlyTest.singleSuspectFrameDoesNotDropTheBand") {
+      // N2: tek karede atılan cümle biçimli yazı (10000), ardından yazısız okumalar ya da hiç okuma yok: şüphe 4 sn'de
+      // biter; 25 sn sessizlikten sonra da bant durur.
+      var filter = tipsBand()
+      _ = filter.apply([obs(lineA, 50, 880, 450, 940)], frame: frame, at: 10000, track: true)
+      var t: Int64 = 13000
+      while t <= 34000 {
+        assertFalse(filter.apply([], frame: frame, at: t, track: true).bandDropped, "t=\(t)")
+        t += 3000
+      }
+      assertNotNull(filter.band)
+      var silent = tipsBand()
+      _ = silent.apply([obs(lineA, 50, 880, 450, 940)], frame: frame, at: 10000, track: true)
+      let later = silent.apply([obs(lineB, 50, 880, 450, 940)], frame: frame, at: 35000, track: true)
+      assertFalse(later.bandDropped, "25 sn sonra: son şüpheli atma 4 sn'den eski")
+      assertNotNull(silent.band)
+    }
+    TestRun.test("SubtitleOnlyTest.staticCountRestartsWhenTheBandIsDropped") {
+      // N3: yanlış bant; uzun bir altyazı satırı (lineA, 0,88–0,94) 10000'den beri bant kuralıyla atılıyor, 20000'de
+      // 10 sn'yi aşınca sabit yazı olur (gösterilmedi). Altındaki/üstündeki değişen satırlar (0,70–0,76) şüpheyi kesintisiz
+      // sürdürür. 30000'de supap açılır: sabit yazı sayımı sıfırdan başlar, lineA da çevrilir.
+      var filter = tipsBand()
+      let long = obs(lineA, 50, 880, 450, 940)
+      for i in 0..<10 {
+        let t: Int64 = 10000 + Int64(i) * 2000
+        let outcome = filter.apply([long, obs(talk[i + 1], 50, 700, 450, 760)], frame: frame, at: t, track: true)
+        let expected: String = t >= 20000 ? "\(lineA)=static" : "\(lineA)=outside-band"
+        assertTrue(reasons(outcome).contains(expected), "t=\(t) \(reasons(outcome))")
+      }
+      let after = filter.apply([long, obs(talk[11], 50, 700, 450, 760)], frame: frame, at: 30000, track: true)
+      assertTrue(after.bandDropped)
+      assertEquals([lineA, talk[11]], texts(after.kept))
+    }
+    TestRun.test("SubtitleOnlyTest.dashPairOnOneRowIsOneUnit") {
+      // DÜŞÜK: "- Yes." (0,30–0,38) ve "- No." (0,62–0,70) aynı satırda 240 px boşlukla (> 2,5 × 40): birleşik kapsam
+      // 0,30–0,70 ortalı, ikisi de tireli → tek yazı, ortalı bantta ikisi de kalır.
+      var filter = learnedBottom()
+      let outcome = filter.apply([obs("- Yes.", 300, 900, 380, 940), obs("- No.", 620, 900, 700, 940)], frame: frame, at: 5000,
+                                 track: true)
+      assertEquals(["- Yes.", "- No."], texts(outcome.kept))
+    }
+    TestRun.test("SubtitleOnlyTest.labelWithoutWordsIsNotSpeech") {
+      // DÜŞÜK: "Cash: $500" etiket gibi ama gövdesinde harf yok: gösterge. Bant dışında ortalı olsa da atılır.
+      assertFalse(SubtitleOnlyFilter.isSpeech("Cash: $500"))
+      assertFalse(SubtitleOnlyFilter.isSpeech("HP: 100/100"))
+      assertTrue(SubtitleOnlyFilter.isSpeech("Lucia: Yes."))
+      assertTrue(SubtitleOnlyFilter.isSpeech("ENZO: Get down now!"))
+      var filter = learnedBottom()
+      assertEquals(["Cash: $500=outside-band"], reasons(filter.apply([obs("Cash: $500", 400, 300, 600, 340)], frame: frame, at: 5000,
+                                                                        track: true)))
     }
     TestRun.test("SubtitleOnlyTest.leftAlignedLinesOfACenteredBlockStay") {
       // Y2: ortalı bant; blok ekranda ortalı (0,3–0,7) ama satırları sola yaslı, ikinci satır kısa (0,3–0,42; ortası

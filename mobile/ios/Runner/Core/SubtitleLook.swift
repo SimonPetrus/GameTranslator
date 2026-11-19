@@ -69,6 +69,13 @@ enum SubtitleFonts {
     return nil
   }
 
+  /// Kaydedilecek ayarın "bir kez yazı tipi seçildi" bayrağı. Bayrağı yalnız yerel taraf türetir; Dart ayarların eski
+  /// kopyasını geri yazdığı için gelen değer false olabilir. Bayrak bir kez açılınca kapanmaz: gelen bayrak, gelen yazı
+  /// tipi, saklı bayrak ya da saklı yazı tipi standart dışıysa true (setSettings ve resetSettings aynı kuralı kullanır).
+  static func usedFlag(incoming: SubtitleStyle, stored: SubtitleStyle) -> Bool {
+    incoming.subtitleFontUsed || incoming.subtitleFont != defaultId || stored.subtitleFontUsed || stored.subtitleFont != defaultId
+  }
+
   /// TV 1.0.10'un kabul ettiği dosya adı: boş değil, yalnız A-Z a-z 0-9 . _ - ve ".." içermiyor.
   static func isSafeFileName(_ name: String) -> Bool {
     guard !name.isEmpty, !name.contains("..") else { return false }

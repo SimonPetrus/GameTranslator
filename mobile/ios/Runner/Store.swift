@@ -275,7 +275,7 @@ final class Store {
     fresh.geminiKey = old.geminiKey
     fresh.uiLanguage = old.uiLanguage
     // Bir kez yazı tipi seçildiyse varsayılana dönüşte de TV'ye standart yazı tipi bildirilsin.
-    fresh.style.subtitleFontUsed = old.style.subtitleFontUsed || old.style.subtitleFont != SubtitleFonts.defaultId
+    fresh.style.subtitleFontUsed = SubtitleFonts.usedFlag(incoming: fresh.style, stored: old.style)
     settings = fresh
     return fresh
   }

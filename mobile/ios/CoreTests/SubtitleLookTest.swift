@@ -98,6 +98,24 @@ enum SubtitleLookTest {
       assertEquals("Quicksand", both?["fontFamily"] as? String ?? "")
       assertEquals(6, (both?["speakerColors"] as? [String])?.count ?? 0)
     }
+    TestRun.test("SubtitleLookTest.fontUsedFlagSurvivesAStaleCopy") {
+      // N1: Dart ayarların eski kopyasını (bayrak false) geri yazar; bayrak saklı ayardan ya da yazı tipinden gelir.
+      var quicksand = style(font: "quicksand")
+      quicksand.subtitleFontUsed = false
+      var usedDefault = SubtitleStyle()
+      usedDefault.subtitleFontUsed = true
+      let plain = SubtitleStyle()
+      assertTrue(SubtitleFonts.usedFlag(incoming: plain, stored: quicksand), "Quicksand → Standart (aynı oturum)")
+      assertTrue(SubtitleFonts.usedFlag(incoming: plain, stored: usedDefault), "daha önce seçilmişti")
+      assertFalse(SubtitleFonts.usedFlag(incoming: plain, stored: plain), "hiç seçilmedi")
+      assertTrue(SubtitleFonts.usedFlag(incoming: quicksand, stored: plain), "Quicksand seçili")
+      // Akış: Quicksand seçildi, kaydedildi; sonra Dart eski kopyayla Standart gönderdi → çerçeve TV'yi standarda döndürür.
+      var saved = quicksand
+      saved.subtitleFontUsed = SubtitleFonts.usedFlag(incoming: quicksand, stored: plain)
+      var next = plain
+      next.subtitleFontUsed = SubtitleFonts.usedFlag(incoming: plain, stored: saved)
+      assertTrue(SubtitleWire.styleFrame(next).contains("\"fontFamily\":\"\""))
+    }
     TestRun.test("SubtitleLookTest.fontIds") {
       assertEquals("quicksand", SubtitleFonts.normalize("quicksand"))
       assertEquals("default", SubtitleFonts.normalize("default"))
