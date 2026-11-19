@@ -3,14 +3,17 @@
 iPhone sürümü App Store'da değil. İmzasız bir IPA dosyası olarak dağıtılır; her kullanıcı kendi sertifikasıyla imzalayıp
 kurar (Feather, Sideloadly, AltStore gibi araçlarla).
 
-## Bu sürümde yeni (1.8.5)
+## Bu sürümde yeni (1.8.6)
 
-- **Tanı kaydı** (Ayarlar › Tanı kaydı): Bir sorunu göstermek için kaydı başlat, oyna, durdur ve dosyayı paylaş. Kayıtta oyun görüntüleri, okunan yazılar ve çeviriler bulunur; API anahtarları ve PSN hesabı kaydedilmez; dosya sen paylaşmadıkça telefondan çıkmaz. En çok 15 dakika / 40 MB.
-- **TV bağlantısı:** Telefon artık TV'ye çeviri yapıp yapmadığını bildiriyor; TV telefonu boşta sayıp ağı yeniden taramıyor (TV uygulaması 1.0.7 ve üstü).
-- **"Üstünü ört" kipi, çok konuşmacılı altyazı:** Yeni TV uygulaması (1.0.8) ile her çeviri, oyundaki kendi satırının üstüne oturur. Eski TV uygulamasında görünüm değişmez.
+- **"Yalnız altyazıyı çevir"** (varsayılan açık): Uygulama altyazının çıktığı yeri öğrenir; o alanın dışındaki kısa tabela, gösterge ve menü yazılarının çoğunu çevirmez. Emin olmadığında çevirir, bu yüzden bazı tabelalar yine çevrilebilir. Altyazı kaçıyorsa ayarı kapat.
+- **"Üstünü ört" kipi:** Çeviri kutusu ve yazı boyu aynı altyazı boyunca sabit kalır; ani büyümeler sınırlandı.
+- **"Her konuşmacıya ayrı renk"** ("Konuşmacı adı renkli" açıkken): TV uygulaması 1.0.9 ya da üstü gerekir.
+- **Altyazı yazı tipi seçimi** (Quicksand): TV uygulaması 1.0.9 ya da üstü gerekir; desteklemeyen TV'de yazı standart tipte kalır.
+- **Tanı kaydı** artık süzgeç ve kutu kararlarını da içerir.
 
 ## Önceki sürümler
 
+- **1.8.5:** Tanı kaydı, TV'ye çeviri durumunun bildirilmesi, yeni TV uygulamasıyla (1.0.8) çok konuşmacılı altyazıda satır başına kutu.
 - **1.8.4:** Çok konuşmacılı altyazıda her konuşma kendi satırında; örtme kipinde yazı boyu düzeltmesi ve "Oyunun yazı boyuna uy" ayarı; tuş ipuçları artık çevrilmiyor.
 
 - **1.8.3:** Ana ekran durum düzeltmesi, ek okuma alanı ve durdurma düzeltmeleri, Gemini ek talimat kutusu.
