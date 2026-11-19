@@ -37,6 +37,15 @@ enum SubtitleOnlyTest {
     return filter
   }
 
+  /// Yükleme ipuçlarından (ortalı, 480–510 px, satır 30 px) öğrenilmiş yanlış bant: 0,45–0,54, tipik 0,03.
+  static func tipsBand() -> SubtitleOnlyFilter {
+    var filter = SubtitleOnlyFilter()
+    showLine(&filter, obs("Press the button to start", 300, 480, 700, 510), at: 0)
+    showLine(&filter, obs("Hold the trigger to aim now", 300, 480, 700, 510), at: 1000)
+    showLine(&filter, obs("Visit the shop for new gear", 300, 480, 700, 510), at: 2000)
+    return filter
+  }
+
   static func run() {
     TestRun.test("SubtitleOnlyTest.perLineMatchesEstimate") {
       // 26 karakter / 400 px / 40 px: oran 2,6 → tek satır; 51 karakterlik 85 px parça iki satır → 42,5.
@@ -64,30 +73,30 @@ enum SubtitleOnlyTest {
       assertEquals(["x12=edge"], reasons(outcome))
       assertEquals([lineA], texts(outcome.kept))
     }
-    TestRun.test("SubtitleOnlyTest.menuBlockDropsTheWholeFrame") {
+    TestRun.test("SubtitleOnlyTest.menuBlockIsDroppedAlone") {
       var filter = SubtitleOnlyFilter()
       // Dört satır, satır başları aynı x'te (0,1), satır başına ortanca 1 sözcük: duraklatma menüsü.
       let menu = [obs("Resume", 100, 300, 250, 330), obs("Settings", 100, 350, 260, 380), obs("Load Game", 100, 400, 300, 430),
                   obs("Quit", 100, 450, 180, 480)]
       let outcome = filter.apply(menu + [obs(lineA, 300, 900, 700, 940), obs("noise", 400, 600, 500, 620, conf: 0.2)],
                                  frame: frame, at: 0, track: true)
-      assertTrue(outcome.wholeFrame)
-      assertEquals(0, outcome.kept.count)
-      assertEquals(6, outcome.drops.count, "güveni düşük parça dahil hepsi")
-      assertEquals("menu", outcome.drops[0].reason.code)
+      // Yalnız menü bloğu atılır; karenin geri kalanı (altyazı, güveni düşük parça) değerlendirilmeye devam eder.
+      assertTrue(outcome.pageFound)
+      assertEquals([lineA, "noise"], texts(outcome.kept))
+      assertEquals(["Resume=menu", "Settings=menu", "Load Game=menu", "Quit=menu"], reasons(outcome))
     }
     TestRun.test("SubtitleOnlyTest.notAMenu") {
       var filter = SubtitleOnlyFilter()
       // Üç satır yetmez; dört ortalı satırın başları farklı x'te (yayılma 0,04 > 0,012); uzun satırlı sola yaslı blok
       // (ortanca 5 sözcük > 4) da menü değildir.
       let three = [obs("Resume", 100, 300, 250, 330), obs("Settings", 100, 350, 260, 380), obs("Quit", 100, 400, 180, 430)]
-      assertFalse(filter.apply(three, frame: frame, at: 0, track: true).wholeFrame)
+      assertFalse(filter.apply(three, frame: frame, at: 0, track: true).pageFound)
       let centered = [obs("one two", 300, 300, 700, 330), obs("three four", 320, 350, 680, 380), obs("five six", 280, 400, 720, 430),
                       obs("seven", 310, 450, 690, 480)]
-      assertFalse(filter.apply(centered, frame: frame, at: 0, track: true).wholeFrame)
+      assertFalse(filter.apply(centered, frame: frame, at: 0, track: true).pageFound)
       let prose = [obs("I told you we would be late again", 100, 300, 700, 330), obs("and now look at what happened here", 100, 350, 700, 380),
                    obs("you never listen to a single word", 100, 400, 700, 430), obs("so do not blame me for this one", 100, 450, 700, 480)]
-      assertFalse(filter.apply(prose, frame: frame, at: 0, track: true).wholeFrame)
+      assertFalse(filter.apply(prose, frame: frame, at: 0, track: true).pageFound)
       assertFalse(SubtitleOnlyFilter.isMenuBlock(prose, frame: frame))
     }
     TestRun.test("SubtitleOnlyTest.scatteredPageDropsTheWholeFrame") {
@@ -95,14 +104,16 @@ enum SubtitleOnlyTest {
       // 12 parça, 4 blok (satırlar arası boşluk 170 px > 1,5 × 30), 0,1–0,9 genişlik (0,8 ≥ 0,5), 0,1–0,73 yükseklik (≥ 0,3).
       var list: [TextObservation] = []
       for y in [100, 300, 500, 700] {
-        for x in [100, 450, 800] { list.append(obs("item", x, y, x + 100, y + 30)) }
+        for x in [100, 450, 800] { list.append(obs("AMMO", x, y, x + 100, y + 30)) }
       }
+      // Bant yok: ortalı konuşma/cümle olmayan bloklar ("AMMO AMMO AMMO" cümle değil) atılır.
       let outcome = filter.apply(list, frame: frame, at: 0, track: true)
-      assertTrue(outcome.wholeFrame)
+      assertTrue(outcome.pageFound)
+      assertEquals(12, outcome.drops.count)
       assertEquals("scattered", outcome.drops[0].reason.code)
       // 9 parça (bir satır eksik): sınırın altında.
       var fewer = SubtitleOnlyFilter()
-      assertFalse(fewer.apply(Array(list.prefix(9)), frame: frame, at: 0, track: true).wholeFrame)
+      assertFalse(fewer.apply(Array(list.prefix(9)), frame: frame, at: 0, track: true).pageFound)
     }
     TestRun.test("SubtitleOnlyTest.unchangingTextIsDroppedAfterNineSeconds") {
       var filter = SubtitleOnlyFilter()
@@ -134,8 +145,9 @@ enum SubtitleOnlyTest {
         assertEquals(1, filter.apply([line], frame: frame, at: t, track: true).kept.count, "t=\(t)")
         t += 1000
       }
-      // Kalktı ve aynı metin aynı yerde yeniden belirdi: artık sabit yazı sayılır.
-      assertEquals(["\(lineA)=static"], reasons(filter.apply([line], frame: frame, at: 30000, track: true)))
+      // Kalktı ve aynı metin aynı yerde yeniden belirdi (tuşla ilerleyen diyalog, ölüm sonrası yinelenen satır): gösterilmiş
+      // altyazı sabit yazı hafızasına hiç girmediği için yine çevrilir.
+      assertEquals(1, filter.apply([line], frame: frame, at: 30000, track: true).kept.count)
     }
     TestRun.test("SubtitleOnlyTest.reusedFramesKeepTheClockRunning") {
       var filter = SubtitleOnlyFilter()
@@ -186,8 +198,9 @@ enum SubtitleOnlyTest {
                   obs("SALOON", 450, 860, 550, 960),                      // 100 px: tipikin 2,5 katı
                   obs("12", 490, 945, 510, 955)]                          // 10 px: 0,25 katı
       let outcome = filter.apply(list, frame: frame, at: 5000, track: true)
-      assertEquals(["SALOON=line-height", "12=line-height", "Objective: reach the camp=off-center"], reasons(outcome))
-      assertEquals([lineA], texts(outcome.kept))
+      // "12" bantta: alt sınır bantta uygulanmaz; altyazının ortasında olduğu için çekirdeğe katılır.
+      assertEquals(["SALOON=line-height", "Objective: reach the camp=off-center"], reasons(outcome))
+      assertEquals([lineA, "12"], texts(outcome.kept))
     }
     TestRun.test("SubtitleOnlyTest.inBandSentenceKeepsDespiteHeight") {
       var filter = learnedBottom()
@@ -275,6 +288,113 @@ enum SubtitleOnlyTest {
       assertEquals(list, outcome.kept)
       assertEquals(ReadingSelector.select(list, width: 1000, height: 1000), ReadingSelector.select(outcome.kept, width: 1000, height: 1000))
     }
+    // MARK: İnceleme bulguları (Y1, Y2, O1–O5)
+
+    TestRun.test("SubtitleOnlyTest.menuItemsDoNotTeachTheBand") {
+      // Y1c: akış oyun menüsünde başladı; çevrilen menü öğeleri konuşma/cümle değil, bant öğretmez.
+      var filter = SubtitleOnlyFilter()
+      var t: Int64 = 0
+      for item in ["Continue", "Load Game", "Settings", "Quit Game"] {
+        assertEquals(SubtitleOnlyShown.Learning.notSpeech, showLine(&filter, obs(item, 400, 500, 600, 530), at: t).learning, item)
+        t += 1000
+      }
+      assertNull(filter.band)
+    }
+    TestRun.test("SubtitleOnlyTest.wrongBandStillLetsSpeechThrough") {
+      // Y1a: bant yükleme ipuçlarından öğrenildi (ortalı, 0,48–0,51, satır 30 px → bant 0,45–0,54, tipik 0,03). Oyunun
+      // altyazısı bandın dışında (0,88–0,94) ve iki kat boyda (60 px): cümle biçimli olduğu için yükseklikten atılmaz,
+      // bant dışında ama ortalı cümle olduğu için kabul edilir.
+      var filter = tipsBand()
+      guard let band = filter.band else { return TestRun.fail("bant öğrenilmedi", #fileID, #line) }
+      assertEquals(0.45, band.top, accuracy: 1e-9)
+      assertEquals(0.54, band.bottom, accuracy: 1e-9)
+      assertEquals(0.03, band.lineHeight, accuracy: 1e-9)
+      let outcome = filter.apply([obs(lineA, 300, 880, 700, 940)], frame: frame, at: 10000, track: true)
+      assertEquals([lineA], texts(outcome.kept))
+      assertEquals([], reasons(outcome))
+    }
+    TestRun.test("SubtitleOnlyTest.safetyValveDropsAWrongBand") {
+      // Y1b: aynı yanlış bant; oyunun altyazısı sola yaslı (0,05–0,45; ortası 0,25) ve bant dışında: cümle olduğu halde
+      // atılır (10000'de). 20 sn boyunca hiçbir satır gösterilmezse bant unutulur, o kare kesin kurallarla geçer.
+      var filter = tipsBand()
+      let line = obs(lineA, 50, 880, 450, 940)
+      assertEquals(["\(lineA)=outside-band"], reasons(filter.apply([line], frame: frame, at: 10000, track: true)))
+      assertEquals(["\(lineA)=outside-band"], reasons(filter.apply([line], frame: frame, at: 29999, track: true)))
+      let after = filter.apply([line], frame: frame, at: 30000, track: true)
+      assertTrue(after.bandDropped)
+      assertNull(filter.band)
+      assertEquals([lineA], texts(after.kept))
+      // Arada bir satır gösterildiyse bant işini görüyor: supap açılmaz (sayaç gösterimde sıfırlanır, 30000'de yeniden başlar).
+      var shown = tipsBand()
+      _ = shown.apply([line], frame: frame, at: 10000, track: true)
+      _ = shown.noteShown("Somebody else said something here", at: 26000)
+      let kept = shown.apply([line], frame: frame, at: 30000, track: true)
+      assertFalse(kept.bandDropped)
+      assertNotNull(shown.band)
+      assertFalse(shown.apply([line], frame: frame, at: 49999, track: true).bandDropped)
+      assertTrue(shown.apply([line], frame: frame, at: 50000, track: true).bandDropped)
+    }
+    TestRun.test("SubtitleOnlyTest.leftAlignedLinesOfACenteredBlockStay") {
+      // Y2: ortalı bant; blok ekranda ortalı (0,3–0,7) ama satırları sola yaslı, ikinci satır kısa (0,3–0,42; ortası
+      // 0,36: tek başına ortadan 0,14 uzak). Sol kenarı birinci satırınkiyle aynı: aynı blok, iki satır da kalır.
+      var filter = learnedBottom()
+      let list = [obs(lineA, 300, 900, 700, 940), obs("with you.", 300, 945, 420, 985)]
+      let outcome = filter.apply(list, frame: frame, at: 5000, track: true)
+      assertEquals([lineA, "with you."], texts(outcome.kept))
+      assertEquals([], reasons(outcome))
+    }
+    TestRun.test("SubtitleOnlyTest.shortWrapLinesAndLabelsStay") {
+      // O1: bantta tipik yüksekliğin yarısı ölçülen kısa sarma satırı ("me.", "with": 20 px / 40 px = 0,5 < 0,6) ve
+      // etiketli kısa satır ("Lucia: Yes.") kalır; bant dışında iki kat boyda etiketli satır da (ortalı) kalır.
+      var filter = learnedBottom()
+      let me = filter.apply([obs(lineB, 300, 900, 700, 940), obs("me.", 485, 945, 515, 965)], frame: frame, at: 5000, track: true)
+      assertEquals([lineB, "me."], texts(me.kept))
+      let wrap = filter.apply([obs(lineC, 300, 900, 700, 940), obs("with", 470, 945, 530, 965)], frame: frame, at: 6000, track: true)
+      assertEquals([lineC, "with"], texts(wrap.kept))
+      assertEquals(1, filter.apply([obs("Lucia: Yes.", 400, 900, 600, 920)], frame: frame, at: 7000, track: true).kept.count)
+      assertEquals(1, filter.apply([obs("Lucia: Yes.", 400, 300, 600, 380)], frame: frame, at: 8000, track: true).kept.count)
+    }
+    TestRun.test("SubtitleOnlyTest.crowdedHudDoesNotVetoTheSubtitle") {
+      // O3: 12 "AMMO" parçası 4 satırda (0,1–0,58) + bantta altyazı: dağınık sayfa, ama yalnız bant dışı bloklar atılır.
+      var hud: [TextObservation] = []
+      for y in [100, 250, 400, 550] {
+        for x in [100, 450, 800] { hud.append(obs("AMMO", x, y, x + 100, y + 30)) }
+      }
+      var filter = learnedBottom()
+      let outcome = filter.apply(hud + [obs(lineA, 300, 900, 700, 940)], frame: frame, at: 5000, track: true)
+      assertTrue(outcome.pageFound)
+      assertEquals([lineA], texts(outcome.kept))
+      assertEquals(12, outcome.drops.filter { $0.reason == SubtitleOnlyReason.scattered }.count)
+      // Bant yokken: ortalı cümle biçimli blok korunur, gerisi atılır.
+      var fresh = SubtitleOnlyFilter()
+      let early = fresh.apply(hud + [obs(lineA, 300, 900, 700, 940)], frame: frame, at: 0, track: true)
+      assertEquals([lineA], texts(early.kept))
+    }
+    TestRun.test("SubtitleOnlyTest.dialogueChoicesDropOnlyTheList") {
+      // O4: 4 seçenekli liste (sol kenar 0,1, satır başına ortanca 1 sözcük) + ortalı NPC altyazısı: liste atılır, altyazı kalır.
+      let choices = [obs("1. Yes", 100, 300, 200, 330), obs("2. No", 100, 340, 190, 370), obs("3. Tell me more", 100, 380, 330, 410),
+                     obs("4. Leave", 100, 420, 220, 450)]
+      var filter = SubtitleOnlyFilter()
+      let apart = filter.apply(choices + [obs(lineA, 300, 900, 700, 940)], frame: frame, at: 0, track: true)
+      assertEquals([lineA], texts(apart.kept))
+      assertEquals(4, apart.drops.filter { $0.reason == SubtitleOnlyReason.menu }.count)
+      // Liste altyazının hemen üstünde (aynı dikey blok): yalnız liste satırları atılır.
+      let near = [obs("1. Yes", 100, 700, 200, 730), obs("2. No", 100, 740, 190, 770), obs("3. Tell me more", 100, 780, 330, 810),
+                  obs("4. Leave", 100, 820, 220, 850), obs(lineA, 300, 860, 700, 900)]
+      var other = SubtitleOnlyFilter()
+      let together = other.apply(near, frame: frame, at: 0, track: true)
+      assertEquals([lineA], texts(together.kept))
+      assertEquals(["1. Yes=menu", "2. No=menu", "3. Tell me more=menu", "4. Leave=menu"], reasons(together))
+    }
+    TestRun.test("SubtitleOnlyTest.shortLineAtTheNewSubtitlePlace") {
+      // O5: altyazı yeri değişti (üstte, 0,10–0,14); bir bant dışı cümle gösterildi. Aynı yükseklikteki ortalı kısa satır
+      // ("Yes.", cümle değil) yeniden öğrenilirken de kabul edilir; böyle bir kanıt yokken atılır.
+      var filter = learnedBottom()
+      showLine(&filter, obs("They are coming for us", 300, 100, 700, 140), at: 3000)
+      assertEquals(["Yes."], texts(filter.apply([obs("Yes.", 450, 100, 550, 140)], frame: frame, at: 4000, track: true).kept))
+      var plain = learnedBottom()
+      assertEquals(["Yes.=outside-band"], reasons(plain.apply([obs("Yes.", 450, 100, 550, 140)], frame: frame, at: 4000, track: true)))
+    }
     TestRun.test("SubtitleOnlyTest.extraAreaIsNotFiltered") {
       // Ek okuma alanı (kullanıcının bilerek seçtiği alan) süzgece girmez: VisionReader.extraLines süzgeci çağırmaz.
       guard let dir = ProcessInfo.processInfo.environment["GT_RUNNER_DIR"] else {
@@ -343,14 +463,17 @@ enum CoverKeeperTest {
     }
     TestRun.test("CoverKeeperTest.lineCap") {
       var keeper = CoverKeeper()
-      let capped = keeper.place(request("bir", b, line: 0.075), at: 0)
-      assertEquals(0.06, capped.line ?? 0, accuracy: 1e-12, "tipik bilinmiyor: %6")
+      // Tipik bilinmiyor: 1.8.5'teki sınır (0,08); 0,075 olduğu gibi gider, 0,09 (olağan ölçümde gelmez) 0,08'e iner.
+      assertEquals(0.075, keeper.place(request("bir", b, line: 0.075), at: 0).line ?? 0, accuracy: 1e-12)
+      var high = CoverKeeper()
+      let capped = high.place(request("bir", b, line: 0.09), at: 0)
+      assertEquals(0.08, capped.line ?? 0, accuracy: 1e-12, "tipik bilinmiyor: %8")
       assertEquals(["line-capped"], codes(capped))
       var typical = CoverKeeper()
       typical.typicalLine = 0.03
       assertEquals(0.045, typical.place(request("bir", b, line: 0.05), at: 0).line ?? 0, accuracy: 1e-12, "1,5 × 0,03")
       assertEquals(0.08, LineHeight.sendCap(typical: 0.07), accuracy: 1e-12, "en çok MAX_RATIO")
-      assertEquals(0.06, LineHeight.sendCap(typical: nil), accuracy: 1e-12)
+      assertEquals(0.08, LineHeight.sendCap(typical: nil), accuracy: 1e-12)
     }
     TestRun.test("CoverKeeperTest.revisionIsPinned") {
       var keeper = CoverKeeper()
@@ -412,12 +535,19 @@ enum CoverKeeperTest {
       let tall = TextBox(left: 0.3, top: 0.6, right: 0.7, bottom: 0.95)
       let rows = [TextBox(left: 0.3, top: 0.6, right: 0.7, bottom: 0.65), TextBox(left: 0.3, top: 0.9, right: 0.7, bottom: 0.95)]
       let clipped = keeper.place(request("bir\niki", tall, line: 0.04, rows: rows), at: 0)
-      // 0,35 > 0,20; bant yok: alt kenar korunur → 0,75–0,95; line ve rows gitmez.
+      // 0,35 > 0,20; bant yok: alt kenar korunur → 0,75–0,95. line yine gider (TV ayardaki boya dönmesin); üst satır
+      // kutusu (0,60–0,65) kırpılmış kutunun dışında kaldığı için rows gitmez.
       assertBox(TextBox(left: 0.3, top: 0.75, right: 0.7, bottom: 0.95), clipped.box)
       assertBox(TextBox(left: 0.3, top: 0.75, right: 0.7, bottom: 0.95), clipped.source)
-      assertNull(clipped.line)
+      assertEquals(0.04, clipped.line ?? 0, accuracy: 1e-12)
       assertNull(clipped.rows)
       assertEquals(["box-capped"], codes(clipped))
+      // Satır kutuları kırpılmış kutunun içindeyse gider (line ile).
+      var inside = CoverKeeper()
+      let fitting = [TextBox(left: 0.3, top: 0.76, right: 0.7, bottom: 0.8), TextBox(left: 0.3, top: 0.9, right: 0.7, bottom: 0.95)]
+      let sent = inside.place(request("bir\niki", tall, line: 0.04, rows: fitting), at: 0).rows ?? []
+      assertEquals(2, sent.count)
+      assertEquals(0.04, sent.first?.line ?? 0, accuracy: 1e-12)
       // Öğrenilmiş bant 0,80–0,97: bantla kırpılır (0,80–0,95).
       var banded = CoverKeeper()
       banded.bandTop = 0.80

@@ -323,12 +323,13 @@ enum LineHeight {
   }
 
   // Örtme (cover) yerleşiminde TV'ye giden satır yüksekliğinin sınırları (CoverKeeper bunları kullanır; tek yer).
-  /// Altyazının tipik satır yüksekliği bilinmiyorsa gönderilen en büyük değer (tam kare yüksekliğine oranla).
-  static let MAX_SENT_RATIO = 0.06
+  /// Altyazının tipik satır yüksekliği bilinmiyorsa gönderilen en büyük değer (tam kare yüksekliğine oranla): 1.8.5'teki
+  /// kabul sınırı ([MAX_RATIO]); büyüme adım sınırı ani sıçramayı zaten önler.
+  static let MAX_SENT_RATIO: Double = 0.08
   /// Tipik satır yüksekliği biliniyorsa gönderilen en büyük değer onun bu katıdır (yine en çok [MAX_RATIO]).
-  static let TYPICAL_CAP_FACTOR = 1.5
+  static let TYPICAL_CAP_FACTOR: Double = 1.5
   /// Ardışık iki altyazı arasında satır yüksekliği en çok bu katına çıkar (küçülme serbest).
-  static let GROWTH_STEP = 1.25
+  static let GROWTH_STEP: Double = 1.25
 
   /// Gönderilecek satır yüksekliğinin üst sınırı: tipik değer biliniyorsa onun [TYPICAL_CAP_FACTOR] katı (en çok
   /// [MAX_RATIO]), bilinmiyorsa [MAX_SENT_RATIO].

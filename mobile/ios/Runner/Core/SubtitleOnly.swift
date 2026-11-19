@@ -74,8 +74,10 @@ struct SubtitleOnlyOutcome {
   /// Kalan parçalar (girdideki sırayla; güveni düşük parçalar dokunulmadan geçer, seçim onları kendisi eler).
   var kept: [TextObservation] = []
   var drops: [SubtitleOnlyDrop] = []
-  /// Kare bütünüyle menü/sayfa sayıldı.
-  var wholeFrame = false
+  /// Karede menü satırları ya da dağınık sayfa bulundu (yalnız ilgili bloklar atıldı; kare çapında veto yok).
+  var pageFound = false
+  /// Emniyet supabı bu karede bandı unuttu (tanı kaydı: filter/band-dropped).
+  var bandDropped = false
 }
 
 /// Okuma alanının tam karedeki yeri: parça pikseli (alan içinde, sol üstten) → tam kareye oran.
@@ -114,6 +116,8 @@ struct SubtitleOnlyShown: Equatable {
     case relearned
     /// Örnek bandın dışındaydı; kayma kanıtı birikiyor.
     case outside
+    /// Gösterilen satır konuşma/cümle biçimli değil (menü öğesi, başlık): bant öğretmez.
+    case notSpeech
   }
 
   var learning: Learning
@@ -135,11 +139,11 @@ struct SubtitleOnlyFilter {
   /// Band, örneklerin üstüne ve altına bu kadar tipik satır payı alır.
   static let BAND_PAD_LINES = 1.0
   /// Yerleşim kararı (ortalı / sola yaslı) için örneklerin en az bu oranı uymalı.
-  static let LAYOUT_SHARE = 2.0 / 3.0
+  static let LAYOUT_SHARE: Double = 2.0 / 3.0
   /// Satırın yatay ortası ekran ortasından en çok bu kadar uzaksa ortalı sayılır.
-  static let CENTER_TOLERANCE = 0.12
+  static let CENTER_TOLERANCE: Double = 0.12
   /// Yatay ortası bundan kenara yakın yazı ekran kenarına dayalıdır (AutoRegionFinder ile aynı eşik).
-  static let EDGE_CENTER = AutoRegionFinder.EDGE_CENTER
+  static let EDGE_CENTER: Double = AutoRegionFinder.EDGE_CENTER
   /// Sola yaslı bantta satırın sol kenarı öğrenilen kenara en çok bu kadar uzak olabilir.
   static let LEFT_EDGE_TOLERANCE = 0.04
   /// Sola yaslı yerleşim kararı: örneklerin sol kenarları ortancaya bu kadar yakın olmalı.
@@ -162,7 +166,14 @@ struct SubtitleOnlyFilter {
   static let SCATTER_MIN_WIDTH = 0.5
   static let SCATTER_MIN_HEIGHT = 0.3
   /// Aynı satırdaki iki parça arasındaki boşluk satır yüksekliğinin bu katından büyükse ayrı yazıdır (yan yana gösterge).
-  static let SEGMENT_GAP_LINES = 2.5
+  static let SEGMENT_GAP_LINES: Double = 2.5
+  /// Bir satır, blok çapasının ortası, sol ya da sağ kenarıyla bu kadar içinde hizalıysa aynı altyazının satırıdır.
+  static let ALIGN_TOLERANCE: Double = 0.03
+  /// Yan parça bu payla çekirdeğin yatay kapsamının içindeyse çekirdeğe katılır.
+  static let SIDE_MARGIN: Double = 0.02
+  /// Emniyet supabı: bant kuralları bu kadar ms konuşma/cümle biçimli yazı atıp bu arada hiçbir satır gösterilmezse
+  /// bant unutulur.
+  static let SAFETY_MS: Int64 = 20_000
   /// Metni ve yeri bu kadar ms değişmeyen yazı sabittir (gösterge/görev metni).
   static let STATIC_MS: Int64 = 9000
   /// Yazı bu kadar ms görünmezse kalkmış sayılır; yeniden belirmesi yeni görünümdür.
@@ -218,6 +229,8 @@ struct SubtitleOnlyFilter {
   private var outsideRun: [Sample] = []
   private var runAfterQuiet = false
   private var lastSampleAt: Int64?
+  /// Bant kurallarının konuşma/cümle biçimli yazı atmaya başladığı an (son gösterimden beri); yoksa nil.
+  private var suspectSince: Int64?
   /// Öğrenilmiş altyazı bandı; yoksa yalnız kesin kurallar çalışır.
   private(set) var band: SubtitleBand?
 
@@ -231,6 +244,7 @@ struct SubtitleOnlyFilter {
     outsideRun.removeAll()
     runAfterQuiet = false
     lastSampleAt = nil
+    suspectSince = nil
     band = nil
   }
 
@@ -239,25 +253,45 @@ struct SubtitleOnlyFilter {
   /// Bir karenin parçalarını süzer. [track]: sabitlik izleri güncellenir (asıl okuma); yeniden okumada false.
   mutating func apply(_ input: [TextObservation], frame: SubtitleOnlyFrame, at now: Int64, track: Bool) -> SubtitleOnlyOutcome {
     var outcome = SubtitleOnlyOutcome()
+    // Emniyet supabı: bant kuralları bir süredir konuşma/cümle biçimli yazı atıyor ve bu arada hiçbir satır gösterilmedi:
+    // bant yanlış ya da eskimiş; unutulur, kesin kurallara dönülür ve yeniden öğrenilir.
+    if track, band != nil, let since = suspectSince, now >= since, now - since >= SubtitleOnlyFilter.SAFETY_MS {
+      forgetBand()
+      outcome.bandDropped = true
+    }
     let confident: [TextObservation] = ReadingSelector.filterConfidence(input)
     let firstBlocks: [[TextObservation]] = ReadingSelector.blocks(confident)
     if track { markSeen(firstBlocks, frame: frame, at: now) }
-    if let reason = SubtitleOnlyFilter.frameReason(confident, blocks: firstBlocks, frame: frame) {
-      outcome.wholeFrame = true
-      for o in input { outcome.drops.append(SubtitleOnlyDrop(observation: o, reason: reason)) }
-      return outcome
-    }
+    let scattered: Bool = SubtitleOnlyFilter.isScattered(confident, blocks: firstBlocks, frame: frame)
+    if scattered { outcome.pageFound = true }
     var dropped: [SubtitleOnlyDrop] = []
     var remaining: [TextObservation] = []
-    // Sabitlik yazı başına (satırın büyük boşlukla ayrılmış parçası): altyazının yanındaki gösterge kendi başına izlenir.
     for block in firstBlocks {
-      for segment in SubtitleOnlyFilter.segments(block) {
+      // Menü: blok içinde art arda en az dört sola hizalı kısa satır; yalnız o satırlar atılır (karenin geri kalanı değil).
+      let split: (menu: [TextObservation], rest: [TextObservation]) = SubtitleOnlyFilter.menuRows(block, frame: frame)
+      if !split.menu.isEmpty {
+        outcome.pageFound = true
+        for o in split.menu { dropped.append(SubtitleOnlyDrop(observation: o, reason: SubtitleOnlyReason.menu)) }
+      }
+      let rest: [TextObservation] = split.rest
+      if rest.isEmpty { continue }
+      // Dağınık sayfa: bant varsa yalnız bandın dışındaki blok, bant yoksa ortalı konuşma/cümle olmayan blok atılır.
+      if scattered && scatterDrops(rest, frame: frame) {
+        for o in rest { dropped.append(SubtitleOnlyDrop(observation: o, reason: SubtitleOnlyReason.scattered)) }
+        continue
+      }
+      let restText: String = SubtitleOnlyFilter.text(of: rest)
+      let speech: Bool = SubtitleOnlyFilter.isSpeech(restText)
+      let standalone: Bool = ReadingSelector.rows(rest).count == 1
+      // Sabitlik yazı başına (satırın büyük boşlukla ayrılmış parçası): altyazının yanındaki gösterge kendi başına izlenir.
+      for segment in SubtitleOnlyFilter.segments(rest) {
         if isUnchanging(segment, frame: frame) {
           for o in segment { dropped.append(SubtitleOnlyDrop(observation: o, reason: SubtitleOnlyReason.unchanging)) }
           continue
         }
         for o in segment {
-          if let current = band, let reason = SubtitleOnlyFilter.pieceReason(o, band: current, frame: frame) {
+          if let current = band,
+             let reason = SubtitleOnlyFilter.pieceReason(o, band: current, frame: frame, blockSpeech: speech, standalone: standalone) {
             dropped.append(SubtitleOnlyDrop(observation: o, reason: reason))
           } else {
             remaining.append(o)
@@ -265,9 +299,13 @@ struct SubtitleOnlyFilter {
         }
       }
     }
+    var suspicious = false
     for block in ReadingSelector.blocks(remaining) {
-      dropped.append(contentsOf: blockDrops(block, frame: frame))
+      let result: (drops: [SubtitleOnlyDrop], suspicious: Bool) = blockDrops(block, frame: frame)
+      dropped.append(contentsOf: result.drops)
+      if result.suspicious { suspicious = true }
     }
+    if track && suspicious && band != nil && suspectSince == nil { suspectSince = now }
     outcome.drops = dropped
     var kept: [TextObservation] = []
     for o in input where !dropped.contains(where: { (d: SubtitleOnlyDrop) -> Bool in d.observation == o }) { kept.append(o) }
@@ -279,54 +317,107 @@ struct SubtitleOnlyFilter {
   mutating func touch(at now: Int64) {
     for index in fixtures.indices where fixtures[index].inLastRead {
       fixtures[index].lastSeen = now
-      if now - fixtures[index].appearedAt >= SubtitleOnlyFilter.STATIC_MS { fixtures[index].unchanging = true }
+      // Bu görünümünde TV'ye gönderilmiş yazı (altyazı) sabit yazı hafızasına hiç girmez.
+      if !fixtures[index].shownNow && now - fixtures[index].appearedAt >= SubtitleOnlyFilter.STATIC_MS {
+        fixtures[index].unchanging = true
+      }
     }
+  }
+
+  /// Bant ve öğrenme kanıtı unutulur (sabit yazı izleri kalır).
+  private mutating func forgetBand() {
+    band = nil
+    samples.removeAll()
+    outsideRun.removeAll()
+    runAfterQuiet = false
+    lastSampleAt = nil
+    suspectSince = nil
   }
 
   // MARK: - Kurallar
 
-  /// Kare bütünüyle menü ya da dağınık sayfa mı.
-  static func frameReason(_ pieces: [TextObservation], blocks: [[TextObservation]], frame: SubtitleOnlyFrame) -> SubtitleOnlyReason? {
-    for block in blocks where isMenuBlock(block, frame: frame) { return SubtitleOnlyReason.menu }
-    if pieces.count >= SCATTER_MIN_PIECES && blocks.count >= SCATTER_MIN_BLOCKS {
-      let area: TextBox = frame.box(pieces)
-      if area.right - area.left >= SCATTER_MIN_WIDTH && area.bottom - area.top >= SCATTER_MIN_HEIGHT {
-        return SubtitleOnlyReason.scattered
-      }
-    }
-    return nil
+  /// Karede ekrana yayılmış çok sayıda parça var mı (harita, envanter, kalabalık gösterge). Kare çapında veto değildir:
+  /// hangi blokların atılacağına [scatterDrops] karar verir.
+  static func isScattered(_ pieces: [TextObservation], blocks: [[TextObservation]], frame: SubtitleOnlyFrame) -> Bool {
+    guard pieces.count >= SCATTER_MIN_PIECES && blocks.count >= SCATTER_MIN_BLOCKS else { return false }
+    let area: TextBox = frame.box(pieces)
+    return area.right - area.left >= SCATTER_MIN_WIDTH && area.bottom - area.top >= SCATTER_MIN_HEIGHT
   }
 
-  /// Menü bloğu: en az [MENU_MIN_ROWS] satır, satır başları aynı x'te, satırlar kısa, konuşmacı etiketi yok.
-  static func isMenuBlock(_ block: [TextObservation], frame: SubtitleOnlyFrame) -> Bool {
-    let rows: [[TextObservation]] = ReadingSelector.rows(block)
-    guard rows.count >= MENU_MIN_ROWS else { return false }
-    var lefts: [Double] = []
-    var words: [Double] = []
-    for row in rows {
-      guard let first = row.first else { continue }
-      lefts.append(frame.x(Double(first.left)))
-      var count = 0
-      for o in row { count += wordCount(o.text) }
-      words.append(Double(count))
-    }
-    guard let low = lefts.min(), let high = lefts.max(), high - low <= MENU_LEFT_SPREAD else { return false }
-    if LineHeight.upperMedian(words) > Double(MENU_MAX_ROW_WORDS) { return false }
-    return !hasLabel(text(of: block))
+  /// Dağınık sayfada blok atılsın mı: bant öğrenilmişse yalnız bandın tamamen dışındaki blok; bant yoksa ortalı ve
+  /// konuşma/cümle biçimli blok korunur, gerisi atılır.
+  private func scatterDrops(_ block: [TextObservation], frame: SubtitleOnlyFrame) -> Bool {
+    let shape: TextBox = frame.box(block)
+    if let current = band { return shape.bottom < current.top || shape.top > current.bottom }
+    let centerX: Double = (shape.left + shape.right) / 2
+    let centered: Bool = abs(centerX - 0.5) <= SubtitleOnlyFilter.CENTER_TOLERANCE
+    return !(centered && SubtitleOnlyFilter.isSpeech(SubtitleOnlyFilter.text(of: block)))
   }
+
+  /// Bloğun menü satırları ve geri kalanı. Menü: art arda en az [MENU_MIN_ROWS] satır, satır başları ilk satırınkine
+  /// [MENU_LEFT_SPREAD] içinde, satır başına ortanca sözcük en çok [MENU_MAX_ROW_WORDS], konuşmacı etiketi yok. Menünün
+  /// altındaki/üstündeki altyazı satırları geri kalandadır.
+  static func menuRows(_ block: [TextObservation], frame: SubtitleOnlyFrame) -> (menu: [TextObservation], rest: [TextObservation]) {
+    let rows: [[TextObservation]] = ReadingSelector.rows(block)
+    guard rows.count >= MENU_MIN_ROWS else { return ([], block) }
+    var lefts: [Double] = []
+    for row in rows { lefts.append(frame.x(Double(row.first?.left ?? 0))) }
+    var isMenu: [Bool] = Array(repeating: false, count: rows.count)
+    var start = 0
+    while start < rows.count {
+      var end = start
+      while end + 1 < rows.count && abs(lefts[end + 1] - lefts[start]) <= MENU_LEFT_SPREAD { end += 1 }
+      if end - start + 1 >= MENU_MIN_ROWS {
+        var words: [Double] = []
+        var lines: [String] = []
+        for index in start...end {
+          var count = 0
+          var parts: [String] = []
+          for o in rows[index] {
+            count += wordCount(o.text)
+            parts.append(o.text)
+          }
+          words.append(Double(count))
+          lines.append(parts.joined(separator: " "))
+        }
+        if LineHeight.upperMedian(words) <= Double(MENU_MAX_ROW_WORDS) && !hasLabel(lines.joined(separator: "\n")) {
+          for index in start...end { isMenu[index] = true }
+        }
+      }
+      start = end + 1
+    }
+    var menu: [TextObservation] = []
+    var rest: [TextObservation] = []
+    for (index, row) in rows.enumerated() {
+      if isMenu[index] { menu.append(contentsOf: row) } else { rest.append(contentsOf: row) }
+    }
+    return (menu, rest)
+  }
+
+  /// Blok menü satırlarından mı oluşuyor (tanı ve test için).
+  static func isMenuBlock(_ block: [TextObservation], frame: SubtitleOnlyFrame) -> Bool {
+    !menuRows(block, frame: frame).menu.isEmpty
+  }
+
+  /// Konuşma ya da cümle biçimi: konuşmacı etiketi ya da cümle gibi metin (altyazının olumlu kanıtı).
+  static func isSpeech(_ text: String) -> Bool { hasLabel(text) || AutoRegionFinder.isSentenceLike(text) }
 
   /// Parça kuralları (yalnız bant öğrenildikten sonra): satır yüksekliği uyumu ve dünya içi tabela.
-  static func pieceReason(_ o: TextObservation, band: SubtitleBand, frame: SubtitleOnlyFrame) -> SubtitleOnlyReason? {
+  /// Konuşma/cümle biçimli parça yükseklikten hiç atılmaz (bant içinde de dışında da). Alt sınır (kısa sarma satırı
+  /// "me.", "with" küçük ölçülür) bant içinde ve konuşma/cümle biçimli blokta uygulanmaz. Tabela kuralı yalnız tek
+  /// satırlık bloklara (yalnız duran yazı) uygulanır: altyazı bloğunun içinden satır atılmaz.
+  static func pieceReason(_ o: TextObservation, band: SubtitleBand, frame: SubtitleOnlyFrame, blockSpeech: Bool,
+                          standalone: Bool) -> SubtitleOnlyReason? {
     let centerY: Double = frame.y(o.centerY)
     let inBand: Bool = band.contains(centerY)
-    if band.lineHeight > 0 {
+    if band.lineHeight > 0 && !isSpeech(o.text) {
       let height: Double = LineHeight.perLine(o) / Double(max(frame.height, 1))
       let ratio: Double = height / band.lineHeight
-      let mismatch: Bool = ratio < MIN_HEIGHT_FACTOR || ratio > MAX_HEIGHT_FACTOR
-      // Bantta cümle gibi duran parça yüksekliği tutmasa da altyazıdır (şüphede çevir).
-      if mismatch && !(inBand && AutoRegionFinder.isSentenceLike(o.text)) { return SubtitleOnlyReason.lineHeight }
+      let tooSmall: Bool = ratio < MIN_HEIGHT_FACTOR && !inBand && !blockSpeech
+      let tooBig: Bool = ratio > MAX_HEIGHT_FACTOR
+      if tooSmall || tooBig { return SubtitleOnlyReason.lineHeight }
     }
-    if !inBand && isSignLike(o) { return SubtitleOnlyReason.sign }
+    if standalone && !inBand && isSignLike(o) { return SubtitleOnlyReason.sign }
     return nil
   }
 
@@ -341,25 +432,75 @@ struct SubtitleOnlyFilter {
     return words == 1 && isAllCaps(o.text)
   }
 
-  /// Blok ve parça grubu kuralları: kenar (her zaman), bant dışı ve yatay hiza (bant öğrenildikten sonra).
-  private func blockDrops(_ block: [TextObservation], frame: SubtitleOnlyFrame) -> [SubtitleOnlyDrop] {
-    let blockText: String = SubtitleOnlyFilter.text(of: block)
-    let positive: Bool = SubtitleOnlyFilter.hasLabel(blockText) || AutoRegionFinder.isSentenceLike(blockText)
+  /// Blok kuralları. İlke: altyazı bloğu ya bütün kalır ya bütün gider; bloğun içinden yalnız açıkça ayrık yazı atılır.
+  /// Bloğun çekirdeği: her satırın ana yazısı (satırdaki en geniş parça grubu) içinde en geniş olanla (çapa) hizalı
+  /// satırlar — ortaları, sol ya da sağ kenarları çapanınkine yakın ya da çapanın yatay kapsamının içinde. Çekirdek
+  /// TEK BİRİM olarak değerlendirilir (ortalı bloğun sola yaslı kısa satırı atılmaz). Çapaya hizasız satır ve satırdaki
+  /// yan parça (yatay boşlukla ayrılmış, çekirdeğin kapsamı dışına taşan gösterge) ayrı birimdir. [suspicious]: bant
+  /// kuralı konuşma/cümle biçimli bir birimi attı (emniyet supabı için).
+  private func blockDrops(_ block: [TextObservation], frame: SubtitleOnlyFrame) -> (drops: [SubtitleOnlyDrop], suspicious: Bool) {
+    var mains: [[TextObservation]] = []
+    var sides: [[TextObservation]] = []
+    for row in ReadingSelector.rows(block) {
+      let groups: [[TextObservation]] = SubtitleOnlyFilter.segments(row)
+      var widest = 0
+      var widestWidth = -1.0
+      for (index, group) in groups.enumerated() {
+        let shape: TextBox = frame.box(group)
+        if shape.right - shape.left > widestWidth {
+          widestWidth = shape.right - shape.left
+          widest = index
+        }
+      }
+      for (index, group) in groups.enumerated() {
+        if index == widest { mains.append(group) } else { sides.append(group) }
+      }
+    }
+    var anchor: TextBox?
+    for main in mains {
+      let shape: TextBox = frame.box(main)
+      if anchor == nil || shape.right - shape.left > anchor!.right - anchor!.left { anchor = shape }
+    }
+    guard let anchorBox = anchor else { return ([], false) }
+    var core: [TextObservation] = []
+    var units: [[TextObservation]] = []
+    for main in mains {
+      if SubtitleOnlyFilter.alignedRows(frame.box(main), anchorBox) { core.append(contentsOf: main) } else { units.append(main) }
+    }
+    let coreBox: TextBox = frame.box(core)
+    for side in sides {
+      let shape: TextBox = frame.box(side)
+      let inside: Bool = shape.left >= coreBox.left - SubtitleOnlyFilter.SIDE_MARGIN
+        && shape.right <= coreBox.right + SubtitleOnlyFilter.SIDE_MARGIN
+      if inside { core.append(contentsOf: side) } else { units.append(side) }
+    }
+    units.insert(core, at: 0)
     let whole: TextBox = frame.box(block)
     var outside = false
     if let current = band { outside = whole.bottom < current.top || whole.top > current.bottom }
     var drops: [SubtitleOnlyDrop] = []
-    for segment in SubtitleOnlyFilter.segments(block) {
-      let shape: TextBox = frame.box(segment)
-      if let reason = segmentReason(shape, positive: positive, outside: outside) {
-        for o in segment { drops.append(SubtitleOnlyDrop(observation: o, reason: reason)) }
-      }
+    var suspicious = false
+    for unit in units where !unit.isEmpty {
+      let speech: Bool = SubtitleOnlyFilter.isSpeech(SubtitleOnlyFilter.text(of: unit))
+      guard let reason = unitReason(frame.box(unit), speech: speech, outside: outside) else { continue }
+      for o in unit { drops.append(SubtitleOnlyDrop(observation: o, reason: reason)) }
+      if speech && (reason == SubtitleOnlyReason.outsideBand || reason == SubtitleOnlyReason.offCenter) { suspicious = true }
     }
-    return drops
+    return (drops, suspicious)
   }
 
-  private func segmentReason(_ shape: TextBox, positive: Bool, outside: Bool) -> SubtitleOnlyReason? {
+  /// İki satır aynı altyazı bloğunun satırları gibi hizalı mı: ortaları, sol ya da sağ kenarları [ALIGN_TOLERANCE]
+  /// içinde ya da satır öbürünün yatay kapsamının içinde.
+  static func alignedRows(_ row: TextBox, _ anchor: TextBox) -> Bool {
+    let centers: Double = abs((row.left + row.right) / 2 - (anchor.left + anchor.right) / 2)
+    if centers <= ALIGN_TOLERANCE { return true }
+    if abs(row.left - anchor.left) <= ALIGN_TOLERANCE || abs(row.right - anchor.right) <= ALIGN_TOLERANCE { return true }
+    return row.left >= anchor.left - SIDE_MARGIN && row.right <= anchor.right + SIDE_MARGIN
+  }
+
+  private func unitReason(_ shape: TextBox, speech: Bool, outside: Bool) -> SubtitleOnlyReason? {
     let centerX: Double = (shape.left + shape.right) / 2
+    let centerY: Double = (shape.top + shape.bottom) / 2
     let centered: Bool = abs(centerX - 0.5) <= SubtitleOnlyFilter.CENTER_TOLERANCE
     var aligned = false
     if let current = band, current.layout == SubtitleBand.Layout.left {
@@ -368,8 +509,13 @@ struct SubtitleOnlyFilter {
     let atEdge: Bool = centerX < SubtitleOnlyFilter.EDGE_CENTER || centerX > 1 - SubtitleOnlyFilter.EDGE_CENTER
     if atEdge && !aligned { return SubtitleOnlyReason.edge }
     guard let current = band else { return nil }
-    // Bandın dışında: yalnız ortalı (ya da sola yaslı bantta hizalı) konuşma/cümle kabul.
-    if outside { return (centered || aligned) && positive ? nil : SubtitleOnlyReason.outsideBand }
+    if outside {
+      // Bandın dışında: ortalı (ya da sola yaslı bantta hizalı) konuşma/cümle kabul. Altyazı yeri değişmiş olabilir:
+      // son kabul edilen bant dışı altyazıyla aynı yükseklikteki ortalı kısa satır da kabul (yeniden öğrenilirken).
+      if (centered || aligned) && speech { return nil }
+      if centered, let last = outsideRun.last, abs(centerY - last.centerY) <= SubtitleOnlyFilter.CLUSTER_SPAN { return nil }
+      return SubtitleOnlyReason.outsideBand
+    }
     switch current.layout {
     case SubtitleBand.Layout.centered:
       return centered ? nil : SubtitleOnlyReason.offCenter
@@ -445,7 +591,10 @@ struct SubtitleOnlyFilter {
         fixtures[index].centerY = centerY
         fixtures[index].lastSeen = now
         fixtures[index].inLastRead = true
-        if now - fixtures[index].appearedAt >= SubtitleOnlyFilter.STATIC_MS { fixtures[index].unchanging = true }
+        // Bu görünümünde TV'ye gönderilmiş yazı (altyazı) sabit yazı hafızasına hiç girmez.
+        if !fixtures[index].shownNow && now - fixtures[index].appearedAt >= SubtitleOnlyFilter.STATIC_MS {
+          fixtures[index].unchanging = true
+        }
       } else {
         fixtures.append(Fixture(text: text, centerX: centerX, centerY: centerY, appearedAt: now, lastSeen: now,
                                 unchanging: false, shownNow: false, inLastRead: true))
@@ -500,10 +649,20 @@ struct SubtitleOnlyFilter {
       // Gösterilen metnin bir satırı (yazı) da gösterilmiş sayılır.
       let same: Bool = KotlinText.same(text, shown) || (text.count >= 2 && shown.contains(text))
         || AutoRegionFinder.isSameText(fixtures[index].text, flat)
-      if same { fixtures[index].shownNow = true }
+      if same {
+        fixtures[index].shownNow = true
+        fixtures[index].unchanging = false
+      }
     }
+    // Bir satır gösterildi: bant işini görüyor (emniyet supabı sayacı sıfırlanır).
+    suspectSince = nil
     var note = SubtitleOnlyShown(learning: SubtitleOnlyShown.Learning.unmatched, sample: nil, lineHeight: nil,
                                  outsideRun: outsideRun.count, bandChanged: false)
+    // Yalnız konuşma/cümle biçimli gösterim bant öğretir (menü öğesi, başlık, kısa etiketsiz yazı öğretmez).
+    guard SubtitleOnlyFilter.isSpeech(source) else {
+      note.learning = SubtitleOnlyShown.Learning.notSpeech
+      return note
+    }
     guard let sample = readSample(for: source, at: now) else { return note }
     note.sample = TextBox(left: sample.left, top: sample.top, right: sample.right, bottom: sample.bottom)
     note.lineHeight = sample.lineHeight
@@ -704,6 +863,7 @@ enum SubtitleOnlyDiag {
     case SubtitleOnlyShown.Learning.learned: return "learned"
     case SubtitleOnlyShown.Learning.relearned: return "relearned"
     case SubtitleOnlyShown.Learning.outside: return "outside"
+    case SubtitleOnlyShown.Learning.notSpeech: return "not-speech"
     }
   }
 }

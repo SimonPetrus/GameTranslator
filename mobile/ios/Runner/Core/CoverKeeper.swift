@@ -40,7 +40,7 @@ enum CoverNote: Equatable {
   case lineLimited
   /// Satır yüksekliği üst sınıra indirildi ([LineHeight.sendCap]).
   case lineCapped
-  /// Kutu [CoverKeeper.MAX_BOX_HEIGHT]'tan yüksekti: kırpıldı, line ve rows gönderilmedi.
+  /// Kutu [CoverKeeper.MAX_BOX_HEIGHT]'tan yüksekti: kırpıldı (line yine gider; kırpılmış kutuya sığmayan rows gitmez).
   case boxCapped
 
   var code: String {
@@ -70,11 +70,11 @@ struct CoverPlacement: Equatable {
 
 struct CoverKeeper {
   /// Kenarları bu kadar (ekrana oranla) oynayan kutu aynı sayılır.
-  static let PIN_TOLERANCE = 0.015
+  static let PIN_TOLERANCE: Double = 0.015
   /// Yeni satır öncekinden en çok bu kadar ms sonra geliyorsa aynı yerdeki kutusu öncekine sabitlenir.
   static let CONTINUE_MS: Int64 = 4000
   /// Birleşik kutunun en büyük yüksekliği (tam kareye oranla); aşılırsa kırpılır, line gönderilmez.
-  static let MAX_BOX_HEIGHT = 0.20
+  static let MAX_BOX_HEIGHT: Double = 0.20
 
   /// Öğrenilmiş altyazı bandı (dikey) ve tipik satır yüksekliği: "Yalnız altyazıyı çevir" açıkken okuyucu verir; yoksa nil.
   var bandTop: Double?
@@ -167,15 +167,24 @@ struct CoverKeeper {
     var outBox: TextBox = box
     var outSource: TextBox = source
     var rows: [SubtitleRow]? = nil
-    if box.bottom - box.top > CoverKeeper.MAX_BOX_HEIGHT {
+    let capped: Bool = box.bottom - box.top > CoverKeeper.MAX_BOX_HEIGHT
+    if capped {
+      // Yalnız kutu kırpılır; satır yüksekliği (tavanlanmış hâliyle) yine gider: gitmezse TV ayardaki boya döner ve
+      // yazı büyür. Satır kutuları kırpılmış kutunun içinde kalmıyorsa gönderilmez (TV birleşik kutuyu kullanır).
       notes.append(CoverNote.boxCapped)
-      line = nil
       outBox = clipped(box)
       outSource = TextBox(left: source.left, top: outBox.top, right: source.right, bottom: outBox.bottom)
-    } else if let list = r.rows, list.count >= 2 {
-      var built: [SubtitleRow] = []
-      for b in list { built.append(SubtitleRow(box: b, line: line)) }
-      rows = built
+    }
+    if let list = r.rows, list.count >= 2 {
+      var fits = true
+      if capped {
+        for b in list where b.top < outBox.top - 1e-9 || b.bottom > outBox.bottom + 1e-9 { fits = false }
+      }
+      if fits {
+        var built: [SubtitleRow] = []
+        for b in list { built.append(SubtitleRow(box: b, line: line)) }
+        rows = built
+      }
     }
     let placed = CoverPlacement(box: outBox, source: outSource, line: line, rows: rows, notes: notes)
     lastText = r.text

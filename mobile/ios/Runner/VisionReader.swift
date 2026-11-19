@@ -654,6 +654,14 @@ final class VisionReader: FrameReader {
     if subtitleOnly {
       let outcome = onlyFilter.apply(hinted, frame: onlyFrame, at: SubtitleStabilizer.monotonicMillis(), track: true)
       first = outcome.kept
+      if outcome.bandDropped {
+        // Emniyet supabı: bant yanlış ya da eskimişti; TV kutusu da bant bilgisini bırakır.
+        sink.setCoverBand(nil)
+        engine.log(1, "altyazı bandı bırakıldı (bir süredir altyazı gibi yazılar atılıyordu); yeniden öğreniliyor")
+        Diag.emit("filter") {
+          ["what": DiagValue.string("band-dropped"), "afterMs": DiagValue.int(Int(SubtitleOnlyFilter.SAFETY_MS))]
+        }
+      }
       if diagOn { diagFilter(outcome, frame: onlyFrame) }
     }
     var selected = ReadingSelector.select(first, width: w, height: h)
@@ -770,13 +778,13 @@ final class VisionReader: FrameReader {
 
   /// Okuma kuyruğunda, yalnız tanı kaydı açıkken: süzgecin attığı her parça nedeniyle (karar değişmedikçe yeniden yazılmaz).
   private func diagFilter(_ outcome: SubtitleOnlyOutcome, frame: SubtitleOnlyFrame) {
-    var key = outcome.wholeFrame ? "frame|" : ""
+    var key = outcome.pageFound ? "page|" : ""
     for drop in outcome.drops { key += drop.observation.text + "\u{1F}" + drop.reason.code + "\u{1E}" }
     guard key != diagLastFilterKey else { return }
     diagLastFilterKey = key
     let band = onlyFilter.band
     Diag.emit("filter") {
-      var f: DiagFields = ["what": DiagValue.string("subtitle-only"), "wholeFrame": DiagValue.bool(outcome.wholeFrame)]
+      var f: DiagFields = ["what": DiagValue.string("subtitle-only"), "pageFound": DiagValue.bool(outcome.pageFound)]
       f["dropped"] = SubtitleOnlyDiag.drops(outcome.drops, frame: frame)
       f["kept"] = DiagValue.int(outcome.kept.count)
       f["band"] = SubtitleOnlyDiag.band(band)

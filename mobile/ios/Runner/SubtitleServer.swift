@@ -61,8 +61,6 @@ final class SubtitleServer {
   /// İsteği henüz okunmamış bağlantılar (10 sn içinde istek gelmezse kapatılır).
   private var pending: [ObjectIdentifier: NWConnection] = [:]
   private var lastStyle: SubtitleStyle?
-  /// Bu oturumda TV'ye bir yazı tipi bildirildi mi: standarda dönünce `"fontFamily":""` gider (yalnız sunucu kuyruğunda).
-  private var fontAnnounced = false
   /// /font/ yolundan verilen dosyalar, ilk istekte paketten okunur (yalnız sunucu kuyruğunda).
   private var fontFiles: [String: Data] = [:]
   private var _boundPort: UInt16 = 0
@@ -167,14 +165,8 @@ final class SubtitleServer {
   func sendStyle(_ style: SubtitleStyle) {
     queue.async {
       self.lastStyle = style
-      if SubtitleFonts.font(for: style.subtitleFont) != nil { self.fontAnnounced = true }
-      self.broadcastOnQueue(self.styleFrameLocked(style))
+      self.broadcastOnQueue(Self.styleFrame(style))
     }
-  }
-
-  /// Sunucu kuyruğunda: bu oturumun yazı tipi durumuna göre stil çerçevesi.
-  private func styleFrameLocked(_ style: SubtitleStyle) -> String {
-    SubtitleWire.styleFrame(style, clearFont: fontAnnounced && SubtitleFonts.font(for: style.subtitleFont) == nil)
   }
 
   // MARK: - Çerçeveler (Android'dekiyle bayt bayt aynı; altyazı çerçevesi ve /hello: Core/SubtitleRows.swift'teki SubtitleWire)
@@ -186,7 +178,7 @@ final class SubtitleServer {
   /// Yazı rengi adının CSS karşılığı (Core/SubtitleLook.swift: SubtitleWire.colorHex).
   static func colorHex(_ name: String) -> String { SubtitleWire.colorHex(name) }
 
-  /// Stil çerçevesi (Core/SubtitleLook.swift: SubtitleWire.styleFrame; yazı tipi sıfırlaması olmadan).
+  /// Stil çerçevesi (Core/SubtitleLook.swift: SubtitleWire.styleFrame).
   static func styleFrame(_ s: SubtitleStyle) -> String { SubtitleWire.styleFrame(s) }
 
   static func speakerColorValue(_ s: SubtitleStyle) -> String { SubtitleWire.speakerColorValue(s) }
@@ -362,7 +354,7 @@ final class SubtitleServer {
       + "Connection: keep-alive\r\n"
       + "Access-Control-Allow-Origin: *\r\n\r\n"
       + "retry: 2000\n\n"
-    if let lastStyle { head += styleFrameLocked(lastStyle) }
+    if let lastStyle { head += Self.styleFrame(lastStyle) }
     let client = Client(connection: connection, viewer: viewer)
     clients[ObjectIdentifier(connection)] = client
     write(client, head)

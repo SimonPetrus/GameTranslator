@@ -198,6 +198,7 @@ enum DiagnosticPrivacy {
     "region.top", "region.bottom", "region.left", "region.right",
     "style.fontSize", "style.bottomPercent", "style.placement", "style.background", "style.bold", "style.textColor",
     "style.displayMode", "style.stackPrevious", "style.speakerColor", "style.speakerColorsEnabled", "style.subtitleFont",
+    "style.subtitleFontUsed",
     "extraRegions.top", "extraRegions.bottom", "extraRegions.left", "extraRegions.right", "extraRegions.name",
   ]
   /// İçine girilen (nesne ya da nesne dizisi) ayar yolları.

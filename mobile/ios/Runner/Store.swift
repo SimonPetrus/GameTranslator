@@ -104,6 +104,7 @@ struct Settings: Equatable {
         "background": style.background, "bold": style.bold, "textColor": style.textColor,
         "displayMode": style.displayMode, "stackPrevious": style.stackPrevious, "speakerColor": style.speakerColor,
         "speakerColorsEnabled": style.speakerColorsEnabled, "subtitleFont": style.subtitleFont,
+        "subtitleFontUsed": style.subtitleFontUsed,
       ] as [String: Any],
     ]
   }
@@ -146,6 +147,7 @@ struct Settings: Equatable {
     out.autoRegion = bool(json["autoRegion"], false)
     out.uiLanguage = Lang.normalize(string(json["uiLanguage"], Lang.auto))
     let ds = d.style
+    let font: String = SubtitleFonts.normalize(string(s?["subtitleFont"], ds.subtitleFont))
     out.style = SubtitleStyle(
       fontSize: int(s?["fontSize"], ds.fontSize),
       bottomPercent: int(s?["bottomPercent"], ds.bottomPercent),
@@ -157,7 +159,8 @@ struct Settings: Equatable {
       stackPrevious: bool(s?["stackPrevious"], ds.stackPrevious),
       speakerColor: bool(s?["speakerColor"], ds.speakerColor),
       speakerColorsEnabled: bool(s?["speakerColorsEnabled"], ds.speakerColorsEnabled),
-      subtitleFont: SubtitleFonts.normalize(string(s?["subtitleFont"], ds.subtitleFont)))
+      subtitleFont: font,
+      subtitleFontUsed: bool(s?["subtitleFontUsed"], false) || font != SubtitleFonts.defaultId)
     return out
   }
 
@@ -271,6 +274,8 @@ final class Store {
     fresh.deepLKey = old.deepLKey
     fresh.geminiKey = old.geminiKey
     fresh.uiLanguage = old.uiLanguage
+    // Bir kez yazı tipi seçildiyse varsayılana dönüşte de TV'ye standart yazı tipi bildirilsin.
+    fresh.style.subtitleFontUsed = old.style.subtitleFontUsed || old.style.subtitleFont != SubtitleFonts.defaultId
     settings = fresh
     return fresh
   }

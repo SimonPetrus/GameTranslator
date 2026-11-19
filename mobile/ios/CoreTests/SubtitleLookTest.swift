@@ -83,11 +83,16 @@ enum SubtitleLookTest {
       assertEquals("event: style\ndata: {\"background\":72,\"bold\":false,\"bottomPercent\":7,\"color\":\"#FFFFFF\",\"displayMode\":\"inApp\","
                    + "\"fontFamily\":\"Quicksand\",\"fontSize\":46,\"fontUrl\":\"/font/Quicksand.ttf\",\"placement\":\"cover\","
                    + "\"speakerColor\":\"\",\"stackPrevious\":true,\"textColor\":\"white\"}\n\n", frame)
-      // Oturumda yazı tipi gönderilmişti, şimdi standart: yalnız boş fontFamily eklenir (TV standarda döner).
+      // Kullanıcı bir kez yazı tipi seçmişti (kalıcı bayrak), şimdi standart: yalnız boş fontFamily eklenir (TV standarda
+      // döner; telefon yeniden başlasa da). Hiç seçmediyse alan yok (1.8.5 ile aynı; offIsByteIdenticalTo185).
+      var used = SubtitleStyle()
+      used.subtitleFontUsed = true
       assertEquals("event: style\ndata: {\"background\":72,\"bold\":false,\"bottomPercent\":7,\"color\":\"#FFFFFF\",\"displayMode\":\"inApp\","
                    + "\"fontFamily\":\"\",\"fontSize\":46,\"placement\":\"cover\",\"speakerColor\":\"\",\"stackPrevious\":true,"
-                   + "\"textColor\":\"white\"}\n\n", SubtitleWire.styleFrame(SubtitleStyle(), clearFont: true))
-      assertEquals(frame, SubtitleWire.styleFrame(style(font: "quicksand"), clearFont: true))
+                   + "\"textColor\":\"white\"}\n\n", SubtitleWire.styleFrame(used))
+      var chosen = style(font: "quicksand")
+      chosen.subtitleFontUsed = true
+      assertEquals(frame, SubtitleWire.styleFrame(chosen))
       // Palet ve yazı tipi birlikte.
       let both = payload(SubtitleWire.styleFrame(style(speaker: true, font: "quicksand")))
       assertEquals("Quicksand", both?["fontFamily"] as? String ?? "")

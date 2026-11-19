@@ -22,7 +22,10 @@ struct SubtitleStyle: Equatable {
   /// Konuşmacı adı renkliyken her konuşmacıya ayrı renk (TV paleti; yalnız iPhone ayarlarında, varsayılan açık).
   var speakerColorsEnabled = true
   /// Altyazı yazı tipi: "default" (TV'nin standart yazı tipi) ya da [SubtitleFonts]'taki bir kimlik (yalnız iPhone).
-  var subtitleFont = SubtitleFonts.defaultId
+  var subtitleFont: String = SubtitleFonts.defaultId
+  /// Kullanıcı bir kez standart dışı yazı tipi seçti (kalıcı): standarda dönünce TV'ye `"fontFamily":""` gider (TV alan
+  /// yoksa yazı tipini değiştirmez; telefon yeniden başlasa da açık kalmış TV standarda dönsün). Hiç seçmediyse alan yok.
+  var subtitleFontUsed = false
 }
 
 /// Pakette gelen, TV'ye /font/ yolundan verilen bir yazı tipi.
@@ -44,11 +47,11 @@ struct SubtitleFont: Equatable {
 /// lisansı Runner/Fonts/ altında, Google Fonts deposundan).
 enum SubtitleFonts {
   static let defaultId = "default"
-  static let quicksand = SubtitleFont(id: "quicksand", family: "Quicksand", file: "Quicksand.ttf", resource: "Quicksand", ext: "ttf")
+  static let quicksand: SubtitleFont = SubtitleFont(id: "quicksand", family: "Quicksand", file: "Quicksand.ttf", resource: "Quicksand", ext: "ttf")
   /// Sunucunun verdiği dosyaların tamamı (sabit izin listesi).
   static let all: [SubtitleFont] = [quicksand]
   /// TV için yazı tipi biçimi: ttf (eski TV motorları woff/woff2'yi tanımayabilir).
-  static let contentType = "font/ttf"
+  static let contentType: String = "font/ttf"
 
   /// Kimliğin yazı tipi; "default" ya da bilinmeyen kimlikte nil.
   static func font(for id: String) -> SubtitleFont? {
@@ -138,11 +141,11 @@ extension SubtitleWire {
   }
 
   /// `style` olayı; alanlar alfabetik sırada (Android'deki SubtitleServer.kt ile aynı biçim). fontFamily/fontUrl yalnız
-  /// yazı tipi seçiliyken, speakerColors yalnız [speakerColors] verdiyse yazılır. [clearFont]: bu oturumda TV'ye yazı tipi
-  /// gönderilmiş ve şimdi standart seçili: TV'nin standarda dönmesi için `"fontFamily":""` yazılır (TV alan yoksa yazı
-  /// tipini değiştirmez).
-  static func styleFrame(_ s: SubtitleStyle, clearFont: Bool = false) -> String {
+  /// yazı tipi seçiliyken, speakerColors yalnız [speakerColors] verdiyse yazılır. Standart seçiliyken ama kullanıcı daha
+  /// önce bir yazı tipi seçmişse ([SubtitleStyle.subtitleFontUsed]) TV'nin standarda dönmesi için `"fontFamily":""` yazılır.
+  static func styleFrame(_ s: SubtitleStyle) -> String {
     let font: SubtitleFont? = SubtitleFonts.font(for: s.subtitleFont)
+    let clearFont: Bool = font == nil && s.subtitleFontUsed
     var json = "{\"background\":\(min(100, max(0, s.background))),\"bold\":\(s.bold),\"bottomPercent\":\(s.bottomPercent)"
     json += ",\"color\":" + jsonString(colorHex(s.textColor))
     json += ",\"displayMode\":" + jsonString(s.displayMode)
