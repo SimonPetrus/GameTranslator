@@ -31,6 +31,14 @@
       },
       "versions": [
         {
+          "version": "1.8.5",
+          "date": "2026-11-19T00:03:49Z",
+          "size": 46423054,
+          "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.5/GameTranslator-iOS-1.8.5.ipa",
+          "minOSVersion": "15.0",
+          "localizedDescription": "Yeni: Tanı kaydı (Ayarlar › Tanı kaydı). Bir sorunu göstermek için kaydı başlat, oyna, durdur ve dosyayı paylaş. Kayıtta oyun görüntüleri, okunan yazılar ve çeviriler bulunur; API anahtarları ve PSN hesabı kaydedilmez; dosya sen paylaşmadıkça telefondan çıkmaz (en çok 15 dakika / 40 MB). TV bağlantısı: telefon artık TV'ye çeviri yapıp yapmadığını bildiriyor; TV telefonu boşta sayıp ağı yeniden taramıyor (TV uygulaması 1.0.7 ve üstü). Yeni TV uygulaması (1.0.8) ile \"üstünü ört\" kipinde çok konuşmacılı altyazıda her çeviri, oyundaki kendi satırının üstüne oturur; eski TV uygulamasında görünüm değişmez."
+        },
+        {
           "version": "1.8.4",
           "date": "2026-11-18T22:06:13Z",
           "size": 46271801,
@@ -79,10 +87,10 @@
           "localizedDescription": "GameTranslator iPhone sürümü 1.0.6."
         }
       ],
-      "version": "1.8.4",
-      "versionDate": "2026-11-18T22:06:13Z",
-      "size": 46271801,
-      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.4/GameTranslator-iOS-1.8.4.ipa"
+      "version": "1.8.5",
+      "versionDate": "2026-11-19T00:03:49Z",
+      "size": 46423054,
+      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.5/GameTranslator-iOS-1.8.5.ipa"
     }
   ],
   "news": []
