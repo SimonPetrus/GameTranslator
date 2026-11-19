@@ -30,11 +30,30 @@
 //     sunucu arar ve bulursa ona geçer (bağlantı yine kopmaz).
 //   - alan yok: eski sunucu, durum bilinmiyor. Bağlantı korunur, boşta tarama yapılmaz.
 //   Kopunca TV önce kayıtlı adresi tek /hello ile yoklar; yanıt gelirse (active ne olursa olsun) hemen bağlanır.
+// Stil olayı (SSE `event: style`), TV'nin okuduğu alanlar (hepsi isteğe bağlı; gelmeyen alan değişmez):
+//   background (0–100 sayı), bold (bool), bottomPercent (sayı), color ("#RRGGBB"), fontSize (px),
+//   placement ("cover" | "above" | "below" | "fixed").
+//   speakerColor   "" ya da "#RRGGBB": konuşmacı adının tek rengi; "" = adlar ayrı renkte yazılmaz (palet de kapanır).
+//   speakerColors  (1.0.9) ["#RRGGBB", ...] konuşmacı başına palet; yalnız speakerColor boş değilken kullanılır.
+//                  Yoksa ya da dizi değilse her ad speakerColor renginde. Ad "AD:" önekinden çıkar, anahtar büyük harflidir.
+//                  Renk ilk görülme sırasıyla paletteki ilk boş renktir; aynı ad olaylar arasında hep aynı renkte kalır;
+//                  palet biterse en uzun süredir konuşmayanın rengi devralınır. Eşleme yalnız farklı bir palet gelince
+//                  sıfırlanır. Telefon ad→renk eşlemesi göndermez. Masaüstünün paleti: #FFD60A #64D2FF #FF9F0A #30D158
+//                  #FF7AB6 #C49BFF (sarı yazıda #FFD60A çıkarılır).
+//   fontFamily     (1.0.9) yazı tipi adı; "" = standart yazı tipi.
+//   fontUrl        (1.0.9) yazı tipi dosyasının sunucudaki yolu "/font/<dosya>" (harf, rakam, . _ - %). TV dosyayı
+//                  bağlı sunucudan indirir (FontFace; yoksa @font-face), inince altyazıyı yeniden yerleştirir. Başka
+//                  kökenden adres kabul edilmez (1.0.10); o zaman ya da yükleme başarısızsa fontFamily adı TV'de kurulu
+//                  yazı tipi olarak denenir, o da yoksa standart yazı tipi kalır.
+//   Örnek: {"background":72,"color":"#FFFFFF","fontFamily":"Quicksand","fontSize":46,"fontUrl":"/font/Quicksand.ttf",
+//   "placement":"cover","speakerColor":"#FFD60A","speakerColors":["#FFD60A","#64D2FF","#FF9F0A"]}
+// GET /font/<dosya>: yazı tipi dosyası; Access-Control-Allow-Origin: * ve Content-Type (font/ttf, font/otf, font/woff2)
+//   gerekir (TV sayfası başka kökenden yükler, CORS başlığı yoksa FontFace yüklemesi başarısız olur). Yoksa 404.
 (function () {
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '1.0.8';
+  var APP_VERSION = '1.0.10';
   var t = window.t;
   var config = window.GAMETRANSLATOR_CONFIG || window.GAMETRANSLATOR_CONFIG || {};
   var platform = window.GAMETRANSLATOR_PLATFORM || window.GAMETRANSLATOR_PLATFORM;
@@ -95,6 +114,7 @@
     el.textContent = 'sub ' + diag.subtitles + ' · clear ' + diag.clears + ' · drop ' + diag.drops +
       ' · bg ' + diag.backgrounded + ' · hide ' + diag.lastHide + ' · ' + diag.place +
       (window.__screenSaverStatus ? ' · saver ' + window.__screenSaverStatus : '') +
+      (fontStatus ? ' · ' + fontStatus : '') +
       (diag.error ? ' · err ' + diag.error : '') + connectionDiag();
   }
 
@@ -256,6 +276,32 @@
     return rtl >= letters;
   }
 
+  // Her konuşmacının kendi rengi (bilgisayar speakerColors listesini gönderir; eski sürüm yalnız speakerColor gönderir).
+  // Renk ilk görülme sırasıyla verilir, aynı ad hep aynı renkte kalır; renkler biterse en uzun süredir konuşmayanınki alınır.
+  var speakerColors = [], speakerMap = {}, speakerRecent = [];
+  function setSpeakerColors(list) {
+    list = list || [];
+    if (list.join(',') === speakerColors.join(',')) return;
+    speakerColors = list;
+    speakerMap = {};
+    speakerRecent = [];
+  }
+  function colorForSpeaker(name) {
+    if (!speakerColors.length) return speakerColor;
+    var key = String(name).toUpperCase();
+    var at = speakerRecent.indexOf(key);
+    if (at >= 0) speakerRecent.splice(at, 1);
+    else {
+      var used = {}, free = null, k, i;
+      for (k in speakerMap) used[speakerMap[k]] = true;
+      for (i = 0; i < speakerColors.length; i++) if (!used[speakerColors[i]]) { free = speakerColors[i]; break; }
+      if (free === null) { var oldest = speakerRecent.shift(); free = speakerMap[oldest]; delete speakerMap[oldest]; }
+      speakerMap[key] = free;
+    }
+    speakerRecent.push(key);
+    return speakerMap[key];
+  }
+
   function setSubtitleText(el, text, paragraphs) {
     el.dir = isRtl(text) ? 'rtl' : 'ltr';
     if (!speakerColor || paragraphs) {
@@ -269,7 +315,7 @@
       var nameStart = match.index + match[1].length;
       if (nameStart > last) el.appendChild(document.createTextNode(text.slice(last, nameStart)));
       var name = document.createElement('span');
-      name.style.color = speakerColor;
+      name.style.color = colorForSpeaker(match[2]);
       name.textContent = match[2] + ':';
       el.appendChild(name);
       last = SPEAKER.lastIndex;
@@ -674,6 +720,7 @@
       text.style.color = source.style.color;
       text.style.fontWeight = source.style.fontWeight;
       text.style.background = source.style.background;
+      text.style.fontFamily = source.style.fontFamily;
       setSubtitleText(text, rows[i].text, false);
       place.appendChild(text);
       host.appendChild(place);
@@ -728,6 +775,7 @@
     }
     if (PLACEMENTS[style.placement]) placement = style.placement;
     if (typeof style.speakerColor === 'string') speakerColor = style.speakerColor;
+    setSpeakerColors(speakerColor && style.speakerColors instanceof Array ? style.speakerColors : []);
     if (typeof style.background === 'number') {
       var alpha = Math.max(0, Math.min(100, style.background)) / 100;
       $('subtitle-text').style.background = 'rgba(0, 0, 0, ' + alpha + ')';
@@ -743,8 +791,83 @@
     if (style.bottomPercent >= 0) {
       bottomPercent = Math.max(0, Math.min(92, Number(style.bottomPercent)));
     }
+    if (typeof style.fontFamily === 'string') applyFont(style.fontFamily, style.fontUrl);
     layout();
   }
+
+  // Altyazı fontu: bilgisayar kurulu fontun dosyasını fontUrl'den verir; dosya yoksa ad denenir, o da yoksa standart yazı.
+  var fontKey = '';
+  var standardFont = null;
+  function applyFont(family, url) {
+    var key = family + '|' + (url || '');
+    if (key === fontKey) return;
+    fontKey = key;
+    var text = $('subtitle-text');
+    var prev = $('subtitle-prev-text');
+    if (standardFont === null) standardFont = window.getComputedStyle(text).fontFamily || 'sans-serif';
+    var tag = document.getElementById('subtitle-font-face');
+    if (!tag) {
+      tag = document.createElement('style');
+      tag.id = 'subtitle-font-face';
+      document.head.appendChild(tag);
+    }
+    var name = '';
+    // Font yalnız bağlı sunucunun kendi /font/ yolundan yüklenir; başka köken, "@" ya da tırnak içeren adres
+    // reddedilir (sunucu adresiyle birleştirilince başka bir sunucuya ya da CSS kuralının dışına çıkabilirdi).
+    url = fontPath(url);
+    if (url && server) {
+      name = 'GTFont' + url.replace(/[^a-z0-9]/gi, '');
+      var source = "url('" + server + url + "')";
+      // Samsung (Tizen) varsayılan güvenlik politikası sayfaya eklenen <style> kuralını uygulamıyor (style-src 'self'):
+      // font bu yüzden TV'de hiç değişmiyordu. FontFace bu kurala takılmaz; yoksa eski yola dönülür.
+      if (window.FontFace && document.fonts && document.fonts.add) {
+        tag.textContent = '';
+        loadFont(name, source);
+      } else {
+        tag.textContent = "@font-face { font-family: '" + name + "'; src: " + source + "; font-weight: 100 900; }";
+      }
+    } else {
+      tag.textContent = '';
+      name = family.replace(/['"\\]/g, '');
+    }
+    var value = name ? "'" + name + "', " + standardFont : '';
+    text.style.fontFamily = value;
+    prev.style.fontFamily = value;
+  }
+
+  // fontUrl'nin kabul edilen biçimi: "/font/<dosya>" ya da bağlı sunucunun "http://host:port/font/<dosya>" adresi;
+  // dönen değer göreli yoldur, kabul edilmezse ''.
+  var FONT_PATH = /^\/font\/[A-Za-z0-9._%-]+$/;
+  function fontPath(url) {
+    if (typeof url !== 'string' || !url) return '';
+    if (server && url.indexOf(server + '/') === 0) url = url.slice(server.length);
+    return FONT_PATH.test(url) && url.indexOf('..') < 0 ? url : '';
+  }
+
+  // Font indirilip sayfaya eklenir; inince yazı yeniden yerleştirilir (genişliği değişir). Hata tanı satırında görünür.
+  function loadFont(name, source) {
+    var face;
+    try {
+      face = new FontFace(name, source, { weight: '100 900' });
+    } catch (err) {
+      // Eski tarayıcılar kalınlık aralığını tanımaz
+      try { face = new FontFace(name, source); } catch (err2) { noteError('font: ' + err2.message); return; }
+    }
+    // Yükleme hemen hata atarsa da stil olayının geri kalanı (yerleşim) yarıda kalmasın.
+    try {
+      face.load().then(function (loaded) {
+        document.fonts.add(loaded);
+        fontStatus = 'font ok';
+        layout();
+      }, function (err) {
+        fontStatus = 'font hata';
+        noteError('font: ' + (err && err.message ? err.message : err));
+      });
+    } catch (err3) {
+      fontStatus = 'font hata';
+    }
+  }
+  var fontStatus = '';
 
   function nudgeSubtitle(step) {
     // Yer oyundaki altyazıya bağlıysa kumandayla taşınmaz.

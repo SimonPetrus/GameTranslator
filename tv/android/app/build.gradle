@@ -8,8 +8,8 @@ android {
         applicationId 'com.gametranslator.tv'
         minSdk 24
         targetSdk 35
-        versionCode 108
-        versionName '1.0.8'
+        versionCode 110
+        versionName '1.0.10'
     }
     // Sürümde imza depo sırrından gelir; yoksa geliştirme anahtarıyla imzalanır.
     signingConfigs {
