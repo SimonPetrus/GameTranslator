@@ -31,6 +31,14 @@
       },
       "versions": [
         {
+          "version": "1.8.6",
+          "date": "2026-11-19T07:08:54Z",
+          "size": 46537610,
+          "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.6/GameTranslator-iOS-1.8.6.ipa",
+          "minOSVersion": "15.0",
+          "localizedDescription": "Yeni: \"Yalnız altyazıyı çevir\" ayarı (varsayılan açık). Uygulama altyazının çıktığı yeri öğrenir ve o alanın dışındaki kısa tabela, gösterge ve menü yazılarının çoğunu çevirmez; emin olmadığında çevirir, bu yüzden bazı tabelalar yine çevrilebilir. Altyazı kaçıyorsa ayarı kapat. \"Üstünü ört\" kipinde çeviri kutusu ve yazı boyu aynı altyazı boyunca sabit kalıyor, ani büyümeler sınırlandı. Yeni: \"Her konuşmacıya ayrı renk\" (\"Konuşmacı adı renkli\" açıkken) ve altyazı yazı tipi seçimi (Quicksand); ikisi için de TV uygulaması 1.0.9 ya da üstü gerekir, desteklemeyen TV'de yazı standart tipte kalır. Tanı kaydı artık süzgeç ve kutu kararlarını da içeriyor."
+        },
+        {
           "version": "1.8.5",
           "date": "2026-11-19T00:03:49Z",
           "size": 46423054,
@@ -87,10 +95,10 @@
           "localizedDescription": "GameTranslator iPhone sürümü 1.0.6."
         }
       ],
-      "version": "1.8.5",
-      "versionDate": "2026-11-19T00:03:49Z",
-      "size": 46423054,
-      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.5/GameTranslator-iOS-1.8.5.ipa"
+      "version": "1.8.6",
+      "versionDate": "2026-11-19T07:08:54Z",
+      "size": 46537610,
+      "downloadURL": "https://github.com/SimonPetrus/GameTranslator-iOS/releases/download/ios-v1.8.6/GameTranslator-iOS-1.8.6.ipa"
     }
   ],
   "news": []
